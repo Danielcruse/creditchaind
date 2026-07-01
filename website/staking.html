@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OUTERNET Staking</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<h1>ETH Staking Vault</h1>
+
+<div class="card">
+
+    <h2>Your Position</h2>
+
+    <p>
+        ETH Staked:
+        <span id="stakedEth">
+            0
+        </span>
+    </p>
+
+    <p>
+        oETH:
+        <span id="oethBalance">
+            0
+        </span>
+    </p>
+
+    <p>
+        Rewards:
+        <span id="rewardBalance">
+            0
+        </span>
+        CCT
+    </p>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Stake ETH</h2>
+
+    <input
+        type="number"
+        id="stakeAmount"
+        placeholder="ETH Amount">
+
+    <br><br>
+
+    <button onclick="stakeETH()">
+        Stake
+    </button>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Unstake ETH</h2>
+
+    <input
+        type="number"
+        id="unstakeAmount"
+        placeholder="ETH Amount">
+
+    <br><br>
+
+    <button onclick="unstakeETH()">
+        Request Unstake
+    </button>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Rewards</h2>
+
+    <button onclick="claimRewards()">
+        Claim CCT Rewards
+    </button>
+
+</div>
+
+<br>
+
+<button
+    onclick="location.href='wallet.html'">
+    Back To Wallet
+</button>
+
+<script src="js/staking.js"></script>
+
+</body>
+</html>

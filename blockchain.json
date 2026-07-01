@@ -1,0 +1,31 @@
+{
+  "Blocks": [
+    {
+      "Index": 0,
+      "Timestamp": 1782584935,
+      "PreviousHash": "0",
+      "Hash": "GENESIS",
+      "Validator": "creditchain",
+      "Transactions": []
+    },
+    {
+      "Index": 1,
+      "Timestamp": 1782585105,
+      "PreviousHash": "GENESIS",
+      "Hash": "TEMP_HASH",
+      "Validator": "creditchain-validator",
+      "Transactions": [
+        {
+          "ID": "",
+          "From": "wallet1",
+          "To": "wallet2",
+          "Amount": 10,
+          "Type": "",
+          "Timestamp": 0,
+          "Data": "",
+          "Signature": null
+        }
+      ]
+    }
+  ]
+}

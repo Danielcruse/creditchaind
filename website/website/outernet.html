@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta
+name="viewport"
+content="width=device-width, initial-scale=1">
+
+<title>OUTERNET</title>
+
+<link
+rel="stylesheet"
+href="css/style.css">
+
+<link
+rel="stylesheet"
+href="css/outernet.css">
+
+<script>
+
+if (
+    localStorage.getItem(
+        "loggedIn"
+    ) !== "true"
+) {
+    window.location.href =
+        "login.html";
+}
+
+function logout() {
+
+    localStorage.removeItem(
+        "loggedIn"
+    );
+
+    location.href =
+        "login.html";
+}
+
+</script>
+
+</head>
+
+<body>
+
+<div class="sidebar">
+
+    <div class="brand">
+
+        <h1>
+            🌐 OUTERNET
+        </h1>
+
+        <p>
+            Decentralized Credit OS
+        </p>
+
+    </div>
+
+    <button
+    onclick="location.href='explorer.html'">
+        Explorer
+    </button>
+
+    <button
+    onclick="location.href='governance.html'">
+        Governance
+    </button>
+
+    <button
+    onclick="location.href='reputation.html'">
+        Reputation
+    </button>
+
+    <button
+    onclick="location.href='loans.html'">
+        Borrow & Lend
+    </button>
+
+    <button
+    onclick="location.href='transactions.html'">
+        Transactions
+    </button>
+
+    <button
+    onclick="location.href='validator.html'">
+        Validator Dashboard
+    </button>
+
+    <button>
+        Smart Contracts
+    </button>
+
+    <button>
+        Marketplace
+    </button>
+
+    <button>
+        Identity
+    </button>
+
+    <button>
+        Cross-Chain Bridge
+    </button>
+
+    <button>
+        AI Assistant
+    </button>
+
+    <button>
+        Settings
+    </button>
+
+    <button
+    onclick="logout()">
+        Logout
+    </button>
+
+</div>
+
+<div class="main">
+
+    <section class="hero-card">
+
+        <h1>
+            Welcome,
+            <span id="username">
+                User
+            </span>
+        </h1>
+
+        <p class="network-live">
+            ● Network Live
+        </p>
+
+    </section>
+
+    <div class="grid">
+
+        <div class="card">
+
+            <h2>
+                User Profile
+            </h2>
+
+            <p>
+                Wallet:
+                <span id="wallet">
+                    -
+                </span>
+            </p>
+
+            <p>
+                Node ID:
+                <span id="nodeId">
+                    TODO
+                </span>
+            </p>
+
+            <p>
+                Reputation:
+                <span id="reputation">
+                    50
+                </span>
+            </p>
+
+            <p>
+                Voting Power:
+                <span id="voting">
+                    100
+                </span>
+            </p>
+
+            <p>
+                Credit Score:
+                <span id="credit">
+                    TODO
+                </span>
+            </p>
+
+            <p>
+                Validator:
+                <span id="validator">
+                    TODO
+                </span>
+            </p>
+
+            <p>
+                Account Level:
+                <span id="level">
+                    Genesis
+                </span>
+            </p>
+
+        </div>
+
+        <div class="card">
+
+            <h2>
+                Network Overview
+            </h2>
+
+            <p>
+                Network:
+                CreditChain Testnet
+            </p>
+
+            <p>
+                Block Height:
+                <span id="height">
+                    Loading...
+                </span>
+            </p>
+
+            <p>
+                Latest Hash:
+                <span id="hash">
+                    Loading...
+                </span>
+            </p>
+
+            <p>
+                Peer Count:
+                <span id="peers">
+                    TODO
+                </span>
+            </p>
+
+            <p>
+                Active Validators:
+                <span id="validators">
+                    Loading...
+                </span>
+            </p>
+
+            <p>
+                TPS:
+                <span id="tps">
+                    TODO
+                </span>
+            </p>
+
+            <p>
+                Gas Price:
+                <span id="gas">
+                    TODO
+                </span>
+            </p>
+
+            <p>
+                Total Supply:
+                <span id="supply">
+                    TODO
+                </span>
+            </p>
+
+            <p>
+                Circulating Supply:
+                <span id="circulating">
+                    TODO
+                </span>
+            </p>
+
+        </div>
+
+        <div class="card">
+
+            <h2>
+                Wallet
+            </h2>
+
+            <p>
+                Balance:
+                <span id="balance">
+                    TODO
+                </span>
+            </p>
+
+            <button>
+                Send
+            </button>
+
+            <button>
+                Receive
+            </button>
+
+            <button>
+                Stake
+            </button>
+
+            <button>
+                Unstake
+            </button>
+
+            <button>
+                Rewards
+            </button>
+
+        </div>
+
+    </div>
+
+    <div class="grid">
+
+        <div class="card">
+
+            <h2>
+                Recent Blocks
+            </h2>
+
+            <pre id="blocks">
+Loading...
+            </pre>
+
+        </div>
+
+        <div class="card">
+
+            <h2>
+                Recent Transactions
+            </h2>
+
+            <pre id="transactions">
+Loading...
+            </pre>
+
+        </div>
+
+    </div>
+
+    <div class="grid">
+
+        <div class="card">
+
+            <h2>
+                Notifications
+            </h2>
+
+            <div id="notifications">
+
+                No notifications.
+
+            </div>
+
+        </div>
+
+        <div class="card">
+
+            <h2>
+                Network Activity
+            </h2>
+
+            <div id="activity">
+
+                Waiting for node...
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<script src="js/outernet.js"></script>
+
+</body>
+</html>

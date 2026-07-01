@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Borrow & Lend</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<h1>Borrow & Lend</h1>
+
+<div class="card">
+
+    <h2>Borrow</h2>
+
+    <input
+        type="number"
+        id="borrowAmount"
+        placeholder="Amount">
+
+    <br><br>
+
+    <button onclick="borrow()">
+        Borrow
+    </button>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Your Loans</h2>
+
+    <div id="loanList">
+        No Loans
+    </div>
+
+</div>
+
+<br>
+
+<button
+    onclick="location.href='wallet.html'">
+    Back To Wallet
+</button>
+
+<script src="js/borrow.js"></script>
+
+</body>
+</html>
