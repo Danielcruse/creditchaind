@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OUTERNET Wallet</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<h1>OUTERNET Wallet</h1>
+
+<div class="card">
+
+    <h2>Profile</h2>
+
+    <p>
+        Wallet:
+        <span id="walletAddress">
+            Loading...
+        </span>
+    </p>
+
+    <p>
+        Reputation:
+        <span id="reputation">
+            0
+        </span>
+    </p>
+
+    <p>
+        Voting Power:
+        <span id="votingPower">
+            0
+        </span>
+    </p>
+
+    <p>
+        Credit Score:
+        <span id="creditScore">
+            0
+        </span>
+    </p>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Balances</h2>
+
+    <p>
+        Staked ETHTEST:
+        <span id="ethBalance">
+            0
+        </span>
+    </p>
+
+    <p>
+        oETHTEST:
+        <span id="oethBalance">
+            0
+        </span>
+    </p>
+
+    <p>
+        CCT:
+        <span id="cctBalance">
+            0
+        </span>
+    </p>
+
+    <p>
+        USDCTEST (borrowed):
+        <span id="usdcTestBalance">
+            0
+        </span>
+    </p>
+
+    <p>
+        Rewards:
+        <span id="rewardBalance">
+            0
+        </span>
+    </p>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Actions</h2>
+
+    <button
+        onclick="
+            location.href='staking.html'
+        ">
+        Stake
+    </button>
+
+    <button onclick="location.href='send.html'">
+        Send
+    </button>
+
+    <button onclick="showReceiveAddress()">
+        Receive
+    </button>
+
+    <button
+        onclick="location.href='staking.html'">
+        Claim Rewards
+    </button>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Recent Transactions</h2>
+
+    <div id="transactions">
+        No Transactions
+    </div>
+
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/wallet.js"></script>
+
+</body>
+</html>

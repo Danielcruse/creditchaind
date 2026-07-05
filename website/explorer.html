@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Blockchain Explorer</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .explorer-search{
+            display:flex;
+            gap:10px;
+            margin-bottom:15px;
+            flex-wrap:wrap;
+        }
+        .explorer-search input{
+            flex:1;
+            min-width:200px;
+            padding:10px 14px;
+            border-radius:10px;
+            border:1px solid rgba(255,255,255,0.15);
+            background:rgba(255,255,255,0.05);
+            color:white;
+            box-sizing:border-box;
+        }
+        .explorer-row{
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            gap:12px;
+            padding:10px 12px;
+            border-bottom:1px solid rgba(255,255,255,0.08);
+            font-family:monospace;
+            font-size:13px;
+            flex-wrap:wrap;
+        }
+        .explorer-row:last-child{
+            border-bottom:none;
+        }
+        .explorer-hash{
+            opacity:0.75;
+        }
+        .explorer-pager{
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            margin-top:10px;
+            font-size:13px;
+            gap:10px;
+            flex-wrap:wrap;
+        }
+        .explorer-pager button:disabled{
+            opacity:0.4;
+            cursor:not-allowed;
+        }
+        .explorer-empty{
+            opacity:0.6;
+            padding:10px 0;
+        }
+    </style>
+</head>
+<body>
+
+<h1>OUTERNET Explorer</h1>
+
+<p style="margin-top:-10px;">
+    <a href="tokens.html">Token Creation</a> &nbsp;|&nbsp;
+    <a href="pool.html">Pool</a> &nbsp;|&nbsp;
+    <a href="reputation-math.html">How Reputation Is Calculated</a>
+</p>
+
+<div class="card">
+    <div class="explorer-search">
+        <input id="explorerSearchInput" type="text" placeholder="Search by block #, block hash, tx id, or address">
+        <button id="explorerSearchBtn">Search</button>
+        <button id="explorerSearchClearBtn" style="display:none;">Clear</button>
+    </div>
+    <div id="explorerSearchResult"></div>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Recent Blocks</h2>
+    <div id="blocks" class="explorer-empty">Loading...</div>
+    <div class="explorer-pager">
+        <button id="blocksPrev">&larr; Newer</button>
+        <span id="blocksRange"></span>
+        <button id="blocksNext">Older &rarr;</button>
+    </div>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Recent Transactions</h2>
+    <div id="transactions" class="explorer-empty">Loading...</div>
+    <div class="explorer-pager">
+        <button id="txPrev">&larr; Newer</button>
+        <span id="txRange"></span>
+        <button id="txNext">Older &rarr;</button>
+    </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/explorer.js"></script>
+
+</body>
+</html>

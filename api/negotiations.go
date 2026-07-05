@@ -1,0 +1,266 @@
+package api
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"net/http"
+	"time"
+
+	"github.com/creditchain/creditchaind/core"
+)
+
+var negotiationStore = core.NewNegotiationStore()
+
+// newNegotiationID is a plain random ID - negotiations aren't
+// transactions (see core.Negotiation's doc comment on why this state
+// isn't part of ApplyBlock), so there's no need for newTxID's
+// content-derived scheme, just something unique.
+func newNegotiationID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// HandleStartNegotiation is the borrower proposing a specific amount
+// against an open offer - the same request shape as a direct draw
+// (see loanOfferDrawData), but instead of executing immediately, it
+// opens a chat thread with the lender first. The borrower's signed
+// envelope is captured and held (see core.Negotiation's doc comment)
+// so it can be used to submit the real transaction later, once the
+// lender actually agrees - nothing here touches the chain yet.
+func HandleStartNegotiation(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req loanOfferDrawData
+
+	auth, address, err := requireSignedRequest(r, &req)
+	if err != nil {
+		writeUnauthorized(w, err)
+		return
+	}
+
+	if req.Amount == 0 {
+		http.Error(w, "amount must be positive", http.StatusBadRequest)
+		return
+	}
+
+	offer, ok := loanOfferStore.Get(req.OfferID)
+	if !ok {
+		http.Error(w, "offer not found", http.StatusNotFound)
+		return
+	}
+	if offer.Status != core.LoanOfferOpen {
+		http.Error(w, "offer is no longer open", http.StatusBadRequest)
+		return
+	}
+	if req.Amount > offer.RemainingAmount {
+		http.Error(w, "amount exceeds what's still available on this offer", http.StatusBadRequest)
+		return
+	}
+	if !hasEnoughCollateral(address, req.Amount) {
+		http.Error(w, "insufficient locked collateral - lock staked CCT or oETH covering at least this amount first", http.StatusBadRequest)
+		return
+	}
+
+	wallet := walletStore.Get(address)
+	if limit := core.BorrowLimit(wallet.Reputation); req.Amount > limit {
+		http.Error(w, "borrow limit exceeded", http.StatusBadRequest)
+		return
+	}
+
+	n := &core.Negotiation{
+		ID:           newNegotiationID(),
+		OfferID:      offer.ID,
+		Lender:       offer.Lender,
+		Borrower:     address,
+		Symbol:       offer.Symbol,
+		Amount:       req.Amount,
+		Messages:     []core.NegotiationMessage{},
+		BorrowerAuth: auth,
+		Status:       core.NegotiationOpen,
+		CreatedAt:    time.Now().Unix(),
+		// Negotiations are node-local API state, not part of ApplyBlock
+		// (see core.Negotiation's doc comment), so unlike the P2P offer
+		// assignment this doesn't need to be identical across nodes -
+		// it's an oversight assignment, not an economic one.
+		ModeratorAddress: moderatorStore.AssignNext(),
+		ModerationStatus: core.ModerationPending,
+	}
+	negotiationStore.Create(n)
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":        "open",
+		"negotiationId": n.ID,
+	})
+}
+
+// HandleListNegotiations lists negotiations a given address is party
+// to (either as lender or borrower) - public read, same as every
+// other query in this app; see core.NegotiationMessage's doc comment
+// on why this is not a private channel.
+func HandleListNegotiations(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	address := r.URL.Query().Get("address")
+
+	all := negotiationStore.List()
+	if address == "" {
+		json.NewEncoder(w).Encode(all)
+		return
+	}
+
+	mine := make([]*core.Negotiation, 0, len(all))
+	for _, n := range all {
+		if n.Lender == address || n.Borrower == address {
+			mine = append(mine, n)
+		}
+	}
+	json.NewEncoder(w).Encode(mine)
+}
+
+type negotiationMessageData struct {
+	NegotiationID string `json:"negotiationId"`
+	Text          string `json:"text"`
+}
+
+// HandleSendMessage lets either party in a negotiation post a chat
+// message - takes effect immediately (not queued as a block-confirmed
+// transaction), since a chat message moves no value and doesn't need
+// consensus-level guarantees, only proof it really came from one of
+// the two participants.
+func HandleSendMessage(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req negotiationMessageData
+
+	_, address, err := requireSignedRequest(r, &req)
+	if err != nil {
+		writeUnauthorized(w, err)
+		return
+	}
+
+	if len(req.Text) == 0 || len(req.Text) > 2000 {
+		http.Error(w, "message must be 1-2000 characters", http.StatusBadRequest)
+		return
+	}
+
+	n, ok := negotiationStore.Get(req.NegotiationID)
+	if !ok {
+		http.Error(w, "negotiation not found", http.StatusNotFound)
+		return
+	}
+	if address != n.Lender && address != n.Borrower {
+		http.Error(w, "not a party to this negotiation", http.StatusForbidden)
+		return
+	}
+
+	ok = negotiationStore.AddMessage(n.ID, core.NegotiationMessage{
+		Sender:    address,
+		Text:      req.Text,
+		Timestamp: time.Now().Unix(),
+	})
+	if !ok {
+		http.Error(w, "negotiation is no longer open", http.StatusBadRequest)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
+}
+
+type negotiationActionData struct {
+	NegotiationID string `json:"negotiationId"`
+}
+
+// HandleConfirmNegotiation is the lender's explicit agreement - the
+// one action that actually submits the underlying TxLoanOfferDraw
+// transaction, using the borrower's signed request collected back
+// when they opened the negotiation. Everything up to this point
+// (the offer, the amount, the chat) was ordinary API state; this is
+// the single moment the deal actually becomes an on-chain transaction.
+func HandleConfirmNegotiation(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req negotiationActionData
+
+	_, address, err := requireSignedRequest(r, &req)
+	if err != nil {
+		writeUnauthorized(w, err)
+		return
+	}
+
+	n, ok := negotiationStore.Get(req.NegotiationID)
+	if !ok {
+		http.Error(w, "negotiation not found", http.StatusNotFound)
+		return
+	}
+	if address != n.Lender {
+		http.Error(w, "only the lender can confirm and fund this negotiation", http.StatusForbidden)
+		return
+	}
+
+	// Re-check the offer still has enough capital left - other draws
+	// (via this or another negotiation) may have consumed it since
+	// the borrower opened this one. applyLoanOfferDraw re-checks this
+	// again anyway at confirmation time, but failing fast here avoids
+	// executing a negotiation that's already guaranteed to no-op.
+	offer, ok := loanOfferStore.Get(n.OfferID)
+	if !ok || offer.Status != core.LoanOfferOpen || n.Amount > offer.RemainingAmount {
+		http.Error(w, "the underlying offer no longer has enough capital available", http.StatusBadRequest)
+		return
+	}
+
+	if _, ok := negotiationStore.Execute(n.ID); !ok {
+		http.Error(w, "negotiation is no longer open", http.StatusBadRequest)
+		return
+	}
+
+	data, _ := json.Marshal(loanOfferDrawData{OfferID: n.OfferID, Amount: n.Amount})
+	tx := recordTx(n.BorrowerAuth, n.Borrower, "", 0, core.TxLoanOfferDraw, string(data))
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "pending",
+		"txId":   tx.ID,
+	})
+}
+
+// HandleCancelNegotiation lets either party withdraw before the
+// lender confirms.
+func HandleCancelNegotiation(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req negotiationActionData
+
+	_, address, err := requireSignedRequest(r, &req)
+	if err != nil {
+		writeUnauthorized(w, err)
+		return
+	}
+
+	if !negotiationStore.Cancel(req.NegotiationID, address) {
+		http.Error(w, "negotiation not found, already settled, or you're not a party to it", http.StatusBadRequest)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "cancelled"})
+}

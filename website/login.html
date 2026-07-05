@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OUTERNET Login</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<h1>OUTERNET</h1>
+
+<div class="card" id="returningCard" style="display:none;">
+    <p>Welcome back. This browser already has a wallet.</p>
+    <p id="returningAddress"></p>
+    <button onclick="continueToApp()">Continue</button>
+    <br><br>
+    <button onclick="logoutAndForget()">Use a different wallet</button>
+</div>
+
+<div class="card" id="newCard" style="display:none;">
+    <p>
+        This app is secured by a wallet keypair, not a password -
+        there's no account to "log in" to until you create one.
+    </p>
+    <button onclick="location.href='register.html'">
+        Create Account
+    </button>
+
+    <br><br>
+    <button onclick="toggleRestore()">Restore an existing wallet</button>
+
+    <div id="restoreSection" style="display:none;margin-top:15px;">
+
+        <h3>Restore With Backup Phrase</h3>
+        <p style="opacity:0.7;font-size:12px;">Paste the 64-word phrase you saved at registration.</p>
+        <textarea id="restorePhrase" rows="3" style="width:100%;box-sizing:border-box;" placeholder="word word word ..."></textarea>
+        <br><br>
+        <button onclick="restoreFromPhrase()">Restore</button>
+        <p id="restorePhraseStatus"></p>
+
+        <br>
+        <h3>Recover By Email</h3>
+        <p style="opacity:0.7;font-size:12px;">
+            <strong>This does not recover your old private key</strong> - it migrates your
+            balances and reputation to a brand new wallet in this browser, and permanently
+            freezes the old address. Only works if you set up recovery email on the old
+            wallet beforehand (see Settings). Testnet-only, deliberately weak security -
+            see <a href="companies.html" style="color:#8ef;">disclosures</a> throughout this app.
+        </p>
+        <input type="text" id="recoverOldAddress" placeholder="Your old wallet address">
+        <br><br>
+        <input type="email" id="recoverEmail" placeholder="Recovery email">
+        <br><br>
+        <button onclick="requestRecoveryCode()">1. Request Code</button>
+        <p id="recoveryCodeDisplay"></p>
+        <br>
+        <input type="number" id="recoverYear" placeholder="What year did you create this wallet?">
+        <br><br>
+        <input type="text" id="recoverCode" placeholder="Code shown above">
+        <br><br>
+        <input type="text" id="recoverOldPublicKey" placeholder="(Optional) old public key - migrates ETHTEST/USDCTEST too">
+        <br><br>
+        <button onclick="recoverWallet()">2. Recover Wallet</button>
+        <p id="recoverStatus"></p>
+
+    </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/mnemonic.js"></script>
+<script>
+
+const wallet = getWallet();
+
+if (wallet && wallet.address) {
+    document.getElementById("returningAddress").innerText = wallet.address;
+    document.getElementById("returningCard").style.display = "block";
+} else {
+    document.getElementById("newCard").style.display = "block";
+}
+
+function continueToApp() {
+    location.href = "outernet.html";
+}
+
+function logoutAndForget() {
+    if (confirm("Forget this browser's wallet? This does not delete anything on-chain.")) {
+        clearWallet();
+        location.reload();
+    }
+}
+
+function toggleRestore() {
+    const el = document.getElementById("restoreSection");
+    el.style.display = el.style.display === "none" ? "block" : "none";
+}
+
+async function addressFromPublicKeyHex(pubKeyHex) {
+    const pubBytes = hexToBytes(pubKeyHex);
+    const digest = new Uint8Array(await window.crypto.subtle.digest("SHA-256", pubBytes));
+    return bytesToHex(digest.slice(0, 20));
+}
+
+async function restoreFromPhrase() {
+    const statusEl = document.getElementById("restorePhraseStatus");
+    try {
+        const privateKey = mnemonicToPrivateKey(document.getElementById("restorePhrase").value);
+        if (privateKey.length !== 128) {
+            throw new Error(`expected 64 words (128 hex chars), got ${privateKey.length / 2} bytes`);
+        }
+        const publicKey = privateKey.slice(64); // Go ed25519 layout: seed(32) || publicKey(32)
+        const address = await addressFromPublicKeyHex(publicKey);
+
+        setWallet({ address, publicKey, privateKey });
+        statusEl.innerText = `Restored ${address} - redirecting...`;
+        setTimeout(() => { location.href = "outernet.html"; }, 1000);
+    } catch (e) {
+        statusEl.innerText = "Could not restore: " + e.message;
+    }
+}
+
+async function requestRecoveryCode() {
+    const oldAddress = document.getElementById("recoverOldAddress").value.trim();
+    const statusEl = document.getElementById("recoveryCodeDisplay");
+    if (!oldAddress) {
+        statusEl.innerText = "Enter the old wallet address first.";
+        return;
+    }
+    try {
+        const result = await apiPost("/recovery/request-recovery-code", { oldAddress });
+        statusEl.innerText = `Code: ${result.code} (${result.note})`;
+    } catch (e) {
+        statusEl.innerText = "Could not request code: " + e.message;
+    }
+}
+
+async function recoverWallet() {
+    const statusEl = document.getElementById("recoverStatus");
+    const oldAddress = document.getElementById("recoverOldAddress").value.trim();
+    const email = document.getElementById("recoverEmail").value.trim();
+    const claimedYear = parseInt(document.getElementById("recoverYear").value, 10);
+    const code = document.getElementById("recoverCode").value.trim();
+    const oldPublicKey = document.getElementById("recoverOldPublicKey").value.trim();
+
+    if (!oldAddress || !email || !claimedYear || !code) {
+        statusEl.innerText = "Fill in address, email, year, and code.";
+        return;
+    }
+
+    try {
+        const newWallet = await apiPost("/wallet/create", {});
+        setWallet({ address: newWallet.address, publicKey: newWallet.publicKey, privateKey: newWallet.privateKey });
+
+        const result = await apiPostSigned("/recovery/recover", {
+            oldAddress, email, claimedYear, code, oldPublicKey,
+        });
+        statusEl.innerText = `Recovery pending (tx ${result.txId}) - your new address is ${newWallet.address}. Redirecting...`;
+        setTimeout(() => { location.href = "outernet.html"; }, 2000);
+    } catch (e) {
+        statusEl.innerText = "Could not recover: " + e.message;
+    }
+}
+
+</script>
+
+</body>
+</html>

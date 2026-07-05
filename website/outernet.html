@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta
+name="viewport"
+content="width=device-width, initial-scale=1">
+
+<title>OUTERNET</title>
+
+<link
+rel="stylesheet"
+href="css/style.css">
+
+<link
+rel="stylesheet"
+href="css/outernet.css">
+
+<script>
+
+// The real access control for every page in this app is
+// requireWallet() (see js/api.js and outernet.js below) - whoever
+// holds the wallet keypair in this browser's localStorage IS the
+// account, there's no separate server-side session. logout() here
+// just forgets that local wallet.
+function logout() {
+    if (confirm("Forget this browser's wallet? This does not delete anything on-chain - your address, balances and loans remain on the node.")) {
+        clearWallet();
+        location.href = "login.html";
+    }
+}
+
+</script>
+
+</head>
+
+<body>
+
+<div class="sidebar">
+
+    <div class="brand">
+
+        <h1>
+            🌐 OUTERNET
+        </h1>
+
+        <p>
+            Decentralized Credit OS
+        </p>
+
+    </div>
+
+    <button
+    onclick="location.href='explorer.html'">
+        Explorer
+    </button>
+
+    <button
+    onclick="location.href='governance.html'">
+        Governance
+    </button>
+
+    <button
+    onclick="location.href='reputation.html'">
+        Reputation
+    </button>
+
+    <button
+    onclick="location.href='reputation-math.html'">
+        Reputation Math
+    </button>
+
+    <button
+    onclick="location.href='borrow.html'">
+        Borrow & Lend
+    </button>
+
+    <button
+    onclick="location.href='explorer.html'">
+        Transactions
+    </button>
+
+    <button
+    onclick="location.href='tokens.html'">
+        Token Creation
+    </button>
+
+    <button
+    onclick="location.href='validator.html'">
+        Validator Dashboard
+    </button>
+
+    <button
+    onclick="location.href='pool.html'">
+        Pool
+    </button>
+
+    <button disabled title="Coming soon" style="opacity: 0.5; cursor: default;">
+        Smart Contracts
+    </button>
+
+    <button
+    onclick="location.href='p2p.html'">
+        P2P Center
+    </button>
+
+    <button
+    onclick="location.href='identity.html'">
+        Identity
+    </button>
+
+    <button
+    onclick="location.href='moderation.html'">
+        Moderation
+    </button>
+
+    <button
+    onclick="location.href='companies.html'">
+        Trading Hub
+    </button>
+
+    <button disabled title="Coming soon" style="opacity: 0.5; cursor: default;">
+        Cross-Chain Bridge
+    </button>
+
+    <button disabled title="Coming soon" style="opacity: 0.5; cursor: default;">
+        AI Assistant
+    </button>
+
+    <button
+    onclick="location.href='settings.html'">
+        Settings
+    </button>
+
+    <button
+    onclick="logout()">
+        Logout
+    </button>
+
+</div>
+
+<div class="main">
+
+    <section class="hero-card dash-panel" data-title="Welcome">
+
+        <h1>
+            Welcome,
+            <span id="username">
+                User
+            </span>
+        </h1>
+
+        <p class="network-live">
+            ● Network Live
+        </p>
+
+    </section>
+
+    <div class="grid">
+
+        <div class="card dash-panel" data-title="Profile" style="position:relative;">
+
+            <span
+            onclick="showReceiveAddress()"
+            title="Show QR code for your address"
+            style="position:absolute;top:16px;right:16px;font-size:22px;cursor:pointer;">
+                &#9642;&#9642;&#9642;
+            </span>
+
+            <h2>
+                User Profile
+            </h2>
+
+            <p>
+                Wallet:
+                <span id="wallet">
+                    -
+                </span>
+            </p>
+
+            <p>
+                Node ID:
+                <span id="nodeId">
+                    TODO
+                </span>
+            </p>
+
+            <p>
+                Reputation:
+                <span id="reputation">
+                    50
+                </span>
+            </p>
+
+            <p>
+                Voting Power:
+                <span id="voting">
+                    100
+                </span>
+            </p>
+
+            <p>
+                Credit Score:
+                <span id="credit">
+                    TODO
+                </span>
+            </p>
+
+            <p>
+                Validator:
+                <span id="validator">
+                    TODO
+                </span>
+            </p>
+
+            <p>
+                Account Level:
+                <span id="level">
+                    Genesis
+                </span>
+            </p>
+
+        </div>
+
+        <div class="card dash-panel" data-title="Network">
+
+            <h2>
+                Network Overview
+            </h2>
+
+            <p>
+                Network:
+                CreditChain Testnet
+            </p>
+
+            <p>
+                Block Height:
+                <span id="height">
+                    Loading...
+                </span>
+            </p>
+
+            <p>
+                Latest Hash:
+                <span id="hash">
+                    Loading...
+                </span>
+            </p>
+
+            <p>
+                Peer Count:
+                <span id="peers">
+                    TODO
+                </span>
+            </p>
+
+            <p>
+                Active Validators:
+                <span id="validators">
+                    Loading...
+                </span>
+            </p>
+
+            <p>
+                TPS:
+                <span id="tps">
+                    TODO
+                </span>
+            </p>
+
+            <p>
+                Gas Price:
+                <span id="gas">
+                    TODO
+                </span>
+            </p>
+
+            <p>
+                Total Supply:
+                <span id="supply">
+                    TODO
+                </span>
+            </p>
+
+            <p>
+                Circulating Supply:
+                <span id="circulating">
+                    TODO
+                </span>
+            </p>
+
+        </div>
+
+        <div class="card dash-panel" data-title="Wallet">
+
+            <h2>
+                Wallet
+            </h2>
+
+            <p>
+                CCT:
+                <span id="balance">
+                    TODO
+                </span>
+            </p>
+
+            <p>
+                ETHTEST:
+                <span id="ethTestBalance">
+                    TODO
+                </span>
+                <br>
+                <small style="opacity:0.55;font-family:monospace;" id="ethTestAddress"></small>
+            </p>
+
+            <p>
+                USDCTEST:
+                <span id="usdcTestBalance">
+                    TODO
+                </span>
+                <br>
+                <small style="opacity:0.55;font-family:monospace;" id="usdcTestAddress"></small>
+            </p>
+
+            <p style="opacity:0.6;font-size:12px;">
+                ETHTEST/USDCTEST are imported tokens - they live at their own address
+                (derived from this same wallet key), separate from your CCT address above.
+            </p>
+
+            <button onclick="location.href='send.html'">
+                Send
+            </button>
+
+            <button onclick="showReceiveAddress()">
+                Receive
+            </button>
+
+            <button onclick="location.href='staking.html'">
+                Stake
+            </button>
+
+            <button onclick="location.href='staking.html'">
+                Unstake
+            </button>
+
+            <button onclick="location.href='staking.html'">
+                Rewards
+            </button>
+
+            <button onclick="location.href='pool.html'">
+                Swap
+            </button>
+
+            <button onclick="claimFaucet()">
+                Get Test CCT + ETHTEST + USDCTEST
+            </button>
+
+            <p id="faucetStatus"></p>
+
+        </div>
+
+    </div>
+
+    <div class="grid">
+
+        <div class="card dash-panel" data-title="Blocks">
+
+            <h2>
+                Recent Blocks
+            </h2>
+
+            <pre id="blocks">
+Loading...
+            </pre>
+
+            <button onclick="location.href='explorer.html'">
+                View Full Explorer
+            </button>
+
+        </div>
+
+        <div class="card dash-panel" data-title="Transactions">
+
+            <h2>
+                Recent Transactions
+            </h2>
+
+            <pre id="transactions">
+Loading...
+            </pre>
+
+            <button onclick="location.href='explorer.html'">
+                View Full Explorer
+            </button>
+
+        </div>
+
+    </div>
+
+    <div class="grid">
+
+        <div class="card dash-panel" data-title="Notifications">
+
+            <h2>
+                Notifications
+            </h2>
+
+            <div id="notifications">
+
+                No notifications.
+
+            </div>
+
+        </div>
+
+        <div class="card dash-panel" data-title="Activity">
+
+            <h2>
+                Network Activity
+            </h2>
+
+            <div id="activity">
+
+                Waiting for node...
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<div
+id="qrModalOverlay"
+style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;z-index:10000;">
+    <div style="background:#0b1026;border-radius:16px;padding:25px;max-width:90vw;text-align:center;">
+        <h3 style="margin-top:0;">Your Receive Address</h3>
+        <canvas id="qrCanvas" style="max-width:80vw;height:auto;border-radius:8px;"></canvas>
+        <p id="qrAddressText" style="word-break:break-all;font-family:monospace;font-size:13px;margin:15px 0;"></p>
+        <p style="opacity:0.75;font-size:12px;">Copied to clipboard if supported. Anyone can send you test tokens by scanning this or entering the address on the Send page.</p>
+        <button onclick="closeQrModal()">Close</button>
+    </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/qrcode.js"></script>
+<script src="js/outernet.js"></script>
+<script src="js/mobile-carousel.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>OUTERNET Testnet Whitepaper</title>
+
+    <link rel="stylesheet"
+          href="css/style.css">
+</head>
+<body>
+
+<header>
+    <nav class="navbar">
+        <div class="logo">
+            CreditChain Whitepaper
+        </div>
+
+        <ul>
+            <li>
+                <a href="index.html">
+                    Home
+                </a>
+            </li>
+
+            <li>
+                <a href="login.html">
+                    Launch OUTERNET
+                </a>
+            </li>
+
+            <li>
+                <a href="explorer.html">
+                    Explorer
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+<section>
+
+<h1>OUTERNET Testnet Whitepaper &amp; Roadmap</h1>
+
+<p style="background:#3a2a00;color:#ffd166;border:1px solid #ffd166;border-radius:8px;padding:14px 18px;">
+This document describes a live testnet, not a live financial network.
+Every token named below - <strong>CCT</strong>, <strong>ETHTEST</strong>,
+<strong>USDCTEST</strong>, <strong>REPT</strong> - is a
+participation/points token created for this testnet only. None of them
+have been issued through, or are backed by, any real currency,
+security, or asset, and none of them will convert into real value
+without a completed independent security audit and legal/regulatory
+review first. There is no fixed date for that, and nothing here should
+be read as a promise that it is coming.
+</p>
+
+<h2>What OUTERNET Actually Is</h2>
+
+<p>
+OUTERNET is CreditChain's live testnet: a real proof-of-stake +
+reputation (PoSR) blockchain, written from scratch in Go, currently
+run across two independently operated nodes that gossip transactions,
+produce blocks, and reconcile their chains with each other over a
+plain HTTP peer protocol. It is not a simulation or a mockup sitting
+on top of a database - every balance, loan, vote, and validator record
+shown in the dashboard is the result of a real signed transaction that
+was sequenced into a real block.
+</p>
+
+<h2>How It Operates - the short version</h2>
+
+<ul>
+<li>
+<strong>Wallets are self-certifying.</strong> Registering generates a
+real Ed25519 keypair in your browser; your address is derived directly
+from your public key (<code>SHA256(publicKey)[:20]</code>). The node
+never needs to have seen your address before to trust a request from
+it.
+</li>
+<li>
+<strong>Every mutating action is signed.</strong> Staking, borrowing,
+voting, transferring - each one is signed client-side with your
+private key before it ever reaches the server, and every node
+independently re-verifies that signature before acting on it. Nothing
+is trusted just because "the server said so."
+</li>
+<li>
+<strong>Nothing changes instantly.</strong> Submitting an action (a
+stake, a vote, a loan) queues a transaction; the actual balance/loan/
+vote change happens exactly once, when a validator confirms it inside
+a block. This is what lets two independently-run nodes end up with
+byte-identical state instead of quietly drifting apart.
+</li>
+<li>
+<strong>Validators are chosen by stake + reputation.</strong> PoSR
+selection weighs both how much a validator has staked and their
+on-chain reputation score, and a validator can only produce blocks
+through the specific node its owner explicitly delegated to - not any
+node that happens to know about it.
+</li>
+<li>
+<strong>Reputation is one score, used everywhere.</strong> A single
+0-100 <code>Reputation</code> value per wallet drives your Credit Tier
+(Bronze &rarr; Silver &rarr; Gold &rarr; Diamond &rarr; Genesis), which
+in turn sets your borrow limit, your interest rate, and now your REPT
+progression rewards - see below.
+</li>
+</ul>
+
+<hr>
+
+<h2>Sections of the OUTERNET Dashboard</h2>
+
+<p>Each entry below is a real, working page - what it's for and what it actually does on-chain.</p>
+
+<h3>Wallet (Register / Login)</h3>
+<pre>
+Generates a real Ed25519 keypair client-side
+Address = SHA256(public key)[:20]
+Private key never leaves the browser
+</pre>
+<p>
+The one-time entry point. There is no username/password account behind
+the scenes - whoever holds the keypair in local storage on your device
+IS the account. Losing it means losing access to that address, exactly
+like a real wallet.
+</p>
+
+<h3>Faucet</h3>
+<pre>
+One claim per address
+Funds a fresh wallet with starter test CCT
+</pre>
+<p>
+Lets a new tester get moving without needing someone else to send them
+funds first.
+</p>
+
+<h3>Staking</h3>
+<pre>
+Stake ETHTEST -> earn CCT rewards
+Unstake -> enters an unbonding period before funds are available
+</pre>
+<p>
+Staked ETHTEST also counts as collateral for borrowing, and is what
+qualifies a wallet to register as a validator once it clears the
+minimum stake threshold.
+</p>
+
+<h3>Borrow &amp; Lend</h3>
+<pre>
+Requires collateral: locked CCT OR staked ETHTEST
+Borrow limit + interest rate scale with Credit Tier
+Borrowed funds land in USDCTEST - a separate ledger from CCT,
+so "earned" and "borrowed" balances are never mixed together
+</pre>
+<p>
+Repaying a loan on time (and funding one as a lender) both raise your
+reputation - the credit-scoring half of the "CreditChain" concept, in
+its current, collateral-gated form.
+</p>
+
+<h3>Reputation &amp; REPT</h3>
+<pre>
+Credit Tiers: Bronze < Silver < Gold < Diamond < Genesis
+REPT mints once, the FIRST time you ever reach a new tier:
+  Silver 50 - Gold 200 - Diamond 750 - Genesis 2500
+Dropping a tier and climbing back does not re-mint it
+</pre>
+<p>
+REPT is the newest addition: a token whose entire supply is earned
+through genuine reputation progression, not staking or borrowing - a
+way for "your reputation gained value" to mean something concrete.
+</p>
+
+<h3>Governance</h3>
+<pre>
+Create a proposal -> open for voting
+Vote weight = your current voting power
+</pre>
+<p>
+Every proposal and every vote is itself a signed, block-confirmed
+transaction - governance history is part of the chain, not a separate
+poll system bolted on top of it.
+</p>
+
+<h3>Validator Dashboard</h3>
+<pre>
+Register once staked + reputable enough
+Delegate block production to a specific node
+Track blocks produced, missed blocks, slash count, uptime
+</pre>
+<p>
+Shows whether you're the currently elected leader, and - if a
+validator misses a round or double-signs - the slashing penalty that
+gets applied, replicated identically across every node.
+</p>
+
+<h3>Explorer</h3>
+<pre>
+Paginated block list + paginated transaction list
+Search by block #, block hash, transaction id, or address
+</pre>
+<p>
+A real block explorer: browse recent activity a page at a time instead
+of an unbounded dump, or search the full chain directly for anything
+older than what's currently on screen.
+</p>
+
+<h3>Identity, Settings</h3>
+<p>
+Surface the same underlying wallet/node identity and local
+preferences - no separate account system, no separate database record
+of who you are beyond the keypair itself.
+</p>
+
+<hr>
+
+<h2>Architecture Recap</h2>
+
+<pre>
+Backend:     Go, no external framework, vanilla net/http
+Consensus:   Proof of Stake + Reputation (PoSR)
+Networking:  HTTP-based peer gossip (tx/block/chain sync),
+             shared-secret gated between known peers
+Persistence: JSON snapshots to disk (blockchain.json / state.json)
+Auth:        Signed request envelopes (Ed25519) on every
+             mutating endpoint - no passwords, no sessions
+Frontend:    Plain HTML/CSS/JavaScript, Web Crypto API for
+             client-side signing
+</pre>
+
+<h2>Known, Disclosed Limitations</h2>
+
+<p>
+Every item below is a deliberate, currently-accepted simplification -
+not a hidden bug:
+</p>
+
+<ul>
+<li>
+A chain fork that diverges from a block a node has already applied
+does not auto-resolve; it requires manual operator intervention rather
+than risking silent state corruption.
+</li>
+<li>
+A validator's "missed block" report is trusted from whichever node
+reports it first, once confirmed on-chain - there is no multi-node
+confirmation requirement for that specific offense type yet
+(double-signing, by contrast, is independently re-verified from
+cryptographic evidence by every node before it's applied).
+</li>
+<li>
+No independent security audit has been performed. This whitepaper and
+the disclaimer banner shown throughout the app say so on purpose, and
+will keep saying so until one has.
+</li>
+</ul>
+
+<hr>
+
+<h2>Roadmap</h2>
+
+<h3>Phase 0 - Testnet Core (live now)</h3>
+<ul>
+<li>&check; PoSR consensus with automatic block production</li>
+<li>&check; Signed-request authentication on every mutating action</li>
+<li>&check; Real 2-node P2P network with gossip + chain sync</li>
+<li>&check; Staking, borrowing, governance, reputation, REPT</li>
+<li>&check; Slashing for missed blocks and double-signing</li>
+<li>&check; Block explorer with pagination and search</li>
+</ul>
+
+<h3>Phase 1 - Hardening the Testnet</h3>
+<ul>
+<li>&#9744; Domain name + real TLS certificates in front of both nodes</li>
+<li>&#9744; Automated backups of chain/state data</li>
+<li>&#9744; Broader validator set beyond the current two operator-run nodes</li>
+<li>&#9744; Multi-node confirmation for missed-block slashing reports</li>
+</ul>
+
+<h3>Phase 2 - Growing the Testnet</h3>
+<ul>
+<li>&#9744; Wider tester onboarding beyond the initial pilot group</li>
+<li>&#9744; Developer-facing token registry (custom testnet tokens with
+their own CCT-paired liquidity pool)</li>
+<li>&#9744; Independent professional security audit</li>
+</ul>
+
+<h3>Phase 3 - Beyond Testnet (not scheduled)</h3>
+<p>
+Any path from testnet participation tokens toward real value would
+require the audit above, plus separate legal and regulatory review,
+completed first. That work has not started and this roadmap does not
+promise a date for it.
+</p>
+
+</section>
+
+<footer>
+    <p>
+        CreditChain • Build Reputation.
+        Borrow Anywhere.
+    </p>
+</footer>
+
+<script src="js/api.js"></script>
+
+</body>
+</html>

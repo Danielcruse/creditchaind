@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OUTERNET Validator</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<h1>Validator Dashboard</h1>
+
+<div class="card">
+
+    <h2>Validator Status</h2>
+
+    <p>
+        Status:
+        <span id="validatorStatus">
+            Inactive
+        </span>
+    </p>
+
+    <p>
+        Authorized Node:
+        <span id="authorizedNode">-</span>
+    </p>
+
+    <p>
+        Reputation:
+        <span id="validatorReputation">
+            0
+        </span>
+    </p>
+
+    <p>
+        Voting Power:
+        <span id="validatorVotingPower">
+            0
+        </span>
+    </p>
+
+    <p>
+        Blocks Produced:
+        <span id="blocksProduced">
+            0
+        </span>
+    </p>
+
+    <p>
+        Rewards:
+        <span id="validatorRewards">
+            0
+        </span>
+    </p>
+
+    <p>
+        Blocks Missed:
+        <span id="missedBlocks">0</span>
+    </p>
+
+    <p>
+        Slash Count:
+        <span id="slashCount">0</span>
+    </p>
+
+    <p>
+        Uptime:
+        <span id="uptime">100</span>%
+    </p>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Consensus Status</h2>
+
+    <p>
+        Block production is automatic - the network elects a leader
+        by weighted stake + reputation + uptime every round.
+    </p>
+
+    <p>
+        Chain height:
+        <span id="blockHeight">0</span>
+    </p>
+
+    <p>
+        Round length:
+        <span id="tickInterval">-</span>s
+    </p>
+
+    <p>
+        Current elected leader:
+        <span id="currentLeader">-</span>
+    </p>
+
+    <p id="yourTurn"></p>
+
+    <p id="fallbackNotice" style="opacity:0.8;font-size:13px;color:#ffd166;"></p>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Become Validator</h2>
+
+    <p>
+        Requirements:
+    </p>
+
+    <ul>
+        <li>Reputation ≥ 50</li>
+        <li>Stake at least 1,000 ETHTEST</li>
+    </ul>
+
+    <button onclick="becomeValidator()">
+        Become Validator
+    </button>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Manual Nudge</h2>
+
+    <p>
+        Only works if you are currently the elected leader - otherwise
+        block production happens automatically on its own.
+    </p>
+
+    <button onclick="produceBlock()">
+        Produce Block Now
+    </button>
+
+</div>
+
+<br>
+
+<button
+    onclick="location.href='wallet.html'">
+    Back To Wallet
+</button>
+
+<script src="js/api.js"></script>
+<script src="js/validator.js"></script>
+
+</body>
+</html>

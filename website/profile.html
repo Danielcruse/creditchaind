@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Profile</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="navbar">
+    <div class="logo">
+        OUTERNET Profile
+    </div>
+</header>
+
+<h1>User Profile</h1>
+
+<div class="card">
+
+    <p>
+        <strong>Username:</strong>
+        <span id="username"></span>
+    </p>
+
+    <p>
+        <strong>Email:</strong>
+        <span id="email"></span>
+    </p>
+
+    <p>
+        <strong>Region:</strong>
+        <span id="region"></span>
+    </p>
+
+    <p>
+        <strong>Wallet:</strong>
+        <span id="wallet"></span>
+    </p>
+
+    <p>
+        <strong>Reputation:</strong>
+        <span id="reputation"></span>
+    </p>
+
+    <p>
+        <strong>Voting Power:</strong>
+        <span id="voting"></span>
+    </p>
+
+</div>
+
+<div class="card">
+
+    <h2>Edit Profile</h2>
+
+    <input
+        type="text"
+        id="newUsername"
+        placeholder="New Username">
+
+    <br><br>
+
+    <select id="newRegion"></select>
+
+    <br><br>
+
+    <button onclick="saveProfile()">
+        Save Profile
+    </button>
+
+</div>
+
+<br>
+
+<button onclick="location.href='outernet.html'">
+    Back to OUTERNET
+</button>
+
+<script src="js/regions.js"></script>
+<script>
+
+function loadProfile() {
+
+    document.getElementById(
+        "username"
+    ).innerText =
+        localStorage.getItem(
+            "username"
+        ) || "Not Set";
+
+    document.getElementById(
+        "email"
+    ).innerText =
+        localStorage.getItem(
+            "email"
+        ) || "Not Set";
+
+    document.getElementById(
+        "region"
+    ).innerText =
+        localStorage.getItem(
+            "region"
+        ) || "Not Set";
+
+    document.getElementById(
+        "wallet"
+    ).innerText =
+        localStorage.getItem(
+            "wallet"
+        ) || "No Wallet";
+
+    document.getElementById(
+        "reputation"
+    ).innerText =
+        localStorage.getItem(
+            "reputation"
+        ) || "50";
+
+    document.getElementById(
+        "voting"
+    ).innerText =
+        localStorage.getItem(
+            "voting"
+        ) || "100";
+
+    populateRegionSelect(
+        document.getElementById("newRegion"),
+        localStorage.getItem("region")
+    );
+}
+
+function saveProfile() {
+
+    let username =
+        document.getElementById(
+            "newUsername"
+        ).value;
+
+    let region =
+        document.getElementById(
+            "newRegion"
+        ).value;
+
+    if (username !== "") {
+        localStorage.setItem(
+            "username",
+            username
+        );
+    }
+
+    if (region !== "") {
+        localStorage.setItem(
+            "region",
+            region
+        );
+    }
+
+    loadProfile();
+
+    alert(
+        "Profile Updated!"
+    );
+}
+
+window.onload =
+    loadProfile;
+
+</script>
+
+</body>
+</html>

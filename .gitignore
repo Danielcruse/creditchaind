@@ -1,0 +1,18 @@
+# Runtime chain state - generated per node instance, not source.
+# Equivalent to a database file: never belongs in version control.
+state.json
+blockchain.json
+config.json
+identity.json
+
+# Compiled binaries
+creditchaind
+creditchaind.exe
+/creditchaind_*
+
+# Local tool config, not project source
+.claude/
+
+# OS artifacts
+.DS_Store
+Thumbs.db

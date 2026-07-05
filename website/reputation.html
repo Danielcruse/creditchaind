@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Reputation</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<h1>Reputation</h1>
+
+<div class="card">
+
+<h2>Your Score</h2>
+
+<h1 id="score">-</h1>
+
+<p>Tier: <span id="tier">-</span></p>
+
+</div>
+
+<div class="card">
+
+<h2>History</h2>
+
+<div id="history">Loading...</div>
+
+</div>
+
+<div class="card">
+
+<h2>Voting Power</h2>
+
+<p id="votingPower">-</p>
+
+</div>
+
+<div class="card">
+
+<h2>REPT (Reputation Token)</h2>
+
+<p>Balance: <span id="reptBalance">-</span> REPT</p>
+
+<p style="opacity:0.75;font-size:13px;">
+A one-time REPT reward mints automatically the first time your reputation
+climbs into a new Credit Tier - Silver, Gold, Diamond, then Genesis.
+Dropping and climbing back through a tier you've already reached doesn't
+re-mint it.
+</p>
+
+<p id="reptNextTier" style="opacity:0.75;font-size:13px;"></p>
+
+</div>
+
+<a href="reputation-math.html">How Reputation Is Calculated</a>
+&nbsp;|&nbsp;
+<a href="outernet.html">
+Back to OUTERNET
+</a>
+
+<script src="js/api.js"></script>
+<script src="js/reputation.js"></script>
+
+</body>
+</html>

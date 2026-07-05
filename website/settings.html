@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Settings</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<h1>Settings</h1>
+
+<div class="card">
+
+    <button onclick="logout()">
+        Logout
+    </button>
+
+    <br><br>
+
+    <button onclick="resetWallet()">
+        Reset Wallet
+    </button>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Recovery Email</h2>
+
+    <p style="opacity:0.75;font-size:13px;">
+        Testnet placeholder - links a verified email to this wallet so it can later be
+        <strong>migrated</strong> (not literally recovered - see
+        <a href="login.html" style="color:#8ef;">Login</a> for what that means) if you lose
+        this browser. Combined with your wallet's creation year as a security question.
+        A real deployment would email the code below instead of showing it here.
+    </p>
+
+    <p id="recoveryEmailStatus"></p>
+
+    <input type="email" id="settingsRecoveryEmail" placeholder="Email">
+    <br><br>
+    <button onclick="requestSettingsEmailCode()">1. Request Code</button>
+    <p id="settingsCodeDisplay"></p>
+    <br>
+    <input type="text" id="settingsEmailCode" placeholder="Code shown above">
+    <br><br>
+    <button onclick="confirmSettingsEmail()">2. Confirm Email</button>
+    <p id="settingsEmailStatus"></p>
+
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/settings.js"></script>
+
+</body>
+</html>

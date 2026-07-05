@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OUTERNET Trading Hub</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<h1>Trading Hub</h1>
+
+<div class="card">
+
+    <h2>What This Is</h2>
+
+    <p>
+        A directory of sellers who applied for a "Verified" badge and were
+        reviewed by a registered moderator.
+    </p>
+
+    <p style="opacity:0.75;font-size:12px;">
+        <strong>Testnet placeholder - not real KYC/AML.</strong> This is a
+        stand-in for a real identity-verification and compliance system that
+        will be built before mainnet (real licensing, a real KYC/AML vendor,
+        legal review). Right now, "Verified" means a moderator read what an
+        applicant wrote and vouched for it - nothing here is independently
+        verified, no real documents are collected, and no real-world fiat
+        moves through this app. Do not treat a badge here as a real
+        compliance guarantee.
+    </p>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Apply For A Verified Badge</h2>
+
+    <div class="explorer-search" style="display:flex;flex-direction:column;gap:10px;">
+        <input id="companyName" type="text" placeholder="Company / trading name" maxlength="200">
+        <textarea id="companyDescription" placeholder="Description - what do you trade, how long have you operated, etc." maxlength="2000" rows="3"></textarea>
+        <textarea id="companyDocumentNote" placeholder="Optional: describe any certificate/registration you hold (free text only - do not paste real ID numbers or sensitive personal data here)" maxlength="2000" rows="3"></textarea>
+    </div>
+
+    <button onclick="applyCompany()">Submit Application</button>
+    <p id="companyApplyStatus"></p>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Directory</h2>
+
+    <div id="companyList" class="explorer-empty">
+        Loading...
+    </div>
+
+</div>
+
+<br>
+
+<button
+    onclick="location.href='outernet.html'">
+    Back To Dashboard
+</button>
+&nbsp;|&nbsp;
+<button
+    onclick="location.href='p2p.html'">
+    P2P Center
+</button>
+
+<script src="js/api.js"></script>
+<script src="js/companies.js"></script>
+
+</body>
+</html>

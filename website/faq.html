@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>CreditChain FAQ</title>
+
+    <link rel="stylesheet"
+          href="css/style.css">
+</head>
+<body>
+
+<header>
+    <nav class="navbar">
+        <div class="logo">
+            CreditChain FAQ
+        </div>
+
+        <ul>
+            <li>
+                <a href="index.html">
+                    Home
+                </a>
+            </li>
+
+            <li>
+                <a href="whitepaper.html">
+                    Whitepaper
+                </a>
+            </li>
+
+            <li>
+                <a href="login.html">
+                    Launch OUTERNET
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+<section>
+
+<h1>Frequently Asked Questions</h1>
+
+<p style="opacity:0.8;">
+Quick answers to the questions testers ask most. For the full protocol
+architecture, see the <a href="whitepaper.html">whitepaper</a>.
+</p>
+
+<h3>What is CreditChain?</h3>
+<p>
+A live testnet blockchain combining Proof of Stake with an on-chain
+reputation score, so borrowing power depends on more than just how
+much you can lock up as collateral.
+</p>
+
+<h3>Is any of this real money?</h3>
+<p>
+No. CCT, ETHTEST, USDCTEST, and REPT are testnet participation tokens
+only. None of them are backed by, or convertible into, real currency
+or assets. See the disclaimer on the <a href="whitepaper.html">whitepaper</a>
+for details.
+</p>
+
+<h3>Do I need an account or password?</h3>
+<p>
+No. Registering generates a real Ed25519 keypair in your browser; your
+wallet address is derived directly from your public key. Whoever holds
+the keypair is the account - there's no separate username/password
+system behind it.
+</p>
+
+<h3>What can I use as collateral to borrow?</h3>
+<p>
+Staked CCT or oETH (the receipt you get for staking ETHTEST) - never
+your liquid, spendable CCT. oETH itself can't be sent or transferred
+anywhere else; locking it as collateral here is its only use.
+</p>
+
+<h3>Can another website build on top of CreditChain?</h3>
+<p>
+Yes - every endpoint allows cross-origin requests, and the signed-request
+scheme is self-certifying, so no API key or registration with
+CreditChain itself is required. See the founder notes below for the
+design reasoning, and the whitepaper for the technical architecture.
+</p>
+
+<h3>Has this been audited?</h3>
+<p>
+Not yet. No independent security audit has been performed. That review,
+plus separate legal/regulatory review, is planned before anything here
+could move toward representing real value.
+</p>
+
+<hr>
+
+<div class="card" onclick="location.href='faq-founder-notes.html'" style="cursor:pointer;">
+    <h2>Founder Design Notes v1.0</h2>
+    <p>
+        A deeper Q&amp;A on the reasoning behind CreditChain's design -
+        why collateral works the way it does, why reputation carries
+        real economic weight, and where the protocol is headed long-term.
+    </p>
+    <p style="opacity:0.7;font-size:13px;">Read the full notes &rarr;</p>
+</div>
+
+</section>
+
+<footer>
+    <p>
+        CreditChain • Build Reputation.
+        Borrow Anywhere.
+    </p>
+</footer>
+
+<script src="js/api.js"></script>
+
+</body>
+</html>
