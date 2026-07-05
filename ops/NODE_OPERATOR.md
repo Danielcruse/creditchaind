@@ -1,0 +1,93 @@
+# Running your own CreditChain node
+
+A node is a separate process from the website - `creditchaind` (this
+doc) vs. the static website (`cmd/staticserve`, only needed if you
+also want to host a copy of the site). Running a node means
+participating in consensus/gossip, not serving web pages.
+
+**This network is currently permissioned, not open/permissionless.**
+Anyone can build and run the binary, but joining the actual gossip
+network requires the operator (whoever runs the existing nodes) to
+hand you a shared secret and add your node's address to their peer
+list. There's no self-serve signup flow yet - see the "Known
+limitations" section at the bottom.
+
+## What you need before starting
+
+1. **The `NETWORK_SECRET` value** - ask the network operator for this.
+   Every node must present it on peer-to-peer requests; a node without
+   it can't gossip transactions or blocks with anyone.
+2. **A publicly reachable host:port** for your own node, so other
+   nodes can reach you back (`SELF_URL` below).
+3. **Confirmation from the operator** that they've added your
+   `SELF_URL` to their own `PEERS` list (this is currently a manual,
+   two-way step - see limitations).
+
+## Environment variables
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `PORT` | no (default `8080`) | Port this node listens on. |
+| `DATA_DIR` | no (default `.`) | Where `state.json`/`blockchain.json`/`identity.json` are read/written - gives each node process its own isolated data. |
+| `PEERS` | yes | Comma-separated list of other nodes' base URLs (e.g. `http://node1.example.com:8080,http://node2.example.com:8080`) this node dials on startup to join the network. |
+| `NETWORK_SECRET` | yes | Shared secret required on every peer-to-peer request - get this from the network operator. |
+| `SELF_URL` | yes | This node's own publicly reachable base URL, so peers can register you back and route gossip to you. |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` | no | If both are set, serves HTTPS directly. If unset, serves plain HTTP - fine behind a reverse proxy (nginx/Caddy) that terminates TLS for you, wrong if this node is directly internet-facing with real value at stake. |
+
+## Option A: Docker (recommended)
+
+```
+git clone https://github.com/Danielcruse/creditchaind.git
+cd creditchaind
+# edit docker-compose.yml: fill in SELF_URL, PEERS, NETWORK_SECRET
+docker compose up -d
+docker compose logs -f
+```
+
+Chain data persists in the `creditchaind-data` Docker volume across
+restarts/upgrades.
+
+> Note: this Dockerfile/compose setup was written but not yet
+> build-tested in this environment (no local Docker available) -
+> please confirm `docker compose up` actually works cleanly on your
+> machine and report back if it doesn't.
+
+## Option B: Build and run directly
+
+```
+git clone https://github.com/Danielcruse/creditchaind.git
+cd creditchaind
+go build -o creditchaind .
+
+DATA_DIR=./data \
+SELF_URL="http://your-public-host:8080" \
+PEERS="http://existing-node-1:8080,http://existing-node-2:8080" \
+NETWORK_SECRET="the-shared-secret" \
+PORT=8080 \
+./creditchaind
+```
+
+## Verifying you've actually joined
+
+Once running, check that your node sees the same chain height and
+latest block hash as an existing node:
+
+```
+curl http://localhost:8080/explorer?blocksLimit=1
+curl http://an-existing-node:8080/explorer?blocksLimit=1
+```
+
+`blockHeight` and `latestBlockHash` should converge (may take a few
+blocks to catch up on first sync).
+
+## Known limitations (disclosed, not hidden)
+
+- **No self-serve join flow.** Getting `NETWORK_SECRET` and being
+  added to existing nodes' `PEERS` is currently a manual, out-of-band
+  step with the network operator - there's no in-app request-to-join
+  process yet.
+- **No per-peer reputation or Sybil resistance.** Every node that has
+  the shared secret is trusted equally. A fully open/permissionless
+  P2P layer is a materially larger project than this doc covers, and
+  is appropriate only after the security audit already planned for
+  this project.

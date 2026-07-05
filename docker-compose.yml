@@ -1,0 +1,18 @@
+services:
+  creditchaind:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - creditchaind-data:/data
+    environment:
+      # Fill these in - see ops/NODE_OPERATOR.md for what each one means
+      # and how to get NETWORK_SECRET from the network's operator.
+      DATA_DIR: /data
+      SELF_URL: "http://YOUR_PUBLIC_HOST:8080"
+      PEERS: "http://existing-node-1:8080,http://existing-node-2:8080"
+      NETWORK_SECRET: "changeme"
+    restart: unless-stopped
+
+volumes:
+  creditchaind-data:
