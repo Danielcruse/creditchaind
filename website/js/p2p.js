@@ -109,8 +109,29 @@ async function loadHubDirectory() {
 function showHubDirectory() {
     currentHubAddress = null;
     document.getElementById("p2pHubDetailView").style.display = "none";
+    document.getElementById("p2pNativeSwapView").style.display = "none";
     document.getElementById("p2pDirectoryView").style.display = "block";
     loadHubDirectory();
+}
+
+// showNativeSwapView switches to the Native Token Swap page for
+// whichever hub is currently open - a separate page from the main
+// hub detail/Off-App view, not just a lower section on the same
+// scroll. Reuses the already-loaded p2pHubRatesCache (loadHubRates
+// fills both sessions' columns regardless of which one is visible),
+// so switching is instant with no extra network round-trip.
+function showNativeSwapView() {
+    const company = p2pCompaniesCache.find((c) => c.Address === currentHubAddress);
+    document.getElementById("nativeSwapHubName").innerText = company ? company.Name : "Trading Hub";
+    document.getElementById("nativeSwapHubAddress").innerText = currentHubAddress;
+
+    document.getElementById("p2pHubDetailView").style.display = "none";
+    document.getElementById("p2pNativeSwapView").style.display = "block";
+}
+
+function showHubDetailFromSwap() {
+    document.getElementById("p2pNativeSwapView").style.display = "none";
+    document.getElementById("p2pHubDetailView").style.display = "block";
 }
 
 async function viewHub(address) {
@@ -212,7 +233,7 @@ function renderTokenCard(rate, direction) {
             <div class="explorer-search" style="margin-bottom:6px;">
                 <input id="${id}_amount" type="number" min="0" placeholder="Amount of ${label}" oninput="updateHubTradeQuote('${symbol}', '${direction}', '${rate.Mode || "OFFAPP"}')">
             </div>
-            <div id="${id}_quote" style="font-size:12px;opacity:0.8;margin-bottom:6px;"></div>
+            <div id="${id}_quote"></div>
             <button onclick="requestHubTrade('${symbol}', '${direction}', '${rate.Mode || "OFFAPP"}')">${isBuy ? "Buy" : "Sell"} ${label}</button>
         </div>
     `;
@@ -296,6 +317,11 @@ async function loadHubRates() {
     }
 }
 
+// updateHubTradeQuote is the pre-purchase confirmation step: as soon
+// as an amount is entered, this renders a distinct, clearly-labeled
+// box showing exactly what the trader will owe/receive in total -
+// deliberately not just small inline text - so nobody clicks Buy/Sell
+// without having already seen the real total at this hub's rate.
 function updateHubTradeQuote(symbol, direction, mode) {
     const rate = findRate(symbol, mode);
     if (!rate) return;
@@ -308,7 +334,7 @@ function updateHubTradeQuote(symbol, direction, mode) {
     const onAppSuffix = mode === "ONCHAIN" ? "" : " (off-app)";
 
     if (!amount) {
-        quoteDiv.innerText = "";
+        quoteDiv.innerHTML = "";
         return;
     }
 
@@ -317,24 +343,37 @@ function updateHubTradeQuote(symbol, direction, mode) {
     // applyPlatformFee/skimPlatformFee in api/apply.go. Off-app trades
     // don't settle the fee until the chat concludes, but the same
     // 0.3%-off-the-receiving-side rule applies there too.
-    const feeNote = (net) => `(${PLATFORM_FEE_PERCENT}% platform fee already reflected: you'll net ~${net})`;
+    const feeLine = (net, netSymbol) =>
+        `<div style="font-size:11px;opacity:0.75;margin-top:4px;">${PLATFORM_FEE_PERCENT}% platform fee already reflected - you'll net ~${net} ${netSymbol}.</div>`;
 
     if (direction === "BUY_FROM_HUB") {
         if (amount > rate.HubSymbolBalance) {
-            quoteDiv.innerText = `Only ${rate.HubSymbolBalance} ${label} available from this hub right now.`;
+            quoteDiv.innerHTML = `<div class="p2p-quote-box" style="border-color:#ff6b6b;background:rgba(255,107,107,0.1);">Only ${rate.HubSymbolBalance} ${label} available from this hub right now.</div>`;
             return;
         }
         const owe = amount * rate.SellRate;
         const net = Math.floor(amount * (1 - PLATFORM_FEE_PERCENT / 100));
-        quoteDiv.innerText = `You will owe: ${owe} ${counterLabel}${onAppSuffix}, for ${amount} ${label} ${feeNote(net + " " + label)}.`;
+        quoteDiv.innerHTML = `
+            <div class="p2p-quote-box">
+                <div class="p2p-quote-label">Your Total</div>
+                <div class="p2p-quote-total">You will owe ${owe} ${counterLabel}${onAppSuffix} for ${amount} ${label}</div>
+                ${feeLine(net, label)}
+            </div>
+        `;
     } else {
         if (mode === "ONCHAIN" && amount * rate.BuyRate > (rate.HubCounterBalance || 0)) {
-            quoteDiv.innerText = `Hub only has ${rate.HubCounterBalance || 0} ${counterLabel} available to pay right now.`;
+            quoteDiv.innerHTML = `<div class="p2p-quote-box" style="border-color:#ff6b6b;background:rgba(255,107,107,0.1);">Hub only has ${rate.HubCounterBalance || 0} ${counterLabel} available to pay right now.</div>`;
             return;
         }
         const receive = amount * rate.BuyRate;
         const net = Math.floor(receive * (1 - PLATFORM_FEE_PERCENT / 100));
-        quoteDiv.innerText = `You will pay: ${amount} ${label}, for ${receive} ${counterLabel}${onAppSuffix} ${feeNote(net + " " + counterLabel)}.`;
+        quoteDiv.innerHTML = `
+            <div class="p2p-quote-box">
+                <div class="p2p-quote-label">Your Total</div>
+                <div class="p2p-quote-total">You will pay ${amount} ${label} for ${receive} ${counterLabel}${onAppSuffix}</div>
+                ${feeLine(net, counterLabel)}
+            </div>
+        `;
     }
 }
 
