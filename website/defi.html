@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>DeFi Corner</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<h1>DeFi Corner</h1>
+
+<div class="card" style="border:1px solid #ffb020;">
+<p style="margin:0;font-size:13px;">
+<strong>This is a different chain, and real value.</strong> Bitcoin is
+not part of CreditChain - it's a completely separate blockchain.
+Unlike CCT/REPT/ETHTEST elsewhere on this site (testnet, no real
+value), a real BTC address shown here holds real Bitcoin.
+</p>
+</div>
+
+<div class="card">
+
+<h2>View a Bitcoin wallet (self-custody, read-only)</h2>
+
+<p style="opacity:0.75;font-size:13px;">
+CreditChain never asks for, generates, or stores a Bitcoin private
+key - nothing here can move your BTC. Paste any BTC address (yours or
+anyone's, it's all public chain data) to view its balance and recent
+activity, the same way any block explorer would show it. You keep
+managing that wallet yourself, wherever it actually lives (Trust
+Wallet, a hardware wallet, etc.).
+</p>
+
+<div class="explorer-search">
+<input id="btcAddressInput" type="text" placeholder="BTC address (e.g. bc1...)">
+<button id="btcLookupBtn">View</button>
+</div>
+
+<div id="btcResult"></div>
+
+</div>
+
+<a href="outernet.html">
+Back to OUTERNET
+</a>
+
+<script src="js/defi.js"></script>
+
+</body>
+</html>
