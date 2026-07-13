@@ -14,6 +14,9 @@ type hubRulesSetData struct {
 	// PaymentWindowMinutes: only "BUY_FROM_HUB"/"SELL_TO_HUB" keys are
 	// meaningful - see core.HubRules.PaymentWindowFor.
 	PaymentWindowMinutes map[string]int `json:"paymentWindowMinutes"`
+	// MinReputationToApply gates HubAgentApplication submission - see
+	// core.HubRules.MinReputationToApply's doc comment. 0 = no floor.
+	MinReputationToApply uint64 `json:"minReputationToApply"`
 }
 
 // maxPaymentWindowMinutes caps a hub-set payment window at 24 hours -

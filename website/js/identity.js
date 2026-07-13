@@ -3,7 +3,7 @@ const wallet = requireWallet();
 async function loadIdentity() {
     if (!wallet) return;
 
-    document.getElementById("address").innerText = wallet.address;
+    document.getElementById("address").innerText = formatAddress(wallet.address);
 
     try {
         const [w, reputation] = await Promise.all([

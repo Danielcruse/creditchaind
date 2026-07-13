@@ -99,7 +99,7 @@ async function refreshAssignedTrades() {
         myOffers.forEach((o) => {
             if (o.PaymentMode === "EXTERNAL") {
                 // External trades settle through the dedicated
-                // seller/buyer/moderator flow on the P2P Center, not
+                // seller/buyer/moderator flow on the Marketplace (P2P), not
                 // the generic attestation buttons below - a dispute
                 // there is the one place a moderator's call actually
                 // moves escrowed funds (see api/p2p_external.go).
@@ -107,7 +107,7 @@ async function refreshAssignedTrades() {
                 rows.push(
                     `<p>P2P Offer ${o.ID} (external): ${o.OfferAmount} ${o.OfferSymbol} for ${o.WantAmount} ${o.WantSymbol} (off-app), ` +
                     `creator ${o.Creator.slice(0, 8)}... - settlement ${o.SettlementStatus || "-"}${disputeNote} ` +
-                    `<a href="p2p.html" style="color:#8ef;">Open on P2P Center</a></p>`
+                    `<a href="p2p.html" style="color:#8ef;">Open on Marketplace (P2P)</a></p>`
                 );
                 return;
             }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -107,6 +108,59 @@ func HandleP2PSellerConfirmPaid(w http.ResponseWriter, r *http.Request) {
 
 	data, _ := json.Marshal(req)
 	tx := recordTx(auth, address, "", 0, core.TxP2PSellerConfirmPaid, string(data))
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "pending",
+		"txId":   tx.ID,
+	})
+}
+
+type p2pSellerDisputeData struct {
+	OfferID string `json:"offerId"`
+}
+
+// HandleP2PSellerDispute is the seller (Creator) rejecting a payment
+// claim BEFORE ever confirming it - the counterpart to
+// HandleP2PSellerConfirmPaid for "no, I did not receive this." Only
+// valid while still awaiting payment, and only once the buyer has
+// actually marked payment sent (nothing to dispute before that claim
+// exists).
+func HandleP2PSellerDispute(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req p2pSellerDisputeData
+
+	auth, address, err := requireSignedRequest(r, &req)
+	if err != nil {
+		writeUnauthorized(w, err)
+		return
+	}
+
+	offer, ok := p2pOfferStore.Get(req.OfferID)
+	if !ok {
+		http.Error(w, "offer not found", http.StatusNotFound)
+		return
+	}
+	if offer.Creator != address {
+		http.Error(w, "only the seller can dispute a payment claim", http.StatusForbidden)
+		return
+	}
+	if offer.SettlementStatus != core.SettlementAwaitingPayment {
+		http.Error(w, "not awaiting payment confirmation", http.StatusBadRequest)
+		return
+	}
+	if offer.BuyerMarkedPaidAt == 0 {
+		http.Error(w, "the buyer hasn't claimed payment yet - nothing to dispute", http.StatusBadRequest)
+		return
+	}
+
+	data, _ := json.Marshal(req)
+	tx := recordTx(auth, address, "", 0, core.TxP2PSellerDispute, string(data))
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "pending",
@@ -308,6 +362,12 @@ func HandleP2PMessage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		http.Error(w, "this trade's chat isn't open", http.StatusBadRequest)
 		return
+	}
+
+	for _, party := range []string{offer.Creator, offer.AcceptedBy, offer.ModeratorAddress} {
+		if party != "" && party != address {
+			notifyUser(party, "NEW_MESSAGE", fmt.Sprintf("New message from %s in your trade", address), offer.ID)
+		}
 	}
 
 	json.NewEncoder(w).Encode(map[string]string{"status": "sent"})

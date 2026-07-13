@@ -65,6 +65,28 @@ func clampLimit(n int) int {
 	return n
 }
 
+// isExplorerVisible decides whether a transaction is worth showing in
+// the Explorer. P2P settlement produces several purely procedural
+// "someone clicked a button" transactions (buyer claiming payment,
+// a rejected disagree-confirm, a hub accepting an offer) that never
+// move funds and just clutter the feed - only the transactions that
+// actually move escrow (offer/trade creation, a real confirm-and-release,
+// moderator resolution) count as reportable P2P activity. Deliberately
+// scoped to only these P2P types - every other transaction type
+// (governance, KYC, validator registration, etc.) stays visible.
+func isExplorerVisible(tx core.Transaction) bool {
+	switch tx.Type {
+	case core.TxP2PBuyerMarkPaid, core.TxP2PSellerDispute, core.TxP2PExternalAccept:
+		return false
+	case core.TxP2PBuyerConfirmPaid:
+		var data p2pBuyerConfirmData
+		if err := json.Unmarshal([]byte(tx.Data), &data); err == nil && !data.Agree {
+			return false
+		}
+	}
+	return true
+}
+
 // collectConfirmedTransactions walks blocks newest-to-oldest collecting
 // transactions, skipping offset and stopping once limit is collected -
 // cost is bounded by how far back the requested page is, not by the
@@ -74,6 +96,9 @@ func collectConfirmedTransactions(offset, limit int) (result []core.Transaction,
 	for i := len(blockchain.Blocks) - 1; i >= 0; i-- {
 		txs := blockchain.Blocks[i].Transactions
 		for j := len(txs) - 1; j >= 0; j-- {
+			if !isExplorerVisible(txs[j]) {
+				continue
+			}
 			if skipped < offset {
 				skipped++
 				continue
@@ -240,6 +265,9 @@ func buildAddressProfile(address string) AddressProfile {
 			if tx.From != address && tx.To != address {
 				continue
 			}
+			if !isExplorerVisible(tx) {
+				continue
+			}
 			total++
 
 			if len(txs) < maxAddressProfileTransactions {
@@ -320,7 +348,7 @@ func HandleExplorerSearch(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, tx := range b.Transactions {
-			if tx.ID == query {
+			if tx.ID == query && isExplorerVisible(tx) {
 				resp.Found = true
 				resp.Type = "transactions"
 				resp.Transactions = []TransactionView{viewTransaction(tx)}

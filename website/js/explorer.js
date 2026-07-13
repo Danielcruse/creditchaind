@@ -9,18 +9,30 @@ function shortHash(hash) {
     return hash.length > 16 ? `${hash.slice(0, 8)}...${hash.slice(-6)}` : hash;
 }
 
-function renderBlockRow(block) {
+// renderBlockCube renders one block as a connected "cube" tile (see
+// .block-chain/.block-cube in explorer.html) instead of a table row -
+// each tile visually links to the next via the dashed connector drawn
+// by .block-cube::after, echoing how blocks actually chain together.
+function renderBlockCube(block) {
     const txCount = (block.Transactions || []).length;
     const time = block.Timestamp ? new Date(block.Timestamp * 1000).toLocaleString() : "-";
     return `
-        <div class="explorer-row" title="${block.Hash || ""}">
-            <span>#${block.Index}</span>
-            <span class="explorer-hash">${shortHash(block.Hash)}</span>
-            <span>${txCount} tx</span>
-            <span class="explorer-hash">${block.Validator ? shortHash(block.Validator) : "-"}</span>
-            <span>${time}</span>
+        <div class="block-cube" title="${block.Hash || ""}" onclick="jumpToBlock(${block.Index})">
+            <div class="block-cube-index">#${block.Index}</div>
+            <div class="block-cube-row">${shortHash(block.Hash)}</div>
+            <div class="block-cube-row">${block.Validator ? shortHash(block.Validator) : "genesis"}</div>
+            <div class="block-cube-row" style="opacity:0.5;">${time}</div>
+            <span class="block-cube-txns">${txCount} tx</span>
         </div>
     `;
+}
+
+// jumpToBlock lets clicking a cube act as a shortcut into the same
+// search flow the search box uses, instead of requiring the user to
+// type the block number themselves.
+function jumpToBlock(index) {
+    document.getElementById("explorerSearchInput").value = String(index);
+    runSearch();
 }
 
 // txTypeLabel distinguishes WHICH token a transaction actually moved -
@@ -68,21 +80,26 @@ function reputationBadge(tx) {
     return `<span style="color:${color};font-weight:600;font-size:11px;border:1px solid ${color};border-radius:8px;padding:1px 7px;" title="Reputation change${target}">${sign}${tx.reputationDelta} rep</span>`;
 }
 
+// renderTxRow's "Tx" column shows just the transaction ID, linked to
+// tx.html for the full detail (summary, reputation, raw data) - the
+// list itself stays a quick scannable index, not a place trying to
+// show everything about every row. A pending transaction (still in
+// the mempool, not yet in a block) has no page to link to yet, so it
+// renders as plain text instead of a link.
 function renderTxRow(tx, confirmed) {
     const label = confirmed ? "confirmed" : "pending";
     const time = tx.Timestamp ? new Date(tx.Timestamp * 1000).toLocaleString() : "-";
-    const summary = tx.summary || txTypeLabel(tx);
+    const idDisplay = confirmed
+        ? `<a href="tx.html?id=${encodeURIComponent(tx.ID)}" style="color:#00ff95;">${shortHash(tx.ID)}</a>`
+        : shortHash(tx.ID);
     return `
-        <div class="explorer-row" title="${tx.ID || ""}">
-            <span>[${label}]</span>
-            <span class="explorer-hash">${shortHash(tx.From)} &rarr; ${shortHash(tx.To)}</span>
-            <span>${tx.Amount} (${txTypeLabel(tx)})</span>
-            ${reputationBadge(tx)}
-            <span>${time}</span>
-        </div>
-        <div class="explorer-row" style="border-bottom:none;padding-top:0;opacity:0.75;font-size:12px;">
-            <span>${summary}</span>
-        </div>
+        <tr title="${tx.ID || ""}">
+            <td data-label="Status"><span class="explorer-pill ${label}">${label}</span></td>
+            <td data-label="Tx">${idDisplay}</td>
+            <td data-label="From &rarr; To" class="explorer-hash">${shortHash(tx.From)} &rarr; ${shortHash(tx.To)}</td>
+            <td data-label="Amount">${tx.Amount} (${txTypeLabel(tx)}) ${reputationBadge(tx)}</td>
+            <td data-label="Time">${time}</td>
+        </tr>
     `;
 }
 
@@ -124,7 +141,7 @@ function renderAddressProfile(profile) {
 
     return `
         <div class="card" style="margin:0;">
-            <h3 style="word-break:break-all;">${profile.address}</h3>
+            <h3 style="word-break:break-all;">${formatAddress(profile.address)}</h3>
 
             <div class="explorer-row">
                 <span>CCT</span>
@@ -175,10 +192,21 @@ function renderAddressProfile(profile) {
 
 function renderList(container, items, emptyMessage, rowFn) {
     if (!items || items.length === 0) {
-        container.innerHTML = `<div class="explorer-empty">${emptyMessage}</div>`;
+        container.innerHTML = `<tr><td colspan="5" class="explorer-empty">${emptyMessage}</td></tr>`;
         return;
     }
     container.innerHTML = items.map(rowFn).join("");
+}
+
+// renderBlocks is renderList's counterpart for the block-cube chain -
+// its container is a plain flex div, not a <table>, so the empty
+// state can't reuse renderList's <tr>/<td colspan> markup.
+function renderBlocks(container, blocks) {
+    if (!blocks || blocks.length === 0) {
+        container.innerHTML = `<div class="explorer-empty">No blocks yet.</div>`;
+        return;
+    }
+    container.innerHTML = blocks.map(renderBlockCube).join("");
 }
 
 async function loadExplorer() {
@@ -191,7 +219,7 @@ async function loadExplorer() {
 
         const blockDiv = document.getElementById("blocks");
         const shownBlocks = data.blocks || [];
-        renderList(blockDiv, shownBlocks, "No blocks yet.", renderBlockRow);
+        renderBlocks(blockDiv, shownBlocks);
 
         const blocksTotal = data.blocksTotal || 0;
         document.getElementById("blocksRange").innerText =
@@ -210,7 +238,7 @@ async function loadExplorer() {
             ...confirmedTxs.map((tx) => renderTxRow(tx, true)),
         ];
         if (rows.length === 0) {
-            txDiv.innerHTML = `<div class="explorer-empty">No transactions.</div>`;
+            txDiv.innerHTML = `<tr><td colspan="5" class="explorer-empty">No transactions.</td></tr>`;
         } else {
             txDiv.innerHTML = rows.join("");
         }
@@ -218,6 +246,17 @@ async function loadExplorer() {
             txOffset === 0 ? "Most recent" : `Starting at transaction ${txOffset}`;
         document.getElementById("txPrev").disabled = txOffset === 0;
         document.getElementById("txNext").disabled = !data.transactionsHasMore;
+
+        // Stats bar - block height/latest-block-time reflect the true
+        // chain tip regardless of which page of blocks is currently
+        // shown (blocksTotal already is the tip index+1, and the tip
+        // itself is always shownBlocks[0] on page one).
+        document.getElementById("statBlockHeight").innerText = blocksTotal > 0 ? blocksTotal - 1 : 0;
+        document.getElementById("statPendingTx").innerText = (data.pendingTransactions || []).length;
+        if (blocksOffset === 0 && shownBlocks.length > 0 && shownBlocks[0].Timestamp) {
+            document.getElementById("statLatestBlockTime").innerText =
+                new Date(shownBlocks[0].Timestamp * 1000).toLocaleTimeString();
+        }
     } catch (e) {
         console.error(e);
     }
@@ -225,7 +264,10 @@ async function loadExplorer() {
 
 async function runSearch() {
     const input = document.getElementById("explorerSearchInput");
-    const query = input.value.trim();
+    // normalizeAddress strips an optional "cc" prefix - a no-op for
+    // block/tx hash searches, but lets a pasted "cc..." address still
+    // resolve, since the backend only ever indexed the raw form.
+    const query = normalizeAddress(input.value.trim());
     const resultDiv = document.getElementById("explorerSearchResult");
 
     if (!query) return;
@@ -241,9 +283,10 @@ async function runSearch() {
         }
 
         if (data.type === "block") {
-            resultDiv.innerHTML = renderBlockRow(data.block);
+            resultDiv.innerHTML = `<div class="block-chain">${renderBlockCube(data.block)}</div>`;
         } else if (data.type === "transactions") {
-            resultDiv.innerHTML = data.transactions.map((tx) => renderTxRow(tx, true)).join("");
+            const rows = data.transactions.map((tx) => renderTxRow(tx, true)).join("");
+            resultDiv.innerHTML = `<table class="explorer-table"><tbody>${rows}</tbody></table>`;
         } else if (data.type === "address") {
             resultDiv.innerHTML = renderAddressProfile(data.address);
         }
@@ -266,6 +309,17 @@ document.getElementById("explorerSearchInput").addEventListener("keydown", (e) =
     if (e.key === "Enter") runSearch();
 });
 document.getElementById("explorerSearchClearBtn").addEventListener("click", clearSearch);
+
+// A page can deep-link straight into a search (e.g. asset.html's
+// "View on Explorer" link) via ?q=<address-or-hash> instead of making
+// the user paste it in manually.
+(function prefillSearchFromQueryString() {
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (q) {
+        document.getElementById("explorerSearchInput").value = q;
+        runSearch();
+    }
+})();
 
 document.getElementById("blocksPrev").addEventListener("click", () => {
     blocksOffset = Math.max(0, blocksOffset - EXPLORER_PAGE_SIZE);

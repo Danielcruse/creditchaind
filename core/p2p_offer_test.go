@@ -98,18 +98,14 @@ func TestP2POffer_FullHappyPath_BuyerAgrees(t *testing.T) {
 		t.Fatal("MarkBuyerPaid must NOT advance SettlementStatus - it's informational only")
 	}
 
-	if ok := s.ConfirmSellerPaid("o1", testSeller); !ok {
+	if ok := s.ConfirmSellerPaid("o1", testSeller, 1200); !ok {
 		t.Fatal("expected seller to confirm payment received")
 	}
-	if o.SettlementStatus != SettlementSellerConfirmed {
-		t.Fatalf("expected SELLER_CONFIRMED, got %s", o.SettlementStatus)
-	}
-
-	if _, ok := s.ConfirmBuyer("o1", testBuyer, true); !ok {
-		t.Fatal("expected buyer's agree-confirmation to succeed")
-	}
 	if o.SettlementStatus != SettlementConfirmed {
-		t.Fatalf("expected CONFIRMED, got %s", o.SettlementStatus)
+		t.Fatalf("expected CONFIRMED immediately (no separate buyer confirm step anymore), got %s", o.SettlementStatus)
+	}
+	if o.SellerConfirmedAt != 1200 {
+		t.Fatalf("expected SellerConfirmedAt=1200, got %d", o.SellerConfirmedAt)
 	}
 }
 
@@ -118,10 +114,15 @@ func TestP2POffer_DisputePath_ThenModeratorResolves(t *testing.T) {
 	s := storeWithOffer(o)
 
 	beginAwaitingPayment(t, s, "o1")
-	s.ConfirmSellerPaid("o1", testSeller)
+	if ok := s.MarkBuyerPaid("o1", testBuyer, 1100); !ok {
+		t.Fatal("expected buyer to mark payment sent")
+	}
 
-	if _, ok := s.ConfirmBuyer("o1", testBuyer, false); !ok {
-		t.Fatal("expected buyer's disagree-confirmation to succeed")
+	// Seller disputes the claim BEFORE ever confirming it - the new
+	// dispute entry point, replacing the old post-confirm buyer
+	// disagreement path.
+	if _, ok := s.DisputeAwaitingPayment("o1", testSeller); !ok {
+		t.Fatal("expected seller's dispute to succeed")
 	}
 	if o.SettlementStatus != SettlementDisputed {
 		t.Fatalf("expected DISPUTED, got %s", o.SettlementStatus)
@@ -140,8 +141,8 @@ func TestP2POffer_ResolveDispute_RefundSeller(t *testing.T) {
 	s := storeWithOffer(o)
 
 	beginAwaitingPayment(t, s, "o1")
-	s.ConfirmSellerPaid("o1", testSeller)
-	s.ConfirmBuyer("o1", testBuyer, false)
+	s.MarkBuyerPaid("o1", testBuyer, 1100)
+	s.DisputeAwaitingPayment("o1", testSeller)
 
 	if _, ok := s.ResolveDispute("o1", testModerator, false); !ok {
 		t.Fatal("expected the assigned moderator to resolve the dispute")
@@ -168,16 +169,22 @@ func TestP2POffer_OnlyCreatorCanConfirmSellerPaid(t *testing.T) {
 	s := storeWithOffer(o)
 	beginAwaitingPayment(t, s, "o1")
 
-	if ok := s.ConfirmSellerPaid("o1", testOtherAddr); ok {
+	if ok := s.ConfirmSellerPaid("o1", testOtherAddr, 1200); ok {
 		t.Fatal("expected a non-creator to be rejected from confirming payment received")
 	}
 }
 
+// TestP2POffer_OnlyAssignedBuyerCanConfirm exercises ConfirmBuyer's own
+// authorization check directly against a manually-constructed
+// SELLER_CONFIRMED offer - ConfirmSellerPaid itself no longer produces
+// this status for new trades (see its doc comment), but ConfirmBuyer is
+// kept working for any offer already sitting there, so its
+// authorization behavior still needs to be correct.
 func TestP2POffer_OnlyAssignedBuyerCanConfirm(t *testing.T) {
 	o := newExternalOffer("o1")
 	s := storeWithOffer(o)
 	beginAwaitingPayment(t, s, "o1")
-	s.ConfirmSellerPaid("o1", testSeller)
+	o.SettlementStatus = SettlementSellerConfirmed
 
 	if _, ok := s.ConfirmBuyer("o1", testOtherAddr, true); ok {
 		t.Fatal("expected a non-buyer to be rejected from answering the confirm step")
@@ -188,8 +195,8 @@ func TestP2POffer_OnlyAssignedModeratorCanResolve(t *testing.T) {
 	o := newExternalOffer("o1")
 	s := storeWithOffer(o)
 	beginAwaitingPayment(t, s, "o1")
-	s.ConfirmSellerPaid("o1", testSeller)
-	s.ConfirmBuyer("o1", testBuyer, false)
+	s.MarkBuyerPaid("o1", testBuyer, 1100)
+	s.DisputeAwaitingPayment("o1", testSeller)
 
 	if _, ok := s.ResolveDispute("o1", testOtherAddr, true); ok {
 		t.Fatal("expected a non-assigned moderator to be rejected from resolving")
@@ -214,9 +221,9 @@ func TestP2POffer_CannotDoubleConfirmSellerPaid(t *testing.T) {
 	o := newExternalOffer("o1")
 	s := storeWithOffer(o)
 	beginAwaitingPayment(t, s, "o1")
-	s.ConfirmSellerPaid("o1", testSeller)
+	s.ConfirmSellerPaid("o1", testSeller, 1200)
 
-	if ok := s.ConfirmSellerPaid("o1", testSeller); ok {
+	if ok := s.ConfirmSellerPaid("o1", testSeller, 1200); ok {
 		t.Fatal("expected a second ConfirmSellerPaid call to fail - it's a one-shot claim")
 	}
 }
@@ -225,11 +232,33 @@ func TestP2POffer_CannotResolveUndisputedOffer(t *testing.T) {
 	o := newExternalOffer("o1")
 	s := storeWithOffer(o)
 	beginAwaitingPayment(t, s, "o1")
-	s.ConfirmSellerPaid("o1", testSeller)
-	s.ConfirmBuyer("o1", testBuyer, true) // agrees -> CONFIRMED, never disputed
+	s.ConfirmSellerPaid("o1", testSeller, 1200) // -> CONFIRMED directly, never disputed
 
 	if _, ok := s.ResolveDispute("o1", testModerator, true); ok {
 		t.Fatal("expected ResolveDispute to fail on an offer that was never disputed")
+	}
+}
+
+// --- DisputeAwaitingPayment: the seller's new pre-confirm dispute path ---
+
+func TestP2POffer_DisputeAwaitingPayment_RequiresBuyerClaimFirst(t *testing.T) {
+	o := newExternalOffer("o1")
+	s := storeWithOffer(o)
+	beginAwaitingPayment(t, s, "o1")
+
+	if _, ok := s.DisputeAwaitingPayment("o1", testSeller); ok {
+		t.Fatal("expected dispute to fail before the buyer has claimed payment")
+	}
+}
+
+func TestP2POffer_DisputeAwaitingPayment_OnlyCreatorCanDispute(t *testing.T) {
+	o := newExternalOffer("o1")
+	s := storeWithOffer(o)
+	beginAwaitingPayment(t, s, "o1")
+	s.MarkBuyerPaid("o1", testBuyer, 1100)
+
+	if _, ok := s.DisputeAwaitingPayment("o1", testOtherAddr); ok {
+		t.Fatal("expected a non-creator to be rejected from disputing")
 	}
 }
 
@@ -291,5 +320,106 @@ func TestP2POffer_Moderate_OnlyAssignedModeratorOnce(t *testing.T) {
 	}
 	if ok := s.Moderate("o1", testModerator, true); ok {
 		t.Fatal("expected a second Moderate call to fail - it's one-shot")
+	}
+}
+
+// --- SweepStalledSettlements: the three ways a stalled trade closes ---
+
+func fixedWindowMinutes(minutes int) func(o *P2POffer) int {
+	return func(o *P2POffer) int { return minutes }
+}
+
+func TestP2POffer_Sweep_UnattendedExpiresAndRefundsSeller(t *testing.T) {
+	o := newExternalOffer("o1")
+	s := storeWithOffer(o)
+	beginAwaitingPayment(t, s, "o1") // AwaitingPaymentSince = 1000, neither side has acted
+
+	// Still within the window - nothing should happen yet.
+	stalled := s.SweepStalledSettlements(1000+30*60-1, fixedWindowMinutes(30))
+	if len(stalled) != 0 {
+		t.Fatalf("expected no stalled offers before the window elapses, got %d", len(stalled))
+	}
+	if o.SettlementStatus != SettlementAwaitingPayment {
+		t.Fatalf("expected AWAITING_PAYMENT unchanged, got %s", o.SettlementStatus)
+	}
+
+	// Window has now passed with neither party acting.
+	stalled = s.SweepStalledSettlements(1000+30*60+1, fixedWindowMinutes(30))
+	if len(stalled) != 1 || stalled[0].Offer.ID != "o1" {
+		t.Fatalf("expected offer o1 to be swept as stalled, got %+v", stalled)
+	}
+	if stalled[0].ReleaseToBuyer {
+		t.Fatal("expected unattended-by-both-parties to refund the seller, not release to buyer")
+	}
+	if o.SettlementStatus != SettlementExpired {
+		t.Fatalf("expected EXPIRED, got %s", o.SettlementStatus)
+	}
+
+	// A second sweep must not re-match an already-terminal offer.
+	if stalled := s.SweepStalledSettlements(1000+100*60, fixedWindowMinutes(30)); len(stalled) != 0 {
+		t.Fatalf("expected an already-EXPIRED offer not to be swept again, got %d", len(stalled))
+	}
+}
+
+func TestP2POffer_Sweep_BuyerMarkedPaidAutoReleasesAfterOneHour(t *testing.T) {
+	o := newExternalOffer("o1")
+	s := storeWithOffer(o)
+	beginAwaitingPayment(t, s, "o1")
+	if ok := s.MarkBuyerPaid("o1", testBuyer, 1000); !ok {
+		t.Fatal("expected MarkBuyerPaid to succeed")
+	}
+
+	// Just under an hour since the buyer marked paid - seller still has time.
+	if stalled := s.SweepStalledSettlements(1000+3599, fixedWindowMinutes(30)); len(stalled) != 0 {
+		t.Fatalf("expected no auto-release before a full hour has passed, got %d", len(stalled))
+	}
+
+	// A full hour has passed with the seller never confirming.
+	stalled := s.SweepStalledSettlements(1000+3600, fixedWindowMinutes(30))
+	if len(stalled) != 1 || !stalled[0].ReleaseToBuyer {
+		t.Fatalf("expected offer to auto-release to the buyer, got %+v", stalled)
+	}
+	if o.SettlementStatus != SettlementAutoReleased {
+		t.Fatalf("expected AUTO_RELEASED, got %s", o.SettlementStatus)
+	}
+}
+
+// TestP2POffer_Sweep_SellerConfirmedAutoReleasesAfterOneHourOfBuyerSilence
+// exercises the legacy SELLER_CONFIRMED sweep branch directly (see
+// SweepStalledSettlements' doc comment) - ConfirmSellerPaid itself no
+// longer produces this status for new trades, but any offer already
+// sitting there needs this safety net to still work.
+func TestP2POffer_Sweep_SellerConfirmedAutoReleasesAfterOneHourOfBuyerSilence(t *testing.T) {
+	o := newExternalOffer("o1")
+	s := storeWithOffer(o)
+	beginAwaitingPayment(t, s, "o1")
+	o.SettlementStatus = SettlementSellerConfirmed
+	o.SellerConfirmedAt = 2000
+
+	if stalled := s.SweepStalledSettlements(2000+3599, fixedWindowMinutes(30)); len(stalled) != 0 {
+		t.Fatalf("expected no auto-release before a full hour has passed, got %d", len(stalled))
+	}
+
+	stalled := s.SweepStalledSettlements(2000+3600, fixedWindowMinutes(30))
+	if len(stalled) != 1 || !stalled[0].ReleaseToBuyer {
+		t.Fatalf("expected offer to auto-release to the buyer, got %+v", stalled)
+	}
+	if o.SettlementStatus != SettlementAutoReleased {
+		t.Fatalf("expected AUTO_RELEASED, got %s", o.SettlementStatus)
+	}
+}
+
+func TestP2POffer_Sweep_IgnoresOnChainAndTerminalOffers(t *testing.T) {
+	onchain := newExternalOffer("o1")
+	onchain.PaymentMode = PaymentModeOnChain
+	onchain.SettlementStatus = ""
+
+	s := storeWithOffer(onchain)
+	confirmed := newExternalOffer("o2")
+	confirmed.SettlementStatus = SettlementConfirmed
+	s.Create(confirmed)
+
+	if stalled := s.SweepStalledSettlements(1_000_000_000, fixedWindowMinutes(30)); len(stalled) != 0 {
+		t.Fatalf("expected ONCHAIN and already-terminal offers to never be swept, got %d", len(stalled))
 	}
 }

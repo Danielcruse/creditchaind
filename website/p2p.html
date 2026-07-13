@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>P2P Trading Center</title>
+    <title>Marketplace (P2P)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="css/style.css">
     <style>
         .explorer-search{
@@ -74,27 +75,41 @@
             border-radius:10px;
         }
 
-        /* --- Hub detail: Buy/Sell native-token marketplace panel --- */
-        .hub-marketplace{
-            display:grid;
-            grid-template-columns:1fr auto 1fr;
-            gap:16px;
-            align-items:start;
+        /* --- Hub detail: Buy/Sell native-token marketplace panel ---
+             Only one direction is shown at a time, picked via
+             .hub-mode-toggle below - with many agents/cards posted,
+             stacking both Buy and Sell (even side-by-side, which
+             collapses to stacked on mobile anyway) meant Sell could sit
+             a long scroll below a large Buy list. A toggle keeps
+             either list immediately visible instead of requiring a
+             scroll past the other one. --- */
+        .hub-mode-toggle{
+            display:flex;
+            gap:8px;
+            margin-bottom:16px;
+        }
+        .hub-mode-toggle button{
+            flex:1;
+            padding:10px;
+            border-radius:10px;
+            border:1px solid rgba(255,255,255,0.15);
+            background:rgba(255,255,255,0.05);
+            color:white;
+            cursor:pointer;
+            font-weight:700;
+            opacity:0.55;
+        }
+        .hub-mode-toggle button.active{
+            opacity:1;
+            border-color:#00d2ff;
+            background:rgba(0,210,255,0.15);
         }
         .hub-marketplace-col h3{
             text-align:center;
             margin-top:0;
         }
-        .hub-marketplace-divider{
-            writing-mode:vertical-rl;
-            text-transform:uppercase;
-            letter-spacing:2px;
-            opacity:0.5;
-            font-size:12px;
-            align-self:center;
-            padding:20px 0;
-            border-left:1px solid rgba(255,255,255,0.15);
-            border-right:1px solid rgba(255,255,255,0.15);
+        .hub-marketplace-col[data-direction]{
+            display:none;
         }
         .hub-token-card{
             background:rgba(255,255,255,0.05);
@@ -105,19 +120,6 @@
         }
         .hub-token-card h4{
             margin:0 0 6px 0;
-        }
-        @media (max-width:700px){
-            .hub-marketplace{
-                grid-template-columns:1fr;
-            }
-            .hub-marketplace-divider{
-                writing-mode:horizontal-tb;
-                border-left:none;
-                border-right:none;
-                border-top:1px solid rgba(255,255,255,0.15);
-                border-bottom:1px solid rgba(255,255,255,0.15);
-                padding:8px 0;
-            }
         }
 
         /* --- Session divider between off-app and native-token trading --- */
@@ -130,13 +132,44 @@
             margin-bottom:4px;
         }
 
-        /* --- Persistent "return to active chat" banner --- */
-        #activeChatBanner{
+        /* --- Per-agent marketplace section: the hub's own flagship
+             listing ("Hub Direct") plus one section per operator, each
+             with its own Buy/Sell cards - see groupHubRatesByAgent in
+             js/p2p.js. --- */
+        .hub-agent-section{
+            margin-top:28px;
+            padding-top:18px;
+            border-top:1px solid rgba(255,255,255,0.15);
+        }
+        .hub-agent-name{
+            margin-bottom:10px;
+        }
+
+        /* --- "My Active Trades" widget (replaces the old single-chat banner - a
+           wallet can have more than one EXTERNAL trade in flight at once, e.g.
+           buying from one hub while selling to another) --- */
+        #activeTradesWidget{
             display:none;
             position:fixed;
             top:14px;
             right:14px;
             z-index:9999;
+        }
+        #p2pTradeStatusToast{
+            display:none;
+            position:fixed;
+            top:14px;
+            left:50%;
+            transform:translateX(-50%);
+            z-index:10002;
+            background:#0b1026;
+            border:1px solid rgba(0,210,255,0.4);
+            border-radius:10px;
+            padding:10px 18px;
+            font-size:13px;
+            box-shadow:0 10px 30px rgba(0,0,0,0.5);
+        }
+        #activeTradesToggle{
             background:linear-gradient(90deg,#00d2ff,#3a7bd5);
             color:white;
             padding:10px 16px;
@@ -145,6 +178,44 @@
             font-size:13px;
             font-weight:600;
             box-shadow:0 0 20px rgba(0,210,255,0.4);
+            border:none;
+        }
+        #activeTradesList{
+            display:none;
+            margin-top:8px;
+            background:#0b1026;
+            border:1px solid rgba(255,255,255,0.15);
+            border-radius:10px;
+            padding:6px;
+            width:280px;
+            max-height:320px;
+            overflow-y:auto;
+            box-shadow:0 10px 30px rgba(0,0,0,0.5);
+        }
+        .active-trade-row{
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            gap:8px;
+            padding:9px 10px;
+            border-radius:8px;
+            cursor:pointer;
+            font-size:12px;
+        }
+        .active-trade-row:hover{
+            background:rgba(255,255,255,0.08);
+        }
+        .active-trade-row-summary{
+            overflow:hidden;
+            text-overflow:ellipsis;
+            white-space:nowrap;
+        }
+        .active-trade-row-status{
+            flex:0 0 auto;
+            opacity:0.7;
+            font-size:10px;
+            text-transform:uppercase;
+            letter-spacing:0.5px;
         }
 
         /* --- Hub rules acknowledgment modal --- */
@@ -192,9 +263,9 @@
         }
         #p2pChatFullScreen{
             position:relative;
-            width:70vw;
-            height:70vh;
-            max-width:900px;
+            width:52vw;
+            height:60vh;
+            max-width:640px;
             background:#080b1a;
             border-radius:16px;
             box-shadow:0 10px 60px rgba(0,0,0,0.6);
@@ -205,8 +276,27 @@
         @media (max-width:700px){
             #p2pChatFullScreen{
                 width:92vw;
-                height:85vh;
+                height:80vh;
             }
+        }
+        .p2p-chat-starters{
+            display:flex;
+            gap:6px;
+            flex-wrap:wrap;
+            margin-bottom:8px;
+        }
+        .p2p-chat-starter-chip{
+            font-size:11px;
+            padding:5px 10px;
+            border-radius:14px;
+            border:1px solid rgba(255,255,255,0.2);
+            background:rgba(255,255,255,0.06);
+            color:white;
+            cursor:pointer;
+            white-space:nowrap;
+        }
+        .p2p-chat-starter-chip:hover{
+            background:rgba(0,255,149,0.18);
         }
         #p2pChatClose{
             position:absolute;
@@ -280,6 +370,94 @@
             line-height:1.5;
             margin:10px 0;
         }
+        /* Rules-first gate shown before a chat thread becomes usable -
+           same "read this before you act" visual language as the
+           pre-trade rules-modal-box, just inline instead of an overlay. */
+        .p2p-chat-rules-intro{
+            background:rgba(255,255,255,0.05);
+            border-radius:10px;
+            padding:14px;
+            font-size:12px;
+            line-height:1.6;
+            margin:10px 0;
+            white-space:pre-wrap;
+        }
+        .p2p-chat-rules-intro h4{
+            margin:0 0 6px 0;
+            font-size:13px;
+        }
+        .p2p-chat-rules-intro .p2p-chat-rules-section + .p2p-chat-rules-section{
+            margin-top:12px;
+            padding-top:12px;
+            border-top:1px solid rgba(255,255,255,0.12);
+        }
+        /* Chat bubbles: hub messages on the right, everyone else
+           (user, moderator) on the left - self-contained to this page,
+           not shared with lend.html's separate negotiation-chat CSS. */
+        .chat-message{
+            max-width:78%;
+            margin:6px 0;
+            padding:8px 12px;
+            border-radius:12px;
+            font-size:13px;
+            line-height:1.4;
+            clear:both;
+        }
+        .chat-message.theirs{
+            float:left;
+            background:rgba(255,255,255,0.08);
+            border-bottom-left-radius:2px;
+        }
+        .chat-message.mine{
+            float:right;
+            background:rgba(0,255,149,0.16);
+            border-bottom-right-radius:2px;
+        }
+        .chat-message .sender{
+            font-size:10px;
+            opacity:0.6;
+            margin-bottom:2px;
+        }
+        .chat-message.mine .sender{
+            text-align:right;
+        }
+        #p2pChatMessages::after{
+            content:"";
+            display:block;
+            clear:both;
+        }
+        /* Trade-completion banner - shown inline the moment the chat
+           notices SettlementStatus has newly reached a terminal,
+           funds-moved state (see renderP2PChatModal in p2p.js). */
+        .p2p-trade-complete-banner{
+            background:rgba(0,255,149,0.12);
+            border:1px solid #00ff95;
+            border-radius:10px;
+            padding:10px 14px;
+            font-size:13px;
+            font-weight:600;
+            margin:8px 0;
+            text-align:center;
+        }
+        /* Payment instructions - the hub's own trade-terms text,
+           surfaced inside the chat itself (not just a one-time modal
+           before the trade starts) so it's still there to reference
+           once payment is actually due. */
+        .p2p-payment-instructions{
+            background:rgba(0,210,255,0.08);
+            border:1px solid rgba(0,210,255,0.35);
+            border-radius:10px;
+            padding:10px 14px;
+            font-size:12px;
+            line-height:1.5;
+        }
+        .p2p-payment-instructions-label{
+            font-size:10px;
+            text-transform:uppercase;
+            letter-spacing:0.5px;
+            opacity:0.7;
+            margin-bottom:4px;
+        }
         /* The pre-purchase rate/total quote - deliberately its own
            bordered callout, not small inline text, so a trader sees
            exactly what they'll owe/receive as a distinct confirmation
@@ -302,11 +480,64 @@
             font-size:15px;
             font-weight:700;
         }
+
+        /* --- Hub control panel: sidebar + content, so a hub owner/
+           worker has one consolidated place to manage their hub instead
+           of scattered inline sections. --- */
+        .hub-panel{
+            display:flex;
+            gap:18px;
+            align-items:flex-start;
+            flex-wrap:wrap;
+        }
+        .hub-panel-sidebar{
+            display:flex;
+            flex-direction:column;
+            gap:6px;
+            min-width:160px;
+            flex:0 0 160px;
+        }
+        .hub-panel-nav-btn{
+            text-align:left;
+            padding:10px 14px;
+            border-radius:10px;
+            border:1px solid rgba(255,255,255,0.15);
+            background:rgba(255,255,255,0.05);
+            color:white;
+            cursor:pointer;
+            font-size:13px;
+        }
+        .hub-panel-nav-btn.active{
+            background:rgba(0,255,149,0.12);
+            border-color:#00ff95;
+            font-weight:600;
+        }
+        .hub-panel-content{
+            flex:1;
+            min-width:260px;
+        }
+        .hub-trade-row{
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            gap:12px;
+            padding:12px 14px;
+            border:1px solid rgba(255,255,255,0.12);
+            border-radius:10px;
+            margin-bottom:10px;
+            flex-wrap:wrap;
+        }
+        .hub-trade-row .hub-trade-status{
+            font-size:11px;
+            text-transform:uppercase;
+            letter-spacing:0.5px;
+            opacity:0.75;
+        }
     </style>
 </head>
 <body>
 
-<h1>P2P Trading Center</h1>
+<h1>Marketplace (P2P)</h1>
 
 <p style="opacity:0.6;font-size:12px;">
     With thanks to
@@ -338,6 +569,13 @@
     <h2 id="hubDetailName" style="margin-bottom:2px;"></h2>
     <p id="hubDetailAddress" class="explorer-hash" style="font-size:12px;"></p>
 
+    <!-- Apply to become an agent - shown only to a logged-in wallet
+         that isn't already the hub owner or an active worker. -->
+    <div id="hubAgentApplyBox" style="display:none;margin:10px 0;">
+        <button onclick="applyHubAgent()">Apply to Become an Agent</button>
+        <p id="hubAgentApplyStatus" style="font-size:12px;opacity:0.75;"></p>
+    </div>
+
     <!-- Hub's own custom front-page design - always sandboxed, see
          core.HubStorefront's doc comment. Hidden entirely if the hub
          hasn't designed one. -->
@@ -346,75 +584,112 @@
         <iframe id="hubStorefrontFrame" sandbox="allow-scripts" style="width:100%;border:1px solid rgba(255,255,255,0.15);border-radius:12px;background:white;" height="220"></iframe>
     </div>
 
-    <div id="hubDetailOwnerTools" style="display:none;margin:16px 0;padding:14px;border:1px dashed rgba(255,255,255,0.2);border-radius:12px;">
-        <h4 style="margin-top:0;" id="rateManagerHeading">Manage Your Rate</h4>
-        <div class="explorer-search">
-            <select id="hubRateSymbol" onchange="onHubRateModeChange()"></select>
-            <select id="hubRateMode" onchange="onHubRateModeChange()">
-                <option value="OFFAPP">Session: Off-App Currency</option>
-                <option value="ONCHAIN">Session: Native Token Swap</option>
-            </select>
-        </div>
-        <div class="explorer-search">
-            <input id="hubRateFiatSymbol" type="text" placeholder="Off-app currency label (e.g. TESTFIAT)">
-            <select id="hubRateCounterSymbol" style="display:none;"></select>
-        </div>
-        <div class="explorer-search">
-            <input id="hubRateSellRate" type="number" placeholder="Sell rate (counter unit per 1 unit, when a user buys from you)" min="0">
-            <input id="hubRateBuyRate" type="number" placeholder="Buy rate (counter unit per 1 unit, when a user sells to you)" min="0">
-        </div>
-        <label><input id="hubRateActive" type="checkbox" checked> Active (open for trades)</label>
-        <button onclick="setHubRate()">Post / Update Rate</button>
-        <p id="hubRateSetStatus"></p>
+    <!-- Hub control panel: shown to the hub owner or an active worker.
+         A real sidebar (Open Trades / Settings) instead of scattered
+         inline sections, so managing a hub is one consolidated place. -->
+    <div id="hubDetailOwnerTools" style="display:none;margin:16px 0;">
+        <div class="hub-panel">
+            <div class="hub-panel-sidebar">
+                <button class="hub-panel-nav-btn active" id="hubPanelNavTrades" onclick="showHubPanelTab('trades')">Open Trades</button>
+                <button class="hub-panel-nav-btn" id="hubPanelNavSettings" onclick="showHubPanelTab('settings')">Settings</button>
+            </div>
+            <div class="hub-panel-content">
 
-        <h4>
-            Notifications
-            <span id="hubNotifUnreadBadge" style="display:none;background:#ff4d6d;color:white;font-size:11px;padding:2px 8px;border-radius:10px;margin-left:6px;"></span>
-        </h4>
-        <div id="hubNotificationList" class="explorer-empty">No notifications yet.</div>
-    </div>
+                <!-- ===== Open Trades ===== -->
+                <div id="hubPanelTrades">
+                    <h4 style="margin-top:0;">Open Trades</h4>
+                    <p style="opacity:0.7;font-size:12px;">
+                        Every trade currently in progress with this hub. Click Enter to open the chat and act on it.
+                    </p>
+                    <div id="hubOpenTradesList" class="explorer-empty">Loading...</div>
+                </div>
 
-    <!-- Owner-only: trading rules, worker/customer-care team, and
-         storefront design - all hidden from a logged-in worker, who
-         only gets the rate manager + notifications above. -->
-    <div id="hubOwnerOnlyTools" style="display:none;margin:16px 0;padding:14px;border:1px dashed rgba(255,255,255,0.2);border-radius:12px;">
-        <h4 style="margin-top:0;">Trading Rules</h4>
-        <p style="opacity:0.7;font-size:12px;">Shown to a trader before they can submit a trade request against your rates.</p>
-        <textarea id="hubRulesText" rows="4" style="width:100%;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.05);color:white;box-sizing:border-box;" placeholder="e.g. Contact via chat only. No refunds after confirmation."></textarea>
-        <p style="opacity:0.7;font-size:12px;margin-bottom:6px;">Payment time limit shown as a live countdown in the trade chat - separately for buying from you and selling to you.</p>
-        <div class="explorer-search">
-            <input id="hubRulesBuyWindow" type="number" min="1" max="1440" placeholder="Buy window (minutes, default 30)">
-            <input id="hubRulesSellWindow" type="number" min="1" max="1440" placeholder="Sell window (minutes, default 30)">
-        </div>
-        <button onclick="setHubRules()">Save Rules</button>
-        <p id="hubRulesSetStatus"></p>
+                <!-- ===== Settings ===== -->
+                <div id="hubPanelSettings" style="display:none;">
+                    <h4 style="margin-top:0;" id="rateManagerHeading">Manage Your Listing</h4>
+                    <div class="explorer-search">
+                        <select id="hubRateSymbol" onchange="onHubRateModeChange()"></select>
+                        <select id="hubRateMode" onchange="onHubRateModeChange()">
+                            <option value="OFFAPP">Off-App Currency</option>
+                            <option value="ONCHAIN">Native Token Swap</option>
+                        </select>
+                    </div>
+                    <div class="explorer-search">
+                        <input id="hubRateFiatSymbol" type="text" placeholder="Currency code (e.g. USD, EUR, NGN)">
+                        <select id="hubRateCounterSymbol" style="display:none;"></select>
+                    </div>
+                    <div class="explorer-search">
+                        <input id="hubRateSellRate" type="number" placeholder="Your sell price - what a buyer pays per unit" min="0">
+                        <input id="hubRateBuyRate" type="number" placeholder="Your buy price - what you pay per unit when someone sells to you" min="0">
+                    </div>
+                    <label><input id="hubRateActive" type="checkbox" checked> Active (open for trades)</label>
+                    <button onclick="setHubRate()">Post / Update Listing</button>
+                    <p id="hubRateSetStatus"></p>
 
-        <h4>Team / Customer Care</h4>
-        <p style="opacity:0.7;font-size:12px;">
-            Workers can post and update your rates on your behalf, without ever holding your wallet's private key.
-        </p>
-        <div class="explorer-search">
-            <input id="hubWorkerAddress" type="text" placeholder="Worker's wallet address">
-            <input id="hubWorkerPublicKey" type="text" placeholder="Worker's public key">
-        </div>
-        <div class="explorer-search">
-            <input id="hubWorkerName" type="text" placeholder="Name / role (e.g. 'Morning shift')">
-            <button onclick="addHubWorker()">Add Worker</button>
-        </div>
-        <p id="hubWorkerSetStatus"></p>
-        <div id="hubWorkerList" class="explorer-empty">No workers added yet.</div>
+                    <h4>
+                        Notifications
+                        <span id="hubNotifUnreadBadge" style="display:none;background:#ff4d6d;color:white;font-size:11px;padding:2px 8px;border-radius:10px;margin-left:6px;"></span>
+                    </h4>
+                    <div id="hubNotificationList" class="explorer-empty">No notifications yet.</div>
 
-        <h4>Storefront Design</h4>
-        <p style="opacity:0.7;font-size:12px;">
-            Your own HTML/CSS (and JS if you want) for the corner every visitor to your hub sees. Rendered in a
-            sandboxed frame - it can't read anyone's wallet, cookies, or the rest of this site.
-        </p>
-        <textarea id="hubStorefrontHtml" rows="6" style="width:100%;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.05);color:white;box-sizing:border-box;font-family:monospace;font-size:12px;" placeholder="&lt;div style=&quot;text-align:center&quot;&gt;&lt;h2&gt;Welcome to My Hub&lt;/h2&gt;&lt;/div&gt;"></textarea>
-        <div class="explorer-search">
-            <button onclick="previewHubStorefront()">Preview</button>
-            <button onclick="saveHubStorefront()">Save Design</button>
+                    <!-- Owner-only: trading rules, worker/customer-care
+                         team, and storefront design - all hidden from a
+                         logged-in worker, who only gets the rate manager
+                         + notifications above. -->
+                    <div id="hubOwnerOnlyTools" style="display:none;">
+                        <h4>Trade Terms</h4>
+                        <p style="opacity:0.7;font-size:12px;">Shown to a trader before they can submit a trade request against your listings - clear terms (payment method, timing, refund policy) build trust with traders.</p>
+                        <textarea id="hubRulesText" rows="4" style="width:100%;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.05);color:white;box-sizing:border-box;" placeholder="e.g. Payment via bank transfer only. Confirm within 15 minutes of sending. No refunds after confirmation."></textarea>
+                        <p style="opacity:0.7;font-size:12px;margin-bottom:6px;">Payment time limit shown as a live countdown in the trade chat - separately for buying from you and selling to you.</p>
+                        <div class="explorer-search">
+                            <input id="hubRulesBuyWindow" type="number" min="1" max="1440" placeholder="Buy window (minutes, default 30)">
+                            <input id="hubRulesSellWindow" type="number" min="1" max="1440" placeholder="Sell window (minutes, default 30)">
+                        </div>
+                        <p style="opacity:0.7;font-size:12px;margin-bottom:6px;">Minimum reputation an outernet user needs before they can apply to become one of your agents (0 = anyone can apply).</p>
+                        <input id="hubRulesMinRepToApply" type="number" min="0" max="100" placeholder="Min reputation to apply (default 0)">
+                        <button onclick="setHubRules()">Save Rules</button>
+                        <p id="hubRulesSetStatus"></p>
+
+                        <h4>Agent Applications</h4>
+                        <p style="opacity:0.7;font-size:12px;">
+                            Anyone can apply to become one of your agents - "zoning" incoming trade requests that don't pick a
+                            specific operator round-robins across whichever agents you've approved and left active.
+                        </p>
+                        <div id="hubAgentApplicationList" class="explorer-empty">No applications yet.</div>
+
+                        <h4>Team / Operators</h4>
+                        <p style="opacity:0.7;font-size:12px;">
+                            Each operator you add runs their own independent listing - their own inventory, their own rates,
+                            their own trades - under your hub's verified badge, without ever holding your wallet's private key
+                            or touching your own balance. Think of it as multiple marketplaces inside one verified hub.
+                        </p>
+                        <div class="explorer-search">
+                            <input id="hubWorkerAddress" type="text" placeholder="Operator's wallet address">
+                            <input id="hubWorkerPublicKey" type="text" placeholder="Operator's public key">
+                        </div>
+                        <div class="explorer-search">
+                            <input id="hubWorkerName" type="text" placeholder="Name / role (e.g. 'Downtown branch')">
+                            <button onclick="addHubWorker()">Add Worker</button>
+                        </div>
+                        <p id="hubWorkerSetStatus"></p>
+                        <div id="hubWorkerList" class="explorer-empty">No workers added yet.</div>
+
+                        <h4>Storefront Design</h4>
+                        <p style="opacity:0.7;font-size:12px;">
+                            Your own HTML/CSS (and JS if you want) for the corner every visitor to your hub sees. Rendered in a
+                            sandboxed frame - it can't read anyone's wallet, cookies, or the rest of this site.
+                        </p>
+                        <textarea id="hubStorefrontHtml" rows="6" style="width:100%;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.05);color:white;box-sizing:border-box;font-family:monospace;font-size:12px;" placeholder="&lt;div style=&quot;text-align:center&quot;&gt;&lt;h2&gt;Welcome to My Hub&lt;/h2&gt;&lt;/div&gt;"></textarea>
+                        <div class="explorer-search">
+                            <button onclick="previewHubStorefront()">Preview</button>
+                            <button onclick="saveHubStorefront()">Save Design</button>
+                        </div>
+                        <p id="hubStorefrontSetStatus"></p>
+                    </div>
+                </div>
+
+            </div>
         </div>
-        <p id="hubStorefrontSetStatus"></p>
     </div>
 
     <p style="opacity:0.6;font-size:11px;text-align:center;">
@@ -424,21 +699,19 @@
     </p>
 
     <div class="p2p-session-heading">
-        <h3>Session: Off-App Currency Trading</h3>
-        <p style="opacity:0.6;font-size:11px;">Trade native tokens against this hub's off-app (real-world) currency - settles through a chat/confirmation flow.</p>
+        <h3>Off-App Currency Market</h3>
+        <p style="opacity:0.6;font-size:11px;">
+            Trade native tokens against this hub's off-app (real-world) currencies - settles through a
+            chat/confirmation flow. Each card's dropdown lets you pick which off-app currency to trade
+            against, if this hub (or one of its agents) posted more than one.
+        </p>
     </div>
-    <div class="hub-marketplace">
-        <div class="hub-marketplace-col">
-            <h3>Buy</h3>
-            <p style="opacity:0.6;font-size:11px;text-align:center;">pay external currency &rarr; receive native token</p>
-            <div id="hubBuyColumn"></div>
-        </div>
-        <div class="hub-marketplace-divider">Off-App Currency</div>
-        <div class="hub-marketplace-col">
-            <h3>Sell</h3>
-            <p style="opacity:0.6;font-size:11px;text-align:center;">pay native token &rarr; receive external currency</p>
-            <div id="hubSellColumn"></div>
-        </div>
+    <div class="hub-mode-toggle">
+        <button id="hubModeBtn_OFFAPP_buy" class="active" onclick="setHubMarketplaceMode('OFFAPP', 'buy')">Buy</button>
+        <button id="hubModeBtn_OFFAPP_sell" onclick="setHubMarketplaceMode('OFFAPP', 'sell')">Sell</button>
+    </div>
+    <div id="hubAgentSections">
+        <p class="explorer-empty">Loading...</p>
     </div>
 
     <p style="text-align:center;margin-top:24px;">
@@ -453,32 +726,35 @@
     <p id="nativeSwapHubAddress" class="explorer-hash" style="font-size:12px;"></p>
 
     <div class="p2p-session-heading">
-        <h3>Session: Native Token Swap</h3>
-        <p style="opacity:0.6;font-size:11px;">Trade one native token directly for another native token this hub holds - settles atomically, instantly, no chat needed.</p>
+        <h3>Native Token Swap Market</h3>
+        <p style="opacity:0.6;font-size:11px;">
+            Trade one native token directly for another native token this hub holds - settles atomically,
+            instantly, no chat needed. Each card's dropdown lets you pick which token to swap against, if
+            this hub (or one of its agents) posted more than one.
+        </p>
     </div>
-    <div class="hub-marketplace">
-        <div class="hub-marketplace-col">
-            <h3>Buy</h3>
-            <p style="opacity:0.6;font-size:11px;text-align:center;">pay native token &rarr; receive native token</p>
-            <div id="hubOnChainBuyColumn"></div>
-        </div>
-        <div class="hub-marketplace-divider">Native Token Swap</div>
-        <div class="hub-marketplace-col">
-            <h3>Sell</h3>
-            <p style="opacity:0.6;font-size:11px;text-align:center;">pay native token &rarr; receive native token</p>
-            <div id="hubOnChainSellColumn"></div>
-        </div>
+    <div class="hub-mode-toggle">
+        <button id="hubModeBtn_ONCHAIN_buy" class="active" onclick="setHubMarketplaceMode('ONCHAIN', 'buy')">Buy</button>
+        <button id="hubModeBtn_ONCHAIN_sell" onclick="setHubMarketplaceMode('ONCHAIN', 'sell')">Sell</button>
+    </div>
+    <div id="hubOnChainAgentSections">
+        <p class="explorer-empty">Loading...</p>
     </div>
 </div>
 
-<div id="activeChatBanner" onclick="reopenActiveChat()">Active Trade Chat &rarr;</div>
+<div id="p2pTradeStatusToast"></div>
+
+<div id="activeTradesWidget">
+    <button id="activeTradesToggle" onclick="toggleActiveTradesList()">Active Trades (<span id="activeTradesCount">0</span>) &rarr;</button>
+    <div id="activeTradesList"></div>
+</div>
 
 <div class="rules-modal-overlay" id="rulesModalOverlay">
     <div class="rules-modal-box">
-        <h3 style="margin-top:0;">This Trading Hub's Rules</h3>
+        <h3 style="margin-top:0;">This Hub's Trade Terms</h3>
         <div id="rulesModalText"></div>
         <div class="explorer-search">
-            <button onclick="acknowledgeRulesAndTrade()">I've Read This - Continue</button>
+            <button onclick="acknowledgeRulesAndTrade()">I Understand - Continue</button>
             <button onclick="closeRulesModal()">Cancel</button>
         </div>
     </div>
@@ -497,10 +773,23 @@
             </div>
             <span id="p2pChatModerator" style="font-size:12px;opacity:0.75;"></span>
             <p id="p2pChatSummary" style="font-size:14px;opacity:0.85;"></p>
-            <div id="p2pChatMessages"></div>
-            <div style="display:flex;gap:8px;">
-                <input id="p2pChatInput" type="text" placeholder="Message..." style="flex:1;">
-                <button onclick="sendP2PMessage()">Send</button>
+
+            <!-- Rules-first gate: platform rules, then this hub's own
+                 terms, shown before the thread/input become usable -
+                 see acknowledgeChatRules() in p2p.js. -->
+            <div id="p2pChatRulesIntro" style="display:none;flex:1;overflow-y:auto;">
+                <div id="p2pChatRulesIntroText" class="p2p-chat-rules-intro"></div>
+                <button onclick="acknowledgeChatRules()">Continue to Chat</button>
+            </div>
+
+            <div id="p2pChatThreadBody" style="display:none;flex:1;min-height:0;flex-direction:column;">
+                <div id="p2pChatCompletionBanner"></div>
+                <div id="p2pChatMessages"></div>
+                <div id="p2pChatStarters" class="p2p-chat-starters"></div>
+                <div style="display:flex;gap:8px;">
+                    <input id="p2pChatInput" type="text" placeholder="Message..." style="flex:1;">
+                    <button onclick="sendP2PMessage()">Send</button>
+                </div>
             </div>
             <div class="p2p-panel-nav" onclick="slideToTimerPanel()">Timer &amp; Payment &rarr;</div>
         </div>
@@ -511,6 +800,7 @@
             <h3 style="margin:6px 0 0 0;text-align:center;">Payment Window</h3>
             <div id="p2pChatCountdown" class="p2p-countdown">-</div>
             <p id="p2pChatWindowNote" style="font-size:12px;opacity:0.7;text-align:center;margin-top:0;"></p>
+            <div id="p2pChatPaymentInstructions" style="margin-top:10px;"></div>
             <div id="p2pChatPaymentActions" style="margin-top:10px;overflow-y:auto;"></div>
         </div>
     </div>
@@ -519,12 +809,12 @@
 
 <p style="margin-top:20px;">
     <a href="tokens.html">Token Creation</a> &nbsp;|&nbsp;
-    <a href="pool.html">Pool</a> &nbsp;|&nbsp;
     <a href="explorer.html">Explorer</a> &nbsp;|&nbsp;
     <a href="outernet.html">Back to OUTERNET</a>
 </p>
 
 <script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
 <script src="js/p2p.js"></script>
 
 </body>

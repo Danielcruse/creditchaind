@@ -34,6 +34,12 @@ type CompanyApplication struct {
 	// real uploaded document, never independently verified beyond a
 	// moderator reading it and deciding whether to trust it.
 	DocumentNote string
+	// ContactEmail is where this hub gets notified (e.g. "a trade needs
+	// your attention") when live outbound email is configured on the
+	// node (see api/email.go's smtpConfigured) - optional, "" if the
+	// hub never set one, in which case notifications stay in-app only
+	// (see core.HubNotification), same as always.
+	ContactEmail string
 
 	Status CompanyStatus
 	// ModeratorAddress is assigned the same way as every other
@@ -122,6 +128,24 @@ func (s *CompanyStore) Review(address, moderator string, approve bool, at int64)
 		a.Status = CompanyRejected
 	}
 	a.ReviewedAt = at
+	return true
+}
+
+// SetContactEmail lets an applicant (at any status - PENDING,
+// VERIFIED, or REJECTED, since even a rejected applicant may
+// re-apply later and shouldn't lose this) update where they get
+// emailed. Address-scoped, not moderator-gated - this is the
+// applicant's own notification preference, not something that needs
+// review.
+func (s *CompanyStore) SetContactEmail(address, email string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	a, ok := s.Applications[address]
+	if !ok {
+		return false
+	}
+	a.ContactEmail = email
 	return true
 }
 

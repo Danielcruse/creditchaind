@@ -41,4 +41,14 @@ type Loan struct {
 	// that predates this (nothing to release).
 	CollateralSymbol string
 	CollateralAmount uint64
+
+	// DueAt is when this loan must be repaid by - fundedAt +
+	// the lender's offer duration (see core.LoanOffer.DurationSeconds),
+	// computed once at draw time so it never moves even if the offer
+	// itself changes later. Zero means no due date is enforced (a
+	// self-funded loan via plain /borrow, which has no real lender to
+	// protect, or a loan drawn against a pre-this-feature offer with
+	// no duration set) - see api/apply.go's processLoanDefaults, which
+	// only ever sweeps loans with DueAt > 0.
+	DueAt int64
 }

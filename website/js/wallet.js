@@ -4,12 +4,12 @@ function showReceiveAddress() {
     if (!wallet) return;
 
     if (navigator.clipboard) {
-        navigator.clipboard.writeText(wallet.address).catch(() => {});
+        navigator.clipboard.writeText(formatAddress(wallet.address)).catch(() => {});
     }
 
     alert(
         "Your address (copied to clipboard if supported):\n\n" +
-        wallet.address +
+        formatAddress(wallet.address) +
         "\n\nAnyone can send you test CCT by entering this address on the Send page."
     );
 }
@@ -17,7 +17,7 @@ function showReceiveAddress() {
 async function loadWallet() {
     if (!wallet) return;
 
-    document.getElementById("walletAddress").innerText = wallet.address;
+    document.getElementById("walletAddress").innerText = formatAddress(wallet.address);
 
     try {
         const [w, tokenBalance, usdcTestBalance] = await Promise.all([

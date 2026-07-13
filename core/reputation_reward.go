@@ -9,7 +9,7 @@ var reputationTierReward = map[CreditTier]uint64{
 	TierSilver:  50,
 	TierGold:    200,
 	TierDiamond: 750,
-	TierGenesis: 2500,
+	TierGenesis: 500,
 }
 
 // allTiersInRankOrder is a fixed order to iterate over when summing

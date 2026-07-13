@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 
 	"github.com/creditchain/creditchaind/core"
 )
@@ -138,14 +139,14 @@ func HandleListHubRates(w http.ResponseWriter, r *http.Request) {
 		}
 		var bal uint64
 		if store, err := resolveTokenStore(rate.Symbol); err == nil {
-			hubSide := resolveBalanceAddress(rate.Hub, rate.HubPublicKey, rate.Symbol)
-			bal = store.BalanceOf(hubSide)
+			side := resolveBalanceAddress(rate.InventoryAddress(), rate.HubPublicKey, rate.Symbol)
+			bal = store.BalanceOf(side)
 		}
 		view := hubRateView{HubRate: rate, HubSymbolBalance: bal}
 		if rate.IsOnChain() {
 			if counterStore, err := resolveTokenStore(rate.FiatSymbol); err == nil {
-				hubCounterSide := resolveBalanceAddress(rate.Hub, rate.HubPublicKey, rate.FiatSymbol)
-				view.HubCounterBalance = counterStore.BalanceOf(hubCounterSide)
+				counterSide := resolveBalanceAddress(rate.InventoryAddress(), rate.HubPublicKey, rate.FiatSymbol)
+				view.HubCounterBalance = counterStore.BalanceOf(counterSide)
 			}
 		}
 		views = append(views, view)
@@ -155,10 +156,49 @@ func HandleListHubRates(w http.ResponseWriter, r *http.Request) {
 }
 
 type hubTradeRequestData struct {
-	Hub       string `json:"hub"`
-	Symbol    string `json:"symbol"`
-	Amount    uint64 `json:"amount"`
-	Direction string `json:"direction"` // "BUY_FROM_HUB" | "SELL_TO_HUB"
+	Hub    string `json:"hub"`
+	Symbol string `json:"symbol"`
+	Amount uint64 `json:"amount"`
+	// Operator selects which of Hub's listings to trade against - ""
+	// (default) is the hub's own flagship listing; a specific
+	// operator's address trades against that operator's own inventory
+	// instead (see core.HubRate.OperatorAddress).
+	Operator string `json:"operator"`
+	// FiatSymbol selects which of that actor's currency options for
+	// Symbol to trade against - an actor can post several concurrent
+	// rates for the same Symbol against different counter currencies
+	// (see core.HubRateStore.Set's doc comment), so this is required
+	// to pick one, not inferred.
+	FiatSymbol string `json:"fiatSymbol"`
+	Direction  string `json:"direction"` // "BUY_FROM_HUB" | "SELL_TO_HUB"
+}
+
+// assignAgentForHub picks one of a hub's currently-active agents,
+// round-robin, to zone an incoming trade request to - "" if the hub
+// has no active agents at all (falls back to the hub itself handling
+// it, same as before this feature existed). Rotates using the hub's
+// own notification count as a cheap, good-enough index - doesn't need
+// to be perfectly fair or persisted across restarts, just spread
+// incoming requests across the active team instead of always picking
+// the same one.
+func assignAgentForHub(hub string) string {
+	workers := hubWorkerStore.ListForHub(hub)
+
+	var active []string
+	for _, w := range workers {
+		if w.Active {
+			active = append(active, w.WorkerAddress)
+		}
+	}
+	if len(active) == 0 {
+		return ""
+	}
+	// Sorted for a stable rotation order - ListForHub iterates a Go
+	// map, whose order is randomized per the language spec.
+	sort.Strings(active)
+
+	idx := len(notificationStore.ListFor(hub)) % len(active)
+	return active[idx]
 }
 
 // HandleRequestHubTrade is a regular user instantiating an actual
@@ -188,8 +228,8 @@ func HandleRequestHubTrade(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "amount must be positive", http.StatusBadRequest)
 		return
 	}
-	if req.Hub == address {
-		http.Error(w, "cannot trade against your own hub rate", http.StatusBadRequest)
+	if req.Hub == address || req.Operator == address {
+		http.Error(w, "cannot trade against your own listing", http.StatusBadRequest)
 		return
 	}
 	if req.Direction != "BUY_FROM_HUB" && req.Direction != "SELL_TO_HUB" {
@@ -197,13 +237,17 @@ func HandleRequestHubTrade(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rate, ok := hubRateStore.Get(req.Hub, req.Symbol)
+	rate, ok := hubRateStore.Get(req.Hub, req.Symbol, req.Operator, req.FiatSymbol)
 	if !ok || !rate.Active {
-		http.Error(w, "no active rate posted for that hub/symbol", http.StatusNotFound)
+		http.Error(w, "no active rate posted for that hub/symbol/currency", http.StatusNotFound)
 		return
 	}
 	if !companyStore.IsVerified(req.Hub) {
 		http.Error(w, "hub is no longer a verified Trading Hub", http.StatusForbidden)
+		return
+	}
+	if req.Operator != "" && !hubWorkerStore.IsActiveWorker(req.Hub, req.Operator) {
+		http.Error(w, "operator is no longer an active worker of that hub", http.StatusForbidden)
 		return
 	}
 
@@ -228,9 +272,9 @@ func HandleRequestHubTrade(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "this hub does not sell that symbol", http.StatusBadRequest)
 			return
 		}
-		hubSide := resolveBalanceAddress(rate.Hub, rate.HubPublicKey, req.Symbol)
+		hubSide := resolveBalanceAddress(rate.InventoryAddress(), rate.HubPublicKey, req.Symbol)
 		if store.BalanceOf(hubSide) < req.Amount {
-			http.Error(w, "requested amount exceeds the hub's current available balance", http.StatusBadRequest)
+			http.Error(w, "requested amount exceeds the current available balance", http.StatusBadRequest)
 			return
 		}
 		// ONCHAIN mode also moves the counter token from the requester
@@ -255,9 +299,9 @@ func HandleRequestHubTrade(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if rate.IsOnChain() {
-			hubCounterSide := resolveBalanceAddress(rate.Hub, rate.HubPublicKey, rate.FiatSymbol)
+			hubCounterSide := resolveBalanceAddress(rate.InventoryAddress(), rate.HubPublicKey, rate.FiatSymbol)
 			if counterStore.BalanceOf(hubCounterSide) < req.Amount*rate.BuyRate {
-				http.Error(w, "hub does not currently have enough balance to pay for this trade", http.StatusBadRequest)
+				http.Error(w, "does not currently have enough balance to pay for this trade", http.StatusBadRequest)
 				return
 			}
 		}
@@ -275,14 +319,52 @@ func HandleRequestHubTrade(w http.ResponseWriter, r *http.Request) {
 	if req.Direction == "SELL_TO_HUB" {
 		verb = "sell"
 	}
+
+	// Zone this request to one of the hub's currently-active agents,
+	// round-robin, when the trader didn't already pick a specific
+	// operator to trade against - "a matrix from zoning incoming
+	// requests to active agent[s]." Inactive agents are never in the
+	// pool, so a revoked/paused worker stops receiving new assignments
+	// immediately. Purely informational (who's flagged as responsible
+	// for following up) - the trade itself still settles against the
+	// hub's own posted rate exactly as before.
+	assignedAgent := req.Operator
+	if assignedAgent == "" {
+		assignedAgent = assignAgentForHub(req.Hub)
+	}
+
 	notificationStore.Add(&core.HubNotification{
-		ID:         tx.ID,
-		HubAddress: req.Hub,
-		Type:       "TRADE_REQUEST",
-		Message:    fmt.Sprintf("%s requested to %s %d %s", address, verb, req.Amount, req.Symbol),
-		OfferID:    tx.ID,
-		CreatedAt:  tx.Timestamp,
+		ID:            tx.ID,
+		HubAddress:    req.Hub,
+		Type:          "TRADE_REQUEST",
+		Message:       fmt.Sprintf("%s requested to %s %d %s", address, verb, req.Amount, req.Symbol),
+		OfferID:       tx.ID,
+		CreatedAt:     tx.Timestamp,
+		AssignedAgent: assignedAgent,
 	})
+	if assignedAgent != "" {
+		notifyUser(assignedAgent, "TRADE_STARTED", fmt.Sprintf("You've been assigned a %s request for %d %s at %s", verb, req.Amount, req.Symbol, req.Hub), tx.ID)
+	}
+	notifyUser(address, "TRADE_STARTED", fmt.Sprintf("Your %s request for %d %s was sent to %s", verb, req.Amount, req.Symbol, req.Hub), tx.ID)
+
+	// Best-effort email alert on top of the in-app notification above -
+	// same "purely informational, doesn't gate the trade" reasoning,
+	// so a slow/failed send never blocks or fails this response. Only
+	// fires if the hub set a contact email (core.CompanyApplication.
+	// ContactEmail) AND this node has live SMTP configured (see
+	// api/email.go's smtpConfigured) - silently skipped otherwise,
+	// exactly like every other fail-closed env-gated feature here.
+	if smtpConfigured() {
+		if app, ok := companyStore.Get(req.Hub); ok && app.ContactEmail != "" {
+			go func() {
+				subject := "CreditChain: a trade needs your attention"
+				body := fmt.Sprintf("A trade request needs your attention on CreditChain.\n\n%s requested to %s %d %s.\n\nLog in to your Trading Hub dashboard to respond.", address, verb, req.Amount, req.Symbol)
+				if err := sendEmail(app.ContactEmail, subject, body); err != nil {
+					fmt.Println("email: failed to notify hub:", err)
+				}
+			}()
+		}
+	}
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "pending",

@@ -9,6 +9,7 @@ identity.json
 creditchaind
 creditchaind.exe
 /creditchaind_*
+creditchaind-linux-amd64
 
 # Local tool config, not project source
 .claude/

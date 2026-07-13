@@ -1,114 +1,62 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Liquidity Pool</title>
-    <link rel="stylesheet" href="css/style.css">
-    <style>
-        .explorer-search{
-            display:flex;
-            gap:10px;
-            margin-bottom:15px;
-            flex-wrap:wrap;
-        }
-        .explorer-search input, .explorer-search select{
-            flex:1;
-            min-width:160px;
-            padding:10px 14px;
-            border-radius:10px;
-            border:1px solid rgba(255,255,255,0.15);
-            background:rgba(255,255,255,0.05);
-            color:white;
-            box-sizing:border-box;
-        }
-        .explorer-empty{
-            opacity:0.6;
-            padding:10px 0;
-        }
-    </style>
+    <title>Pool</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="css/pool-light.css">
 </head>
-<body>
+<body class="pool-light">
 
-<h1>Liquidity Pool</h1>
-
-<div class="card">
-    <p style="opacity:0.75;font-size:13px;">
-        Every token on this network - native (ETHTEST, USDCTEST) or developer-registered via
-        <a href="tokens.html" style="color:#8ef;">Token Creation</a> - trades against CCT through
-        a constant-product pool, the same pricing model a real DEX uses. CCT is the hub currency:
-        swapping between two non-CCT tokens automatically routes through both pools as two hops.
-    </p>
-
-    <div id="poolLoggedOut" style="display:none;">
-        <p class="explorer-empty">Log in with a wallet to use pools.</p>
-    </div>
-
-    <div id="poolLoggedIn">
-        <h3>Select a Pool</h3>
-        <div class="explorer-search">
-            <select id="plPoolSymbol"></select>
-        </div>
-        <div id="plPoolInfo"></div>
+<div class="pool-topbar">
+    <a class="pool-topbar-brand" href="pool.html">Pool</a>
+    <div class="pool-topbar-links">
+        <a href="explorer.html">Explorer</a>
+        <a href="outernet.html">Back to OUTERNET</a>
     </div>
 </div>
 
-<br>
-
-<div class="card" id="poolActionsCard" style="display:none;">
-    <h2>Add / Remove Liquidity</h2>
-
-    <h3>Add Liquidity</h3>
-    <div class="explorer-search">
-        <input id="plAddCCT" type="number" placeholder="CCT amount" min="0">
-        <input id="plAddToken" type="number" placeholder="Token amount" min="0">
-        <button id="plAddLiquidityBtn">Add Liquidity</button>
+<div class="pool-wrap">
+    <div class="pool-hero">
+        <h1>OUTERNET Pool</h1>
+        <p>
+            Every token on this network - native (ETHTEST, USDCTEST) or developer-registered - trades
+            against CCT through a constant-product pool, the same pricing model a real DEX uses. Pick a
+            function below.
+        </p>
     </div>
 
-    <h3>Remove Liquidity</h3>
-    <div class="explorer-search">
-        <input id="plRemoveShares" type="number" placeholder="LP shares to remove" min="0">
-        <button id="plRemoveLiquidityBtn">Remove Liquidity</button>
+    <div class="pool-tile-grid">
+        <a class="pool-tile" href="liquidity.html">
+            <div class="pool-tile-icon">&#128167;</div>
+            <h3>Liquidity Pool</h3>
+            <p>Add or remove liquidity from any pool - deposit CCT + a token to earn LP shares, or withdraw your share back out.</p>
+        </a>
+
+        <a class="pool-tile" href="swap.html">
+            <div class="pool-tile-icon">&#8646;</div>
+            <h3>Swap</h3>
+            <p>Trade one token for another - a single pool swap, or a universal swap between any two tokens routed through CCT.</p>
+        </a>
+
+        <a class="pool-tile" href="price-chart.html">
+            <div class="pool-tile-icon">&#128200;</div>
+            <h3>Price Chart</h3>
+            <p>Live price chart for every token that trades on OUTERNET - see how a pool's price has moved from real trading activity.</p>
+        </a>
+
+        <a class="pool-tile" href="order-book.html">
+            <div class="pool-tile-icon">&#128203;</div>
+            <h3>Order Book</h3>
+            <p>Buy and sell CCT against ETHTEST or USDCTEST at your own price - real bid/ask orders set the market price, not a pool.</p>
+        </a>
+
+        <a class="pool-tile" href="tokens.html">
+            <div class="pool-tile-icon">&#128187;</div>
+            <h3>Developers</h3>
+            <p>Register a new token and seed its liquidity pool so it becomes tradeable across the whole network.</p>
+        </a>
     </div>
-    <p id="plPoolStatus"></p>
 </div>
-
-<br>
-
-<div class="card" id="swapCard" style="display:none;">
-    <h2>Swap</h2>
-
-    <h3>Single Pool</h3>
-    <div class="explorer-search">
-        <select id="plSwapDirection">
-            <option value="cct_to_token">CCT -&gt; Token</option>
-            <option value="token_to_cct">Token -&gt; CCT</option>
-        </select>
-        <input id="plSwapAmount" type="number" placeholder="Amount in" min="0">
-        <button id="plSwapBtn">Swap</button>
-    </div>
-
-    <h3>Universal Swap (routed through CCT)</h3>
-    <p style="opacity:0.75;font-size:13px;">
-        Swap between any two tokens - ETHTEST, USDCTEST, CCT, or any registered token. A swap
-        between two non-CCT tokens routes as two hops (token &rarr; CCT &rarr; token).
-    </p>
-    <div class="explorer-search">
-        <select id="plSwapFrom"></select>
-        <select id="plSwapTo"></select>
-        <input id="plSwapViaAmount" type="number" placeholder="Amount in" min="0">
-        <button id="plSwapViaBtn">Swap</button>
-    </div>
-    <p id="plSwapFromBalance" style="opacity:0.75;font-size:13px;"></p>
-    <p id="plSwapViaStatus"></p>
-</div>
-
-<p style="margin-top:20px;">
-    <a href="tokens.html">Token Creation</a> &nbsp;|&nbsp;
-    <a href="explorer.html">Explorer</a> &nbsp;|&nbsp;
-    <a href="outernet.html">Back to OUTERNET</a>
-</p>
-
-<script src="js/api.js"></script>
-<script src="js/pool.js"></script>
 
 </body>
 </html>

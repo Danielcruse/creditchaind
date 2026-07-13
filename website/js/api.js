@@ -244,6 +244,57 @@ async function fetchTokenBalance(wallet, symbol) {
     return apiGet(`/tokens/balance?symbol=${encodeURIComponent(symbol)}&address=${address}`);
 }
 
+// formatAddress/normalizeAddress are purely a DISPLAY-layer convention
+// - every address is still the same raw 40-hex-char value the backend
+// has always used (SHA256(pubkey)[:20], see core/address.go); nothing
+// server-side changed. formatAddress is what every page should call
+// before SHOWING an address to a user (so every address a user sees
+// visibly starts with "cc", easy to recognize as a CreditChain
+// address). normalizeAddress is what every page should call on
+// anything a user TYPES/PASTES/scans before sending it to the API, so
+// a "cc"-prefixed address a user copies from elsewhere in this app
+// still resolves correctly. This two-way convention is deliberately
+// cosmetic/reversible rather than a real protocol change - safe to
+// introduce without touching a single already-registered production
+// wallet's real address.
+function formatAddress(address) {
+    if (!address) return address;
+    return address.toLowerCase().startsWith("cc") ? address : "cc" + address;
+}
+
+function normalizeAddress(address) {
+    if (!address) return address;
+    return address.toLowerCase().startsWith("cc") ? address.slice(2) : address;
+}
+
+// copyToClipboard + copyIconHTML are the one shared implementation
+// every address-copy affordance on the site should use, instead of
+// each page re-implementing its own silent navigator.clipboard call
+// (which is how outernet.html's wallet chip worked before - it copied
+// on click with zero visible feedback, indistinguishable from doing
+// nothing). copyIconHTML emits a small inline button; pass it the
+// exact text to copy (already formatted, e.g. via formatAddress) and
+// a unique id so multiple icons on one page don't collide.
+function copyToClipboard(text, iconId) {
+    if (!navigator.clipboard) return;
+    navigator.clipboard.writeText(text).then(() => {
+        const el = document.getElementById(iconId);
+        if (!el) return;
+        const original = el.innerText;
+        el.innerText = "✓";
+        el.classList.add("copy-icon-done");
+        setTimeout(() => {
+            el.innerText = original;
+            el.classList.remove("copy-icon-done");
+        }, 1400);
+    }).catch(() => {});
+}
+
+function copyIconHTML(text, iconId) {
+    const safeText = String(text).replace(/'/g, "\\'");
+    return `<button type="button" class="copy-icon" id="${iconId}" title="Copy address" onclick="event.stopPropagation();copyToClipboard('${safeText}','${iconId}')">&#128203;</button>`;
+}
+
 function getWallet() {
     try {
         return JSON.parse(localStorage.getItem("cc_wallet"));

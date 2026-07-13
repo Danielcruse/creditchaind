@@ -28,6 +28,14 @@ const (
 	// prior implementation as a small lender-side incentive. Flag if
 	// this should be removed or changed.
 	ReputationDeltaLoanFunded = 2
+	// ReputationDeltaLoanDefaultLenderGain is the flip side of
+	// ReputationDeltaLoanDefault - the peer-funded loan marketplace's
+	// core economics are that the lender is always made whole, never
+	// just left even: a defaulting borrower's reputation loss is framed
+	// as a transfer, not just a penalty, so the lender who bore none of
+	// the risk still gains from the outcome (mirrors gaining their
+	// collateral too - see api/apply.go's forfeitLoanCollateralToLender).
+	ReputationDeltaLoanDefaultLenderGain = ReputationDeltaLoanDefault
 )
 
 // FundLoan/RepayLoan return the REPT reward earned (0 if none) - see

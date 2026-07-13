@@ -2,11 +2,48 @@
 <html>
 <head>
     <title>OUTERNET Governance</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
 <h1>Governance</h1>
+
+<div class="card">
+
+    <h2>Voting Rights</h2>
+
+    <div id="govNotActivated" style="display:none;">
+        <p style="opacity:0.75;font-size:13px;">
+            Activate governance to unlock voting weight and post community status updates that
+            appear live on the CreditChain landing page.
+        </p>
+        <button onclick="activateGovernance()">Activate Governance</button>
+        <p id="activateStatus"></p>
+    </div>
+
+    <div id="govActivated" style="display:none;">
+        <p style="opacity:0.75;font-size:13px;">Governance activated - your votes now carry weight, and you can post status updates below.</p>
+
+        <textarea id="statusText" placeholder="Post a status update or news for the community..." maxlength="500" rows="3" style="width:100%;box-sizing:border-box;"></textarea>
+        <br><br>
+        <button onclick="postGovernanceStatus()">Post Status</button>
+        <p id="statusPostResult"></p>
+    </div>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Community Updates</h2>
+
+    <div id="statusFeed">Loading...</div>
+
+</div>
+
+<br>
 
 <div class="card">
 
@@ -53,6 +90,7 @@
 </button>
 
 <script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
 <script src="js/governance.js"></script>
 
 </body>

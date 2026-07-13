@@ -21,7 +21,33 @@ type ValidatorStatus struct {
 	// api/apply.go's applyValidatorRegister).
 	AuthorizedNodeID        string
 	AuthorizedNodePublicKey string
+
+	// CommissionBps is this validator's cut of pool block rewards, in
+	// basis points (100 = 1%), taken off the top before the remainder
+	// splits pro-rata across delegators (see api/apply.go's
+	// applyBlockReward) - completely separate from AuthorizedNodeID
+	// above: a delegator only ever backs this validator's PoSR weight
+	// and shares its rewards, never gains any say in which node
+	// produces blocks. Only meaningful once this validator actually has
+	// delegators (TotalDelegatedTo > 0) - a validator with none keeps
+	// 100% of its own block rewards regardless of this value, same as
+	// before delegation existed at all.
+	CommissionBps uint16
 }
+
+// DefaultCommissionBps is what a validator starts with on first
+// registration (10%) - a reasonable default a delegator would expect,
+// not free (0%, no incentive to ever change it) and not confiscatory
+// (100%, no reason for anyone to ever delegate). Only applied once, at
+// creation - re-registering an already-known validator (see Register
+// below) never resets a commission rate they've since changed.
+const DefaultCommissionBps = 1000
+
+// MaxCommissionBps caps what a validator may ever set their own
+// commission to (50%) - prevents a validator from setting a rate so
+// high delegating to them would be pointless, without banning a
+// meaningfully high rate outright.
+const MaxCommissionBps = 5000
 
 // Uptime is BlocksProduced/(BlocksProduced+MissedBlocks), defaulting
 // to a clean 1.0 before this validator has had any rounds at all -
@@ -66,10 +92,27 @@ func (vs *ValidatorStore) Register(address, nodeID, nodePublicKey string) *Valid
 		Active:                  true,
 		AuthorizedNodeID:        nodeID,
 		AuthorizedNodePublicKey: nodePublicKey,
+		CommissionBps:           DefaultCommissionBps,
 	}
 	vs.Validators[address] = v
 
 	return v
+}
+
+// SetCommission updates address's commission rate - only ever called
+// from applyValidatorSetCommission, which independently re-verifies
+// the caller actually IS address before this runs (never trusted from
+// submission-time state alone). Silently no-ops on an unknown address
+// or an out-of-range rate rather than erroring, matching this
+// codebase's convention that apply-side functions never trust
+// submission-time state and just decline to act on anything invalid.
+func (vs *ValidatorStore) SetCommission(address string, bps uint16) bool {
+	v, ok := vs.Validators[address]
+	if !ok || bps > MaxCommissionBps {
+		return false
+	}
+	v.CommissionBps = bps
+	return true
 }
 
 func (vs *ValidatorStore) Get(address string) (*ValidatorStatus, bool) {

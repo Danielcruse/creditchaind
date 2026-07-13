@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Price Chart</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="css/pool-light.css">
+</head>
+<body class="pool-light">
+
+<div class="pool-topbar">
+    <a class="pool-topbar-brand" href="pool.html">Pool</a>
+    <div class="pool-topbar-links">
+        <a href="liquidity.html">Liquidity Pool</a>
+        <a href="swap.html">Swap</a>
+        <a href="order-book.html">Order Book</a>
+        <a href="outernet.html">Back to OUTERNET</a>
+    </div>
+</div>
+
+<div class="pool-wrap">
+    <a class="pool-back-link" href="pool.html">&larr; Pool</a>
+
+    <div class="pool-card">
+        <h2>Price Chart</h2>
+        <p class="pool-muted">
+            Live price for every token that trades on OUTERNET, in CCT per unit - sampled every time a
+            swap or liquidity change actually moves a pool's ratio, not on a fixed interval, so a quiet
+            token shows a flat line.
+        </p>
+
+        <div class="pool-row">
+            <select id="pcTokenSymbol"></select>
+        </div>
+
+        <div id="pcChartContainer"><p class="pool-empty">Loading...</p></div>
+    </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
+<script src="js/price-chart.js"></script>
+
+</body>
+</html>

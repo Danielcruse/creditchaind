@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/creditchain/creditchaind/core"
@@ -14,10 +15,23 @@ import (
 
 var companyStore = core.NewCompanyStore()
 
+// HubApplyFeeCCT is a CCT anti-spam cost for applying to become a
+// Verified Trading Hub - same fast-fail-check-plus-authoritative-
+// re-deduct pattern as TokenCreationFeeETHTest (see
+// api/token_registry.go), paid to registrationFeeAddress. A hub is
+// the highest-trust, most user-facing role a wallet can apply for
+// short of running a validator, so it costs more than a moderator
+// registration - a disclosed judgment call, not a locked spec value.
+const HubApplyFeeCCT = 25
+
 type companyApplyData struct {
 	Name         string `json:"name"`
 	Description  string `json:"description"`
 	DocumentNote string `json:"documentNote"`
+	// ContactEmail is optional - see core.CompanyApplication's doc
+	// comment. Left "" if the applicant doesn't want email
+	// notifications (in-app notifications still work regardless).
+	ContactEmail string `json:"contactEmail"`
 }
 
 // HandleApplyCompany lets any wallet apply for the testnet "Verified"
@@ -47,9 +61,18 @@ func HandleApplyCompany(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "description and documentNote must each be under 2000 characters", http.StatusBadRequest)
 		return
 	}
+	if len(req.ContactEmail) > 200 {
+		http.Error(w, "contactEmail must be under 200 characters", http.StatusBadRequest)
+		return
+	}
 
 	if _, exists := companyStore.Get(address); exists {
 		http.Error(w, "an application already exists for this address", http.StatusBadRequest)
+		return
+	}
+
+	if tokenStore.BalanceOf(address) < HubApplyFeeCCT {
+		http.Error(w, fmt.Sprintf("you need at least %d CCT to cover the hub application fee", HubApplyFeeCCT), http.StatusBadRequest)
 		return
 	}
 
@@ -110,6 +133,48 @@ func HandleReviewCompany(w http.ResponseWriter, r *http.Request) {
 
 	data, _ := json.Marshal(req)
 	tx := recordTx(auth, address, "", 0, core.TxCompanyReview, string(data))
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "pending",
+		"txId":   tx.ID,
+	})
+}
+
+type companyUpdateContactData struct {
+	ContactEmail string `json:"contactEmail"`
+}
+
+// HandleUpdateCompanyContact lets an applicant/hub change where they
+// get emailed trade-attention notifications - available regardless of
+// application status, and not moderator-gated (see
+// core.CompanyStore.SetContactEmail's doc comment).
+func HandleUpdateCompanyContact(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req companyUpdateContactData
+
+	auth, address, err := requireSignedRequest(r, &req)
+	if err != nil {
+		writeUnauthorized(w, err)
+		return
+	}
+
+	if len(req.ContactEmail) > 200 {
+		http.Error(w, "contactEmail must be under 200 characters", http.StatusBadRequest)
+		return
+	}
+	if _, ok := companyStore.Get(address); !ok {
+		http.Error(w, "no application on file for this address", http.StatusNotFound)
+		return
+	}
+
+	data, _ := json.Marshal(req)
+	tx := recordTx(auth, address, "", 0, core.TxCompanyUpdateContact, string(data))
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "pending",

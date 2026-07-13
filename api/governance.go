@@ -1,13 +1,17 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/creditchain/creditchaind/core"
 )
 
 var proposalStore = core.NewProposalStore()
+var governanceStatusStore = core.NewGovernanceStatusStore()
 
 const (
 	maxProposalTitleLen = 200
@@ -124,4 +128,96 @@ func HandleVoteProposal(
 			"txId":   tx.ID,
 		},
 	)
+}
+
+// HandleActivateGovernance is a wallet opting in to governance/voting
+// rights - see applyGovernance's "activate" case for what this
+// actually flips (Wallet.VotingPower 0 -> 1). Once activated, the
+// same wallet can post status updates via HandlePostGovernanceStatus.
+func HandleActivateGovernance(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct{}
+
+	auth, address, err := requireSignedRequest(r, &req)
+	if err != nil {
+		writeUnauthorized(w, err)
+		return
+	}
+
+	data, _ := json.Marshal(governanceData{Action: "activate"})
+	tx := recordTx(auth, address, "", 0, core.TxGovernance, string(data))
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "pending",
+		"txId":   tx.ID,
+	})
+}
+
+func newGovernanceStatusID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+const maxGovernanceStatusLen = 500
+
+type postGovernanceStatusData struct {
+	Text string `json:"text"`
+}
+
+// HandlePostGovernanceStatus lets an activated wallet (VotingPower >
+// 0) post a free-text update - takes effect immediately (not queued
+// as a block-confirmed transaction), same reasoning as negotiation
+// chat messages: this moves no value and doesn't need consensus-level
+// guarantees, only proof it really came from an activated wallet.
+func HandlePostGovernanceStatus(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req postGovernanceStatusData
+
+	_, address, err := requireSignedRequest(r, &req)
+	if err != nil {
+		writeUnauthorized(w, err)
+		return
+	}
+
+	if len(req.Text) == 0 || len(req.Text) > maxGovernanceStatusLen {
+		http.Error(w, "status must be 1-500 characters", http.StatusBadRequest)
+		return
+	}
+
+	if walletStore.Get(address).VotingPower == 0 {
+		http.Error(w, "activate governance/voting rights before posting a status update", http.StatusForbidden)
+		return
+	}
+
+	governanceStatusStore.Add(&core.GovernanceStatus{
+		ID:        newGovernanceStatusID(),
+		Address:   address,
+		Text:      req.Text,
+		Timestamp: time.Now().Unix(),
+	})
+
+	json.NewEncoder(w).Encode(map[string]string{"status": "posted"})
+}
+
+// HandleRecentGovernanceStatuses is a public read (no wallet needed) -
+// this is what the public landing page's live news corner polls, so
+// it deliberately has no auth requirement, same as every other public
+// GET in this app.
+func HandleRecentGovernanceStatuses(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	json.NewEncoder(w).Encode(governanceStatusStore.Recent(20))
 }

@@ -1,4 +1,4 @@
-function logout() {
+function settingsLogout() {
     localStorage.removeItem("loggedIn");
     location.href = "login.html";
 }

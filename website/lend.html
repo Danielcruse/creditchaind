@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Lend</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .explorer-search{
+            display:flex;
+            gap:10px;
+            margin-bottom:15px;
+            flex-wrap:wrap;
+        }
+        .explorer-search input{
+            flex:1;
+            min-width:160px;
+            padding:10px 14px;
+            border-radius:10px;
+            border:1px solid rgba(255,255,255,0.15);
+            background:rgba(255,255,255,0.05);
+            color:white;
+            box-sizing:border-box;
+        }
+        .explorer-row{
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            gap:12px;
+            padding:10px 12px;
+            border-bottom:1px solid rgba(255,255,255,0.08);
+            font-family:monospace;
+            font-size:13px;
+            flex-wrap:wrap;
+        }
+        .explorer-row:last-child{
+            border-bottom:none;
+        }
+        .explorer-hash{
+            opacity:0.75;
+        }
+        .explorer-empty{
+            opacity:0.6;
+            padding:10px 0;
+        }
+        .draw-amount{
+            width:100px;
+            padding:6px 8px;
+            border-radius:8px;
+            border:1px solid rgba(255,255,255,0.15);
+            background:rgba(255,255,255,0.05);
+            color:white;
+        }
+        .explorer-search select{
+            flex:1;
+            min-width:120px;
+            padding:10px 14px;
+            border-radius:10px;
+            border:1px solid rgba(255,255,255,0.15);
+            background:rgba(255,255,255,0.05);
+            color:white;
+            box-sizing:border-box;
+        }
+        .modal-overlay{
+            display:none;
+            position:fixed;
+            inset:0;
+            background:rgba(0,0,0,0.7);
+            align-items:center;
+            justify-content:center;
+            z-index:10000;
+        }
+        .modal-box{
+            background:#0b1026;
+            border-radius:16px;
+            padding:20px;
+            width:min(500px, 90vw);
+            max-height:80vh;
+            display:flex;
+            flex-direction:column;
+        }
+        .chat-messages{
+            flex:1;
+            overflow-y:auto;
+            max-height:300px;
+            border:1px solid rgba(255,255,255,0.1);
+            border-radius:10px;
+            padding:10px;
+            margin:10px 0;
+            font-size:13px;
+        }
+        .chat-message{
+            margin-bottom:8px;
+        }
+        .chat-message .sender{
+            opacity:0.6;
+            font-size:11px;
+        }
+        .kyc-field{
+            margin-bottom:10px;
+        }
+        .kyc-field label{
+            display:block;
+            font-size:12px;
+            opacity:0.7;
+            margin-bottom:4px;
+        }
+        .kyc-field input[type="text"], .kyc-field input[type="date"]{
+            width:100%;
+            padding:10px 14px;
+            border-radius:10px;
+            border:1px solid rgba(255,255,255,0.15);
+            background:rgba(255,255,255,0.05);
+            color:white;
+            box-sizing:border-box;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Lend</h1>
+
+<p style="margin-top:-10px;">
+    Looking to borrow instead? <a href="borrow.html">Go to Borrow</a>.
+</p>
+
+<div class="card">
+
+    <h2>Lend</h2>
+
+    <p style="opacity:0.8; font-size:13px;">
+        Post a standing offer to lend any token at a rate you choose - any borrower can discover it
+        below, request an amount, and chat with you to finalize terms before anything is recorded
+        on chain. Browsing the marketplace and negotiating as a borrower is open to everyone -
+        only posting a lend offer requires the security pass + KYC below.
+    </p>
+
+    <!-- ================= KYC notice (posting only) ================= -->
+    <div id="lendKycNotice" style="display:none;">
+        <p style="opacity:0.8; font-size:13px;">
+            Posting a lend offer requires a security pass (a minimum on-chain reputation) plus
+            basic KYC compliance - self-attested identity details, not a real document check
+            (this is a testnet demo, not audited). Both are re-checked against your CURRENT
+            standing every time you act here, not just cached from when you submitted.
+        </p>
+
+        <div id="kycStatusLine" class="explorer-empty">Checking your access...</div>
+
+        <div id="kycForm" style="display:none;margin-top:14px;">
+            <div class="kyc-field">
+                <label for="kycFullName">Full name</label>
+                <input type="text" id="kycFullName" maxlength="200" placeholder="Full name">
+            </div>
+            <div class="kyc-field">
+                <label for="kycDob">Date of birth</label>
+                <input type="date" id="kycDob">
+            </div>
+            <div class="kyc-field">
+                <label for="kycCountry">Country</label>
+                <input type="text" id="kycCountry" maxlength="100" placeholder="Country">
+            </div>
+            <div class="kyc-field">
+                <label>
+                    <input type="checkbox" id="kycAgree">
+                    I confirm this information is accurate and agree to the lending marketplace terms.
+                </label>
+            </div>
+            <button onclick="submitKYC()">Submit</button>
+            <p id="kycSubmitStatus"></p>
+        </div>
+    </div>
+
+    <!-- ================= Post offer form (KYC'd only) ================= -->
+    <div id="lendPostForm" style="display:none;">
+        <p>
+            Balance in selected token:
+            <span id="lendBalance">0</span>
+        </p>
+
+        <div class="explorer-search">
+            <select id="offerSymbol">
+                <option value="CCT">CCT</option>
+                <option value="ETHTEST">ETHTEST</option>
+                <option value="USDCTEST" selected>USDCTEST</option>
+                <option value="REPT">REPT</option>
+            </select>
+            <input type="number" id="offerRate" placeholder="Rate % (e.g. 5)" min="0">
+            <input type="number" id="offerAmount" placeholder="Capital to lend" min="0">
+            <input type="number" id="offerDurationDays" placeholder="Repay within (days)" min="0" title="How many days a borrower has to repay before this loan defaults. Leave blank for no due date (never defaults).">
+            <button onclick="createLoanOffer()">Post Offer</button>
+        </div>
+        <p style="opacity:0.6;font-size:12px;">
+            If a borrower doesn't repay within the duration you set, they lose their locked collateral AND reputation to you - you're always made whole.
+        </p>
+
+        <p id="lendStatus"></p>
+    </div>
+
+    <h3>Your Offers</h3>
+    <div id="myOfferList" class="explorer-empty">No offers yet.</div>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Loan Marketplace</h2>
+
+    <p style="opacity:0.8; font-size:13px;">
+        Every open offer from every lender - pick one, enter the amount you want, and request it.
+        This opens a chat with the lender - nothing is recorded on chain until the lender agrees.
+    </p>
+
+    <div id="marketplaceList" class="explorer-empty">Loading...</div>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Your Negotiations</h2>
+
+    <p style="opacity:0.8; font-size:13px;">
+        Open requests and chats, whether you're the borrower or the lender. Messages here are
+        plain text, not private/encrypted - anyone can read a negotiation's thread, the same way
+        every other address-keyed lookup in this app works.
+    </p>
+
+    <div id="negotiationList" class="explorer-empty">No negotiations yet.</div>
+
+</div>
+
+<br>
+
+<button
+    onclick="location.href='wallet.html'">
+    Back To Wallet
+</button>
+
+<div class="modal-overlay" id="chatModalOverlay">
+    <div class="modal-box">
+        <h3 style="margin-top:0;">Negotiation</h3>
+        <p id="chatSummary" style="opacity:0.75;font-size:13px;"></p>
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="explorer-search">
+            <input type="text" id="chatText" placeholder="Type a message..." maxlength="2000">
+            <button onclick="sendChatMessage()">Send</button>
+        </div>
+        <div class="explorer-search">
+            <button id="chatConfirmBtn" onclick="confirmChatNegotiation()" style="display:none;">Agree &amp; Fund</button>
+            <button onclick="cancelChatNegotiation()">Cancel Negotiation</button>
+            <button onclick="closeChatModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
+<script src="js/lend.js"></script>
+
+</body>
+</html>

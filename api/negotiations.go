@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -175,6 +176,12 @@ func HandleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	other := n.Lender
+	if address == n.Lender {
+		other = n.Borrower
+	}
+	notifyUser(other, "NEW_MESSAGE", fmt.Sprintf("New message from %s in your negotiation", address), n.ID)
+
 	json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
 }
 
@@ -232,6 +239,9 @@ func HandleConfirmNegotiation(w http.ResponseWriter, r *http.Request) {
 
 	data, _ := json.Marshal(loanOfferDrawData{OfferID: n.OfferID, Amount: n.Amount})
 	tx := recordTx(n.BorrowerAuth, n.Borrower, "", 0, core.TxLoanOfferDraw, string(data))
+
+	notifyUser(n.Borrower, "TRADE_STARTED", fmt.Sprintf("Your loan of %d %s has started", n.Amount, n.Symbol), tx.ID)
+	notifyUser(n.Lender, "TRADE_STARTED", fmt.Sprintf("You funded a loan of %d %s", n.Amount, n.Symbol), tx.ID)
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "pending",

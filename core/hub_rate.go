@@ -15,7 +15,11 @@ import "sync"
 // mechanism behind "the hub's wallet balance is the limit a buyer can
 // demand" - there is no other cap.
 type HubRate struct {
-	Hub          string
+	Hub string
+	// HubPublicKey is the public key of whichever address actually
+	// backs this listing's inventory - the hub's own public key for
+	// its flagship listing, or the operator's own public key when
+	// OperatorAddress is set. Always pairs with InventoryAddress().
 	HubPublicKey string
 
 	// Symbol is the in-app token being quoted (e.g. "CCT").
@@ -59,13 +63,39 @@ type HubRate struct {
 	UpdatedAt int64
 
 	// PostedBy is whichever wallet actually signed this rate update -
-	// the hub itself, or one of its delegated workers (see
+	// the hub itself, or one of its delegated workers/operators (see
 	// core.HubWorker's doc comment). Equal to Hub when the hub posted
-	// it directly. Purely informational/audit - it grants no
-	// additional authority itself, and doesn't change who the rate
-	// belongs to (still Hub) or who a trader is actually trading
-	// against (still Hub).
+	// it directly, equal to OperatorAddress when an operator posted
+	// their own listing.
 	PostedBy string
+
+	// OperatorAddress is "" for the hub's own flagship listing (the
+	// original, single-marketplace-per-hub behavior: inventory and
+	// settlement both happen against Hub's own balance). When
+	// non-empty, this listing belongs to one specific active worker of
+	// Hub - a distinct sub-marketplace operating under the hub's
+	// verified badge, with its OWN inventory/balance, separate from the
+	// hub's own and from every other operator's. This is what makes
+	// "add a worker" actually mean "stand up another independent
+	// marketplace inside one verified hub" rather than just "another
+	// person who can edit the hub's shared price" - see
+	// core.HubWorkerStore.IsActiveWorker, the authorization check that
+	// still gates who may ever post a rate with this set.
+	OperatorAddress string
+}
+
+// InventoryAddress is whose actual balance this rate's trades settle
+// against - the hub itself for its own flagship listing, or the
+// specific operator for their own sub-marketplace. Every balance
+// check/transfer/escrow tied to this rate must resolve against this
+// address (paired with HubPublicKey, which is always the public key of
+// whichever address this returns), never against Hub directly, so an
+// operator's trades only ever touch the operator's own funds.
+func (r *HubRate) InventoryAddress() string {
+	if r.OperatorAddress != "" {
+		return r.OperatorAddress
+	}
+	return r.Hub
 }
 
 // IsOnChain reports whether this rate settles atomically on-chain
@@ -79,38 +109,73 @@ func (r *HubRate) IsOnChain() bool {
 
 type HubRateStore struct {
 	mu    sync.Mutex
-	Rates map[string]*HubRate // keyed by hubRateKey(Hub, Symbol)
+	Rates map[string]*HubRate // keyed by hubRateKey(Hub, Symbol, OperatorAddress, FiatSymbol)
 }
 
 func NewHubRateStore() *HubRateStore {
 	return &HubRateStore{Rates: make(map[string]*HubRate)}
 }
 
-func hubRateKey(hub, symbol string) string {
-	return hub + ":" + symbol
+// hubRateKey includes FiatSymbol (the counter-currency) alongside
+// Hub/Symbol/OperatorAddress - a hub or operator can post several
+// concurrent rates for the same Symbol against different counter
+// currencies at once (e.g. CCT priced in TESTFIAT AND in ETHTEST
+// simultaneously), so the counter currency has to be part of what
+// makes a listing unique, not just an attribute of one. Without this,
+// posting a second currency for the same symbol would silently
+// overwrite the first instead of coexisting alongside it.
+func hubRateKey(hub, symbol, operator, fiatSymbol string) string {
+	return hub + ":" + symbol + ":" + operator + ":" + fiatSymbol
 }
 
-// Set posts or replaces a hub's rate for a symbol - always the whole
-// record, no partial-field update, so a hub can never end up with a
-// stale SellRate paired with a freshly-changed BuyRate by accident.
+// Set posts or replaces a rate for a (symbol, counter-currency) pair
+// under a hub - keyed by (Hub, Symbol, OperatorAddress, FiatSymbol) so
+// the hub's own flagship listing (OperatorAddress "") and each
+// operator's own listing coexist independently, and so do multiple
+// currency options for the same symbol under the same actor. Always
+// the whole record, no partial-field update, so a listing can never
+// end up with a stale SellRate paired with a freshly-changed BuyRate
+// by accident.
 func (s *HubRateStore) Set(r *HubRate) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.Rates[hubRateKey(r.Hub, r.Symbol)] = r
+	s.Rates[hubRateKey(r.Hub, r.Symbol, r.OperatorAddress, r.FiatSymbol)] = r
 }
 
-func (s *HubRateStore) Get(hub, symbol string) (*HubRate, bool) {
+// Get looks up one specific listing - operator "" is the hub's own
+// flagship listing, a non-empty operator is that operator's own;
+// fiatSymbol picks which of that actor's currency options for symbol.
+func (s *HubRateStore) Get(hub, symbol, operator, fiatSymbol string) (*HubRate, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	r, ok := s.Rates[hubRateKey(hub, symbol)]
+	r, ok := s.Rates[hubRateKey(hub, symbol, operator, fiatSymbol)]
 	return r, ok
 }
 
-// List returns every posted rate, active or not, so a hub's own
-// dashboard can still show (and let them re-activate) a rate they
-// previously took offline.
+// Renormalize rebuilds every map key from each entry's own fields -
+// needed once, right after restoring Rates from a state.json snapshot
+// written before FiatSymbol became part of the key, so those entries
+// stay reachable via Get under the new key scheme instead of silently
+// becoming orphaned (still visible via List, but never matched by Get,
+// which is what applyHubTradeRequest/HandleRequestHubTrade actually
+// use to find the rate a trade targets). Idempotent and harmless to
+// call even when every key already matches the current scheme.
+func (s *HubRateStore) Renormalize() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	rebuilt := make(map[string]*HubRate, len(s.Rates))
+	for _, r := range s.Rates {
+		rebuilt[hubRateKey(r.Hub, r.Symbol, r.OperatorAddress, r.FiatSymbol)] = r
+	}
+	s.Rates = rebuilt
+}
+
+// List returns every posted rate, active or not, across every hub and
+// operator, so a hub's own dashboard can still show (and let them
+// re-activate) a rate they previously took offline.
 func (s *HubRateStore) List() []*HubRate {
 	s.mu.Lock()
 	defer s.mu.Unlock()

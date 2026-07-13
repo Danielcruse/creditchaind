@@ -33,6 +33,8 @@ limitations" section at the bottom.
 | `NETWORK_SECRET` | yes | Shared secret required on every peer-to-peer request - get this from the network operator. |
 | `SELF_URL` | yes | This node's own publicly reachable base URL, so peers can register you back and route gossip to you. |
 | `TLS_CERT_FILE` / `TLS_KEY_FILE` | no | If both are set, serves HTTPS directly. If unset, serves plain HTTP - fine behind a reverse proxy (nginx/Caddy) that terminates TLS for you, wrong if this node is directly internet-facing with real value at stake. |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM` | no | If `SMTP_HOST`/`SMTP_USERNAME`/`SMTP_PASSWORD`/`SMTP_FROM` are all set (`SMTP_PORT` defaults to `587`), this node sends real outbound email (wallet-recovery codes, Trading Hub trade-attention alerts) via SMTP with STARTTLS. If unset, those flows fall back to their existing testnet-placeholder behavior (recovery codes shown directly in the API response instead of emailed; hub alerts stay in-app only). |
+| `ANTHROPIC_API_KEY` | no | If set, enables the site-wide AI assistant (`POST /ai/chat`) - a Claude-powered, read-only chat widget that can look up wallet/reputation/loan-offer/hub-rules data and calculate loan repayment, but never signs or submits anything itself. If unset, the assistant returns a clear "not configured" error and the frontend widget shows that message instead of a reply. |
 
 ## Option A: Docker (recommended)
 

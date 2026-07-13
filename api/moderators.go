@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/creditchain/creditchaind/core"
@@ -14,6 +15,13 @@ var moderatorStore = core.NewModeratorStore()
 // MinValidatorReputation - any wallet in ordinary good standing is
 // immediately eligible.
 const MinModeratorReputation = 50
+
+// ModeratorRegisterFeeCCT is a CCT anti-spam cost for registering as a
+// moderator - same pattern as HubApplyFeeCCT/ValidatorRegisterFeeCCT,
+// paid to registrationFeeAddress (api/apply.go). Lowest of the three
+// registration fees: moderating carries real trust but less exposure
+// than running a hub or a validator.
+const ModeratorRegisterFeeCCT = 10
 
 type moderatorInfo struct {
 	Address       string `json:"address"`
@@ -65,6 +73,11 @@ func HandleRegisterModerator(w http.ResponseWriter, r *http.Request) {
 	wallet := walletStore.Get(address)
 	if wallet.Reputation < MinModeratorReputation {
 		http.Error(w, "reputation too low to become a moderator", http.StatusBadRequest)
+		return
+	}
+
+	if tokenStore.BalanceOf(address) < ModeratorRegisterFeeCCT {
+		http.Error(w, fmt.Sprintf("you need at least %d CCT to cover the moderator registration fee", ModeratorRegisterFeeCCT), http.StatusBadRequest)
 		return
 	}
 

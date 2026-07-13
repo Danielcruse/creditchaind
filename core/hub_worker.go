@@ -80,6 +80,24 @@ func (s *HubWorkerStore) ListForHub(hub string) []*HubWorker {
 	return list
 }
 
+// HubForWorker is the reverse lookup: given a wallet address, which
+// verified hub (if any) is it a currently-active operator/worker of.
+// Needed wherever an action is being authorized/attributed by the
+// ACTOR's address alone (e.g. creating a trade under their own
+// operator identity) and the caller doesn't already know which hub
+// that operator belongs to.
+func (s *HubWorkerStore) HubForWorker(worker string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, w := range s.Workers {
+		if w.WorkerAddress == worker && w.Active {
+			return w.HubAddress, true
+		}
+	}
+	return "", false
+}
+
 func (s *HubWorkerStore) Snapshot() map[string]*HubWorker {
 	s.mu.Lock()
 	defer s.mu.Unlock()

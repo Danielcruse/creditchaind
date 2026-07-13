@@ -256,6 +256,19 @@ func HandlePoolInfo(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(info)
 }
 
+// HandlePoolPriceHistory returns symbol's recorded price time series
+// (oldest first) - see core/price_history.go. An unrecognized or
+// never-traded symbol simply returns an empty list, not an error, since
+// "no history yet" is a normal, expected state for a freshly registered
+// token's pool.
+func HandlePoolPriceHistory(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	symbol := r.URL.Query().Get("symbol")
+
+	json.NewEncoder(w).Encode(priceHistoryStore.Get(symbol))
+}
+
 type poolAddLiquidityData struct {
 	Symbol      string `json:"symbol"`
 	CCTAmount   uint64 `json:"cctAmount"`

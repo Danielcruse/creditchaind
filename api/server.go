@@ -110,6 +110,9 @@ func StartServer(port string) {
 	}
 
 	LoadState()
+	InitDB()
+	InitEthSigner()
+	InitEthRPC()
 	loadNodeIdentity()
 	loadPeersFromConfig()
 
@@ -143,20 +146,6 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/network",
 		HandleNetwork,
-	)
-	http.HandleFunc(
-		"/validator-pools",
-		HandleValidatorPools,
-	)
-
-	http.HandleFunc(
-		"/validator-pools/create",
-		HandleCreatePool,
-	)
-
-	http.HandleFunc(
-		"/validator-pools/add-member",
-		HandleAddPoolMember,
 	)
 
 	http.HandleFunc(
@@ -254,8 +243,20 @@ func StartServer(port string) {
 		HandleProduceBlock,
 	)
 	http.HandleFunc(
-		"/validator-pools/rewards",
-		HandlePoolRewards,
+		"/validators/delegate",
+		HandleDelegateToValidator,
+	)
+	http.HandleFunc(
+		"/validators/undelegate",
+		HandleUndelegateFromValidator,
+	)
+	http.HandleFunc(
+		"/validators/commission",
+		HandleSetValidatorCommission,
+	)
+	http.HandleFunc(
+		"/validators/delegations",
+		HandleListDelegations,
 	)
 
 	http.HandleFunc(
@@ -300,6 +301,10 @@ func StartServer(port string) {
 		HandleListPools,
 	)
 	http.HandleFunc(
+		"/pool/price-history",
+		HandlePoolPriceHistory,
+	)
+	http.HandleFunc(
 		"/pool/add-liquidity",
 		HandlePoolAddLiquidity,
 	)
@@ -318,6 +323,26 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/ethtest/balance",
 		HandleETHTestBalance,
+	)
+	http.HandleFunc(
+		"/orders/place",
+		HandlePlaceOrder,
+	)
+	http.HandleFunc(
+		"/orders/cancel",
+		HandleCancelOrder,
+	)
+	http.HandleFunc(
+		"/orders",
+		HandleListOrders,
+	)
+	http.HandleFunc(
+		"/orders/mine",
+		HandleMyOrders,
+	)
+	http.HandleFunc(
+		"/trades",
+		HandleListTrades,
 	)
 	http.HandleFunc(
 		"/p2p/offers",
@@ -392,6 +417,10 @@ func StartServer(port string) {
 		HandleP2PSellerConfirmPaid,
 	)
 	http.HandleFunc(
+		"/p2p/offers/seller-dispute",
+		HandleP2PSellerDispute,
+	)
+	http.HandleFunc(
 		"/p2p/offers/buyer-mark-paid",
 		HandleP2PBuyerMarkPaid,
 	)
@@ -406,6 +435,14 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/p2p/offers/message",
 		HandleP2PMessage,
+	)
+	http.HandleFunc(
+		"/kyc/submit",
+		HandleKYCSubmit,
+	)
+	http.HandleFunc(
+		"/kyc/status",
+		HandleKYCStatus,
 	)
 	http.HandleFunc(
 		"/companies",
@@ -424,6 +461,10 @@ func StartServer(port string) {
 		HandleReassignCompanyModerator,
 	)
 	http.HandleFunc(
+		"/companies/update-contact",
+		HandleUpdateCompanyContact,
+	)
+	http.HandleFunc(
 		"/buy-requests",
 		HandleListBuyRequests,
 	)
@@ -438,6 +479,18 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/buy-requests/cancel",
 		HandleCancelBuyRequest,
+	)
+	http.HandleFunc(
+		"/eth-custodial/create",
+		HandleCreateEthCustodialAccount,
+	)
+	http.HandleFunc(
+		"/eth-custodial/balance",
+		HandleEthCustodialBalance,
+	)
+	http.HandleFunc(
+		"/eth-custodial/withdraw",
+		HandleEthCustodialWithdraw,
 	)
 	http.HandleFunc(
 		"/hub-rates",
@@ -468,6 +521,22 @@ func StartServer(port string) {
 		HandleMarkNotificationRead,
 	)
 	http.HandleFunc(
+		"/notifications",
+		HandleListUserNotifications,
+	)
+	http.HandleFunc(
+		"/notifications/read",
+		HandleMarkUserNotificationRead,
+	)
+	http.HandleFunc(
+		"/session/login-ping",
+		HandleLoginPing,
+	)
+	http.HandleFunc(
+		"/ai/chat",
+		HandleAIChat,
+	)
+	http.HandleFunc(
 		"/hub-workers/add",
 		HandleAddHubWorker,
 	)
@@ -478,6 +547,22 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/hub-workers",
 		HandleListHubWorkers,
+	)
+	http.HandleFunc(
+		"/hub-agents/apply",
+		HandleApplyHubAgent,
+	)
+	http.HandleFunc(
+		"/hub-agents/approve",
+		HandleApproveHubAgent,
+	)
+	http.HandleFunc(
+		"/hub-agents/reject",
+		HandleRejectHubAgent,
+	)
+	http.HandleFunc(
+		"/hub-agents",
+		HandleListHubAgentApplications,
 	)
 	http.HandleFunc(
 		"/hub-storefront/set",
@@ -552,18 +637,8 @@ func StartServer(port string) {
 	)
 
 	http.HandleFunc(
-		"/transactions",
-		HandleTransaction,
-	)
-
-	http.HandleFunc(
 		"/mine",
 		HandleMine,
-	)
-
-	http.HandleFunc(
-		"/loans/create",
-		HandleCreateLoan,
 	)
 
 	http.HandleFunc(
@@ -594,6 +669,21 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/governance/vote",
 		HandleVoteProposal,
+	)
+
+	http.HandleFunc(
+		"/governance/activate",
+		HandleActivateGovernance,
+	)
+
+	http.HandleFunc(
+		"/governance/status/post",
+		HandlePostGovernanceStatus,
+	)
+
+	http.HandleFunc(
+		"/governance/status/recent",
+		HandleRecentGovernanceStatuses,
 	)
 
 	http.HandleFunc(

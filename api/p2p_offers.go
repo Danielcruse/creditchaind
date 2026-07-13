@@ -139,9 +139,17 @@ func HandleListP2POffers(w http.ResponseWriter, r *http.Request) {
 	offers := p2pOfferStore.List()
 	views := make([]p2pOfferView, 0, len(offers))
 	for _, o := range offers {
+		// HubAddress is set when Creator is actually a hub OPERATOR
+		// (see core.HubRate.OperatorAddress) rather than the verified
+		// hub itself - checking the hub, not the operator, is what
+		// still shows "verified" for that operator's own trades.
+		verifiedVia := o.Creator
+		if o.HubAddress != "" {
+			verifiedVia = o.HubAddress
+		}
 		views = append(views, p2pOfferView{
 			P2POffer:       o,
-			VerifiedSeller: companyStore.IsVerified(o.Creator),
+			VerifiedSeller: companyStore.IsVerified(verifiedVia),
 		})
 	}
 
@@ -204,6 +212,9 @@ func HandleAcceptP2POffer(w http.ResponseWriter, r *http.Request) {
 
 	data, _ := json.Marshal(req)
 	tx := recordTx(auth, address, "", 0, core.TxP2POfferAccept, string(data))
+
+	notifyUser(offer.Creator, "TRADE_STARTED", fmt.Sprintf("%s accepted your offer to trade %d %s for %d %s", address, offer.OfferAmount, offer.OfferSymbol, offer.WantAmount, offer.WantSymbol), tx.ID)
+	notifyUser(address, "TRADE_STARTED", fmt.Sprintf("You accepted a trade for %d %s", offer.WantAmount, offer.WantSymbol), tx.ID)
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "pending",

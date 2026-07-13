@@ -194,7 +194,13 @@ func ApplyBlock(block core.Block) {
 	// identical set of matured unbonds - same determinism guarantee
 	// as everything else in this function.
 	for _, entry := range stakingStore.ProcessMaturedUnbonds(block.Timestamp) {
-		creditMaturedUnbond(entry)
+		creditMaturedUnbond(entry, block.Timestamp)
+	}
+
+	// Same block-timestamp-driven determinism, for matured validator
+	// undelegations - see core.DelegationStore.ProcessMaturedUndelegations.
+	for _, entry := range delegationStore.ProcessMaturedUndelegations(block.Timestamp) {
+		tokenStore.Transfer(validatorDelegationEscrowAddress, entry.Delegator, entry.Amount)
 	}
 
 	// Same block-timestamp-driven determinism as everything else here
@@ -202,6 +208,16 @@ func ApplyBlock(block core.Block) {
 	// core/dormancy.go): wallets quiet long enough get swept and
 	// redistributed to whoever's still active.
 	processDormantWallets(block.Timestamp)
+
+	// Same block-timestamp-driven determinism - peer-funded loans past
+	// their due date get defaulted identically on every node.
+	processLoanDefaults(block.Timestamp)
+
+	// Same block-timestamp-driven determinism - P2P trade chats that
+	// have stalled (either party's payment window ran out, or one
+	// party acted and the other went silent for an hour) resolve
+	// identically on every node.
+	processStalledP2PSettlements(block.Timestamp)
 }
 
 // processDormantWallets sweeps every wallet that's gone dormant (see
@@ -345,14 +361,94 @@ const (
 	blockProductionReputationInterval = 10
 )
 
+// applyBlockReward pays out ProduceBlockReward for a produced block -
+// 100% to the validator if nobody has delegated to them (identical to
+// behavior before delegation pools existed), or split between the
+// validator's own commission cut and a pro-rata share to every
+// delegator (by their delegated amount / the pool's total) once they
+// have a real pool behind them. See core.ValidatorStatus.CommissionBps
+// and core.DelegationStore's doc comments for the full model.
+// mintRept is the single call site every REPT tier-reward mint goes
+// through - centralizes the "Minted REPT" notification alongside the
+// actual mint instead of relying on every one of this file's several
+// mint sites to remember it individually.
+func mintRept(address string, amount uint64) {
+	reptStore.Mint(address, amount)
+	notifyUser(address, "REPT_MINTED", fmt.Sprintf("You minted %d REPT", amount), "")
+}
+
 func applyBlockReward(block core.Block) {
 	if nonAddressValidators[block.Validator] {
 		return
 	}
 
 	wallet := walletStore.Get(block.Validator)
-	wallet.Rewards += ProduceBlockReward
-	tokenStore.Mint(block.Validator, ProduceBlockReward)
+
+	// Sweep this block's collected CCT transfer fees (see
+	// cctTransferFeePoolAddress) straight to the validator that
+	// produced it - a real value transfer from senders to the
+	// validator, not a mint, and paid 100% to the validator directly
+	// rather than split with delegators the way ProduceBlockReward is,
+	// since it's compensation for including the transaction, not a
+	// staking yield.
+	if feeCollected := tokenStore.BalanceOf(cctTransferFeePoolAddress()); feeCollected > 0 {
+		if tokenStore.Transfer(cctTransferFeePoolAddress(), block.Validator, feeCollected) {
+			wallet.Rewards += feeCollected
+		}
+	}
+
+	totalDelegated := delegationStore.TotalDelegatedTo(block.Validator)
+
+	if totalDelegated == 0 {
+		wallet.Rewards += ProduceBlockReward
+		tokenStore.Mint(block.Validator, ProduceBlockReward)
+	} else {
+		status, _ := validatorStore.Get(block.Validator)
+		var commissionBps uint64
+		if status != nil {
+			commissionBps = uint64(status.CommissionBps)
+		}
+
+		commission := ProduceBlockReward * commissionBps / 10000
+		poolShare := ProduceBlockReward - commission
+
+		wallet.Rewards += commission
+		tokenStore.Mint(block.Validator, commission)
+
+		// Map iteration order is randomized in Go - every node applying
+		// this same block must reach an identical result, so delegators
+		// are visited in a fixed (sorted) order, same convention as
+		// processDormantWallets uses for exactly this reason. The actual
+		// payout math doesn't depend on order, only which entries pick
+		// up the paid-out remainder.
+		delegators := make([]string, 0, len(delegationStore.Delegations[block.Validator]))
+		for delegator := range delegationStore.Delegations[block.Validator] {
+			delegators = append(delegators, delegator)
+		}
+		sort.Strings(delegators)
+
+		var distributed uint64
+		for _, delegator := range delegators {
+			amount := delegationStore.Delegations[block.Validator][delegator]
+			share := poolShare * amount / totalDelegated
+			if share == 0 {
+				continue
+			}
+			dWallet := walletStore.Get(delegator)
+			dWallet.Rewards += share
+			tokenStore.Mint(delegator, share)
+			distributed += share
+		}
+
+		// Integer-division remainder from the pro-rata split goes to the
+		// validator rather than being lost or arbitrarily assigned to
+		// whichever delegator sorts first - same "remainder stays
+		// behind" rule reclaimDormantWallet already follows.
+		if remainder := poolShare - distributed; remainder > 0 {
+			wallet.Rewards += remainder
+			tokenStore.Mint(block.Validator, remainder)
+		}
+	}
 
 	// BlocksProduced must also be counted here, not where the block is
 	// mined - otherwise only the node that actually produced it locally
@@ -366,7 +462,7 @@ func applyBlockReward(block core.Block) {
 	// misread as "just hit a multiple of 10."
 	if blocksProduced > 0 && blocksProduced%blockProductionReputationInterval == 0 {
 		if reward := core.IncreaseWalletReputation(wallet, blockProductionReputationGrowth); reward > 0 {
-			reptStore.Mint(block.Validator, reward)
+			mintRept(block.Validator, reward)
 		}
 	}
 }
@@ -560,6 +656,45 @@ func verifyTxAuth(tx core.Transaction) bool {
 		}
 		return signed.NodeID == claimed.NodeID && signed.NodePublicKey == claimed.NodePublicKey
 
+	case core.TxValidatorDelegate:
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed, claimed validatorDelegateData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed && signed.Amount == tx.Amount
+
+	case core.TxValidatorUndelegate:
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed, claimed validatorUndelegateData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed && signed.Amount == tx.Amount
+
+	case core.TxValidatorSetCommission:
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed, claimed validatorSetCommissionData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed
+
 	case core.TxTokenRegister:
 		if tx.AuthAddress != tx.From {
 			return false
@@ -736,6 +871,19 @@ func verifyTxAuth(tx core.Transaction) bool {
 		}
 		return signed == claimed
 
+	case core.TxP2PSellerDispute:
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed, claimed p2pSellerDisputeData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed
+
 	case core.TxP2PBuyerMarkPaid:
 		if tx.AuthAddress != tx.From {
 			return false
@@ -775,6 +923,19 @@ func verifyTxAuth(tx core.Transaction) bool {
 		}
 		return signed == claimed
 
+	case core.TxKYCSubmit:
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed, claimed kycSubmitData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed
+
 	case core.TxCompanyApply:
 		if tx.AuthAddress != tx.From {
 			return false
@@ -806,6 +967,19 @@ func verifyTxAuth(tx core.Transaction) bool {
 			return false
 		}
 		var signed, claimed companyReassignData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed
+
+	case core.TxCompanyUpdateContact:
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed, claimed companyUpdateContactData
 		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
 			return false
 		}
@@ -953,6 +1127,32 @@ func verifyTxAuth(tx core.Transaction) bool {
 		}
 		return signed == claimed
 
+	case core.TxOrderPlace:
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed, claimed orderPlaceData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed
+
+	case core.TxOrderCancel:
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed, claimed orderCancelData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed
+
 	case core.TxSlashReport:
 		// Node-authored, not wallet-authored - see
 		// api/node_identity.go's selfSignedEnvelope. Data and
@@ -1009,8 +1209,23 @@ func ApplyTransaction(tx core.Transaction) {
 	case core.TxValidatorRegister:
 		applyValidatorRegister(tx)
 
+	case core.TxValidatorDelegate:
+		applyValidatorDelegate(tx)
+
+	case core.TxValidatorUndelegate:
+		applyValidatorUndelegate(tx)
+
+	case core.TxValidatorSetCommission:
+		applyValidatorSetCommission(tx)
+
 	case core.TxLockCollateral:
 		applyLockCollateral(tx)
+
+	case core.TxOrderPlace:
+		applyOrderPlace(tx)
+
+	case core.TxOrderCancel:
+		applyOrderCancel(tx)
 
 	case core.TxSlashReport:
 		applySlashReport(tx)
@@ -1066,6 +1281,9 @@ func ApplyTransaction(tx core.Transaction) {
 	case core.TxP2PSellerConfirmPaid:
 		applyP2PSellerConfirmPaid(tx)
 
+	case core.TxP2PSellerDispute:
+		applyP2PSellerDispute(tx)
+
 	case core.TxP2PBuyerMarkPaid:
 		applyP2PBuyerMarkPaid(tx)
 
@@ -1075,6 +1293,9 @@ func ApplyTransaction(tx core.Transaction) {
 	case core.TxP2PModeratorResolve:
 		applyP2PModeratorResolve(tx)
 
+	case core.TxKYCSubmit:
+		applyKYCSubmit(tx)
+
 	case core.TxCompanyApply:
 		applyCompanyApply(tx)
 
@@ -1083,6 +1304,9 @@ func ApplyTransaction(tx core.Transaction) {
 
 	case core.TxCompanyReassignModerator:
 		applyCompanyReassignModerator(tx)
+
+	case core.TxCompanyUpdateContact:
+		applyCompanyUpdateContact(tx)
 
 	case core.TxBuyRequestCreate:
 		applyBuyRequestCreate(tx)
@@ -1237,6 +1461,7 @@ func applyPoolAddLiquidity(tx core.Transaction) {
 	}
 
 	pool.AddLiquidity(tx.From, data.CCTAmount, data.TokenAmount)
+	recordPoolPrice(data.Symbol, pool, tx.Timestamp)
 }
 
 func applyPoolRemoveLiquidity(tx core.Transaction) {
@@ -1260,6 +1485,15 @@ func applyPoolRemoveLiquidity(tx core.Transaction) {
 	escrow := poolAddress(data.Symbol)
 	tokenStore.Transfer(escrow, tx.From, cctOut)
 	store.Transfer(escrow, tokenSide, tokenOut)
+	recordPoolPrice(data.Symbol, pool, tx.Timestamp)
+}
+
+// recordPoolPrice appends a price-history sample for symbol from
+// pool's current reserves - called after every successful reserve
+// mutation (swap, add/remove liquidity) so the chart reflects real
+// trading activity regardless of which action moved the price.
+func recordPoolPrice(symbol string, pool *core.LiquidityPool, timestamp int64) {
+	priceHistoryStore.Record(symbol, pool, timestamp)
 }
 
 func applyPoolSwap(tx core.Transaction) {
@@ -1286,6 +1520,7 @@ func applyPoolSwap(tx core.Transaction) {
 			return
 		}
 		store.Transfer(escrow, tokenSide, amountOut)
+		recordPoolPrice(data.Symbol, pool, tx.Timestamp)
 
 	case "token_to_cct":
 		if !store.Transfer(tokenSide, escrow, data.AmountIn) {
@@ -1297,6 +1532,7 @@ func applyPoolSwap(tx core.Transaction) {
 			return
 		}
 		tokenStore.Transfer(escrow, tx.From, amountOut)
+		recordPoolPrice(data.Symbol, pool, tx.Timestamp)
 	}
 }
 
@@ -1316,17 +1552,17 @@ func applySwapViaCCT(tx core.Transaction) {
 
 	switch {
 	case data.FromSymbol == "CCT":
-		applySwapCCTToToken(tx.From, tx.AuthPublicKey, data.ToSymbol, data.AmountIn)
+		applySwapCCTToToken(tx.From, tx.AuthPublicKey, data.ToSymbol, data.AmountIn, tx.Timestamp)
 
 	case data.ToSymbol == "CCT":
-		applySwapTokenToCCT(tx.From, tx.AuthPublicKey, data.FromSymbol, data.AmountIn)
+		applySwapTokenToCCT(tx.From, tx.AuthPublicKey, data.FromSymbol, data.AmountIn, tx.Timestamp)
 
 	default:
-		applySwapTokenToToken(tx.From, tx.AuthPublicKey, data.FromSymbol, data.ToSymbol, data.AmountIn)
+		applySwapTokenToToken(tx.From, tx.AuthPublicKey, data.FromSymbol, data.ToSymbol, data.AmountIn, tx.Timestamp)
 	}
 }
 
-func applySwapCCTToToken(from, publicKey, toSymbol string, amountIn uint64) {
+func applySwapCCTToToken(from, publicKey, toSymbol string, amountIn uint64, timestamp int64) {
 	toStore, toPool, err := lookupCustomToken(toSymbol)
 	if err != nil {
 		return
@@ -1343,9 +1579,10 @@ func applySwapCCTToToken(from, publicKey, toSymbol string, amountIn uint64) {
 		return
 	}
 	toStore.Transfer(escrow, toSide, amountOut)
+	recordPoolPrice(toSymbol, toPool, timestamp)
 }
 
-func applySwapTokenToCCT(from, publicKey, fromSymbol string, amountIn uint64) {
+func applySwapTokenToCCT(from, publicKey, fromSymbol string, amountIn uint64, timestamp int64) {
 	fromStore, fromPool, err := lookupCustomToken(fromSymbol)
 	if err != nil {
 		return
@@ -1362,6 +1599,7 @@ func applySwapTokenToCCT(from, publicKey, fromSymbol string, amountIn uint64) {
 		return
 	}
 	tokenStore.Transfer(escrow, from, amountOut)
+	recordPoolPrice(fromSymbol, fromPool, timestamp)
 }
 
 // applySwapTokenToToken routes fromSymbol -> CCT -> toSymbol through
@@ -1370,7 +1608,7 @@ func applySwapTokenToCCT(from, publicKey, fromSymbol string, amountIn uint64) {
 // through or is rejected outright - never left half-applied with the
 // user's input gone but no output credited because the second leg
 // turned out to lack liquidity.
-func applySwapTokenToToken(from, publicKey, fromSymbol, toSymbol string, amountIn uint64) {
+func applySwapTokenToToken(from, publicKey, fromSymbol, toSymbol string, amountIn uint64, timestamp int64) {
 	fromStore, fromPool, err := lookupCustomToken(fromSymbol)
 	if err != nil {
 		return
@@ -1402,6 +1640,8 @@ func applySwapTokenToToken(from, publicKey, fromSymbol, toSymbol string, amountI
 	tokenStore.Transfer(fromEscrow, toEscrow, intermediateCCT)
 	finalAmountOut, _ := toPool.SwapCCTForToken(intermediateCCT)
 	toStore.Transfer(toEscrow, toSide, finalAmountOut)
+	recordPoolPrice(fromSymbol, fromPool, timestamp)
+	recordPoolPrice(toSymbol, toPool, timestamp)
 }
 
 // ReputationDeltaP2PTrade is the reputation reward BOTH parties earn
@@ -1412,6 +1652,14 @@ func applySwapTokenToToken(from, publicKey, fromSymbol, toSymbol string, amountI
 // (ReputationDeltaLoanRepaidOnTime, 10 - see core/credit_engine.go) -
 // a disclosed judgment call, not a locked spec value.
 const ReputationDeltaP2PTrade = 14 // 10 * 1.4, rounded down
+
+// ReputationDeltaP2PFraud is the penalty applied to whichever side of
+// an EXTERNAL P2P trade a moderator's dispute resolution finds to
+// have acted in bad faith (falsely claimed payment, or falsely denied
+// receiving it). Same magnitude class as core.ReputationDeltaLoanDefault
+// (30) - both represent a moderator/system-confirmed bad-faith act,
+// not a minor slip.
+const ReputationDeltaP2PFraud = 30
 
 func applyP2POfferCreate(tx core.Transaction) {
 	var data p2pOfferCreateData
@@ -1545,10 +1793,10 @@ func applyP2POfferAccept(tx core.Transaction) {
 	applyPlatformFee(offerStore, p2pOfferEscrowAddress(offer.ID), acceptorOfferSide, offer.OfferAmount)
 
 	if reward := core.IncreaseWalletReputation(walletStore.Get(tx.From), ReputationDeltaP2PTrade); reward > 0 {
-		reptStore.Mint(tx.From, reward)
+		mintRept(tx.From, reward)
 	}
 	if reward := core.IncreaseWalletReputation(walletStore.Get(offer.Creator), ReputationDeltaP2PTrade); reward > 0 {
-		reptStore.Mint(offer.Creator, reward)
+		mintRept(offer.Creator, reward)
 	}
 	// Both parties earn the same amount for a P2P trade actually
 	// completing - recorded against the acceptor (tx.From) here since
@@ -1605,7 +1853,27 @@ func applyP2PSellerConfirmPaid(tx core.Transaction) {
 		return
 	}
 
-	p2pOfferStore.ConfirmSellerPaid(data.OfferID, tx.From)
+	if !p2pOfferStore.ConfirmSellerPaid(data.OfferID, tx.From, tx.Timestamp) {
+		return
+	}
+
+	// ConfirmSellerPaid now closes the trade itself (see its doc
+	// comment) - release escrow to the buyer immediately, same fund
+	// movement the buyer's own agree-confirmation used to trigger.
+	offer, ok := p2pOfferStore.Get(data.OfferID)
+	if !ok {
+		return
+	}
+	releaseEscrowToBuyer(offer, offer.AcceptedBy, offer.AcceptedByPublicKey)
+}
+
+func applyP2PSellerDispute(tx core.Transaction) {
+	var data p2pSellerDisputeData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+
+	p2pOfferStore.DisputeAwaitingPayment(data.OfferID, tx.From)
 }
 
 func applyP2PBuyerMarkPaid(tx core.Transaction) {
@@ -1662,16 +1930,106 @@ func applyP2PModeratorResolve(tx core.Transaction) {
 	}
 
 	if data.Release {
+		// Moderator sided with the buyer - the buyer really paid and
+		// the seller wrongly disputed/failed to confirm. Penalize the
+		// seller (Creator), the party found to be acting in bad faith.
 		releaseEscrowToBuyer(offer, offer.AcceptedBy, offer.AcceptedByPublicKey)
+		core.DecreaseWalletReputation(walletStore.Get(offer.Creator), ReputationDeltaP2PFraud)
+		reputationEventStore.Record(&core.ReputationEvent{
+			TxID: tx.ID, Target: offer.Creator, Delta: -int64(ReputationDeltaP2PFraud),
+			Reason: "Moderator found this trade claim to be false", Timestamp: tx.Timestamp,
+		})
 		return
 	}
 
+	// Moderator sided with the seller - the buyer's payment claim was
+	// false. Penalize the buyer (AcceptedBy).
+	refundEscrowToSeller(offer)
+	core.DecreaseWalletReputation(walletStore.Get(offer.AcceptedBy), ReputationDeltaP2PFraud)
+	reputationEventStore.Record(&core.ReputationEvent{
+		TxID: tx.ID, Target: offer.AcceptedBy, Delta: -int64(ReputationDeltaP2PFraud),
+		Reason: "Moderator found this trade claim to be false", Timestamp: tx.Timestamp,
+	})
+}
+
+// refundEscrowToSeller moves an EXTERNAL offer's locked OfferAmount
+// back to the seller (Creator) - shared by the moderator's
+// side-with-the-seller dispute resolution and by
+// processStalledP2PSettlements' EXPIRED case, since both end the
+// trade the same way: the buyer never (successfully) completed
+// off-app payment, so the escrow goes back to whoever put it up.
+func refundEscrowToSeller(offer *core.P2POffer) {
 	offerStore, err := resolveTokenStore(offer.OfferSymbol)
 	if err != nil {
 		return
 	}
 	sellerSide := resolveBalanceAddress(offer.Creator, offer.CreatorPublicKey, offer.OfferSymbol)
 	offerStore.Transfer(p2pOfferEscrowAddress(offer.ID), sellerSide, offer.OfferAmount)
+}
+
+// p2pOfferHubAndDirection figures out which side of an EXTERNAL trade
+// (if either) is the verified Trading Hub, and from which direction -
+// mirrors website/js/p2p.js's offerHubAndDirection exactly, since both
+// need to agree on which hub's HubRules.PaymentWindowFor applies to a
+// given offer. Every general P2POffer's Creator is required to be a
+// verified hub at creation time (see applyP2POfferCreate), but the hub
+// rate/escrow flow (applyHubTradeRequest) can put the hub on either
+// side depending on SELL_TO_HUB vs BUY_FROM_HUB - so both are checked.
+func p2pOfferHubAndDirection(o *core.P2POffer) (hub, direction string) {
+	if companyStore.IsVerified(o.Creator) {
+		return o.Creator, "BUY_FROM_HUB"
+	}
+	if companyStore.IsVerified(o.AcceptedBy) {
+		return o.AcceptedBy, "SELL_TO_HUB"
+	}
+	return "", ""
+}
+
+// processStalledP2PSettlements is the trade-chat countdown timer's
+// actual enforcement - driven by the block's own timestamp (not this
+// node's wall clock), same determinism guarantee as processLoanDefaults
+// right below it, so every node resolves the exact same set of
+// trades the exact same way. Two outcomes (see
+// core.P2POfferStore.SweepStalledSettlements for the three stall
+// conditions that produce them):
+//
+//   - EXPIRED (ReleaseToBuyer=false): neither party acted at all
+//     within the hub's payment window - escrow refunded to the
+//     seller, nothing was ever paid so there's nothing for the buyer
+//     to receive.
+//   - AUTO_RELEASED (ReleaseToBuyer=true): one party acted (buyer
+//     marked paid, or seller confirmed) and the other went silent for
+//     a full hour - escrow released to the buyer, same fund movement
+//     as an explicit ConfirmBuyer(agree=true).
+func processStalledP2PSettlements(asOf int64) {
+	stalled := p2pOfferStore.SweepStalledSettlements(asOf, func(o *core.P2POffer) int {
+		hub, direction := p2pOfferHubAndDirection(o)
+		if hub == "" {
+			return core.DefaultPaymentWindowMinutes
+		}
+		rules, _ := hubRulesStore.Get(hub)
+		return rules.PaymentWindowFor(direction)
+	})
+
+	for _, s := range stalled {
+		offer := s.Offer
+		if s.ReleaseToBuyer {
+			releaseEscrowToBuyer(offer, offer.AcceptedBy, offer.AcceptedByPublicKey)
+
+			notifyUser(offer.Creator, "P2P_TRADE_AUTO_RELEASED", fmt.Sprintf("Trade %s auto-closed after an hour with no response - your escrowed %d %s was released to the buyer", offer.ID, offer.OfferAmount, offer.OfferSymbol), offer.ID)
+			if offer.AcceptedBy != "" {
+				notifyUser(offer.AcceptedBy, "P2P_TRADE_AUTO_RELEASED", fmt.Sprintf("Trade %s auto-closed after an hour with no response from the seller - you received the escrowed %d %s", offer.ID, offer.OfferAmount, offer.OfferSymbol), offer.ID)
+			}
+			continue
+		}
+
+		refundEscrowToSeller(offer)
+
+		notifyUser(offer.Creator, "P2P_TRADE_EXPIRED", fmt.Sprintf("Trade %s expired - the buyer didn't complete payment in time, your escrowed %d %s was returned to you", offer.ID, offer.OfferAmount, offer.OfferSymbol), offer.ID)
+		if offer.AcceptedBy != "" {
+			notifyUser(offer.AcceptedBy, "P2P_TRADE_EXPIRED", fmt.Sprintf("Trade %s expired - the payment window ran out, no funds were exchanged", offer.ID), offer.ID)
+		}
+	}
 }
 
 // applyLockCollateral moves data.Amount out of the caller's STAKED CCT
@@ -1734,7 +2092,7 @@ func applyUnstake(tx core.Transaction) {
 // api), so this is the other half of unstaking a real balance actually
 // coming back, not just vanishing from the ledger with nothing
 // credited anywhere.
-func creditMaturedUnbond(entry core.UnbondingEntry) {
+func creditMaturedUnbond(entry core.UnbondingEntry, timestamp int64) {
 	symbol := entry.Symbol
 	if symbol == "" {
 		symbol = "ETHTEST" // entries persisted before Symbol existed
@@ -1763,7 +2121,7 @@ func creditMaturedUnbond(entry core.UnbondingEntry) {
 		} else {
 			w.OETHBalance = 0
 		}
-		creditMaturedETHTestViaSwap(entry.Amount, creditAddress)
+		creditMaturedETHTestViaSwap(entry.Amount, creditAddress, timestamp)
 		return
 	}
 
@@ -1789,7 +2147,7 @@ func creditMaturedUnbond(entry core.UnbondingEntry) {
 // drained by unrelated activity between staking and maturity) - the
 // same never-silently-lose-funds convention every other swap path here
 // already follows on quote failure.
-func creditMaturedETHTestViaSwap(amount uint64, creditAddress string) {
+func creditMaturedETHTestViaSwap(amount uint64, creditAddress string, timestamp int64) {
 	escrow := stakeEscrowAddress("ETHTEST")
 	poolEscrow := poolAddress("ETHTEST")
 
@@ -1800,6 +2158,7 @@ func creditMaturedETHTestViaSwap(amount uint64, creditAddress string) {
 				intermediateCCT, _ := cctEthTestPool.SwapTokenForCCT(amount)
 				finalAmountOut, _ := cctEthTestPool.SwapCCTForToken(intermediateCCT)
 				ethTestStore.Transfer(poolEscrow, creditAddress, finalAmountOut)
+				recordPoolPrice("ETHTEST", cctEthTestPool, timestamp)
 				return
 			}
 		}
@@ -1929,10 +2288,93 @@ func applyValidatorRegister(tx core.Transaction) {
 		return
 	}
 
+	// The fee may have moved between submission and confirmation -
+	// re-checked and only actually deducted here, never trusted from
+	// submission time alone (same pattern as applyTokenRegister's
+	// ETHTEST creation fee).
+	if !tokenStore.Transfer(tx.From, registrationFeeAddress(), ValidatorRegisterFeeCCT) {
+		return
+	}
+
 	var data validatorRegisterData
 	_ = json.Unmarshal([]byte(tx.Data), &data)
 
 	validatorStore.Register(tx.From, data.NodeID, data.NodePublicKey)
+}
+
+// validatorDelegationEscrowAddress is where delegated CCT sits while
+// bonded to a validator - a single shared escrow, mirroring
+// stakeEscrowAddress's pattern exactly. The DelegationStore ledger
+// (validator -> delegator -> amount) is what tracks whose share is
+// whose; the escrow itself is undifferentiated, same as staking.
+const validatorDelegationEscrowAddress = "validator-delegation-escrow"
+
+type validatorDelegateData struct {
+	Validator string `json:"validator"`
+	Amount    uint64 `json:"amount"`
+}
+
+// applyValidatorDelegate moves real CCT from the delegator's own
+// balance into the shared delegation escrow and records the ledger
+// entry - re-validates the target is still a registered, active
+// validator and isn't the delegator's own address at apply time
+// (never trusted from submission-time state alone), same convention
+// as every other handler in this codebase.
+func applyValidatorDelegate(tx core.Transaction) {
+	var data validatorDelegateData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+	if tx.Amount == 0 || data.Validator == tx.From {
+		return
+	}
+	v, ok := validatorStore.Get(data.Validator)
+	if !ok || !v.Active {
+		return
+	}
+	if !tokenStore.Transfer(tx.From, validatorDelegationEscrowAddress, tx.Amount) {
+		return
+	}
+	delegationStore.Delegate(data.Validator, tx.From, tx.Amount)
+}
+
+type validatorUndelegateData struct {
+	Validator string `json:"validator"`
+	Amount    uint64 `json:"amount"`
+}
+
+// applyValidatorUndelegate queues an undelegate request rather than
+// instantly returning the CCT - see core.DelegationStore's doc
+// comment for why (the position stays counted toward the validator's
+// PoSR weight and still shares in rewards until it matures), same
+// unbonding-period model applyUnstake already uses for regular stake.
+func applyValidatorUndelegate(tx core.Transaction) {
+	var data validatorUndelegateData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+	if tx.Amount == 0 {
+		return
+	}
+	maturesAt := tx.Timestamp + core.UnbondingPeriodSeconds
+	delegationStore.BeginUndelegate(data.Validator, tx.From, tx.Amount, maturesAt)
+}
+
+type validatorSetCommissionData struct {
+	CommissionBps uint16 `json:"commissionBps"`
+}
+
+// applyValidatorSetCommission updates a validator's own commission
+// rate - core.ValidatorStore.SetCommission independently re-validates
+// tx.From is actually a registered validator and the rate is within
+// MaxCommissionBps, so this can't be abused even if verifyTxAuth's
+// signature check were somehow bypassed.
+func applyValidatorSetCommission(tx core.Transaction) {
+	var data validatorSetCommissionData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+	validatorStore.SetCommission(tx.From, data.CommissionBps)
 }
 
 // stakeData carries which token a stake/unstake transaction concerns.
@@ -2074,6 +2516,22 @@ func reserveCollateralForLoan(address string, amount uint64) (symbol string, ok 
 	return "", false
 }
 
+// peekCollateralSymbolForLoan is reserveCollateralForLoan's non-
+// mutating twin - same CCT-then-OETH preference, just a read instead
+// of an actual reservation. Used at request time (HandleBorrow) to
+// price a loan's interest rate off the collateral it's about to be
+// backed by, before the real reservation happens later at block-
+// confirmation time (applyBorrow).
+func peekCollateralSymbolForLoan(address string, amount uint64) (symbol string, ok bool) {
+	if collateralStore.LockedOf(address, "CCT") >= amount {
+		return "CCT", true
+	}
+	if collateralStore.LockedOf(address, "OETH") >= amount {
+		return "OETH", true
+	}
+	return "", false
+}
+
 // releaseLoanCollateral returns a repaid loan's earmarked collateral
 // to the exact staked/oETH balance it was reserved from -
 // collateralStore is deliberately NOT credited back here, since this
@@ -2093,6 +2551,97 @@ func releaseLoanCollateral(loan *core.Loan) {
 
 	case "OETH":
 		walletStore.Get(loan.Borrower).OETHBalance += loan.CollateralAmount
+	}
+}
+
+// forfeitLoanCollateralToLender is releaseLoanCollateral's counterpart
+// for a defaulted loan - the collateral becomes the LENDER's, not
+// returned to the borrower, since the peer-funded loan marketplace's
+// core economics are that default costs the borrower everything they
+// put up while the lender is made whole (see
+// core.ReputationDeltaLoanDefaultLenderGain's doc comment for the
+// reputation half of the same idea). Moves the exact staked/oETH
+// balance without minting or burning anything, same supply-preserving
+// pattern releaseLoanCollateral uses - only the destination changes.
+func forfeitLoanCollateralToLender(loan *core.Loan) {
+	if loan.CollateralAmount == 0 || loan.Lender == "" {
+		return
+	}
+
+	switch loan.CollateralSymbol {
+	case "CCT":
+		if stakingStore.Stakes[loan.Lender] == nil {
+			stakingStore.Stakes[loan.Lender] = make(map[string]uint64)
+		}
+		stakingStore.Stakes[loan.Lender]["CCT"] += loan.CollateralAmount
+
+	case "OETH":
+		walletStore.Get(loan.Lender).OETHBalance += loan.CollateralAmount
+	}
+}
+
+// dueAtFor computes a peer-funded loan's due timestamp from the
+// lender's offer duration, anchored to the block timestamp the loan
+// was actually funded at (never wall-clock) - 0 (no due date, can
+// never default) if the offer didn't set a duration, which keeps
+// every offer/loan created before this feature existed exempt rather
+// than retroactively defaulting them.
+func dueAtFor(durationSeconds uint64, fundedAt int64) int64 {
+	if durationSeconds == 0 {
+		return 0
+	}
+	return fundedAt + int64(durationSeconds)
+}
+
+// processLoanDefaults sweeps every peer-funded loan whose due date has
+// passed while still unpaid - block-timestamp-driven determinism, the
+// same pattern processDormantWallets already uses, so every node that
+// applies this same block reaches the identical set of defaults.
+// Self-funded loans (Lender == "", see core.Loan's doc comment) are
+// never swept here - there's no real counterparty for "the lender is
+// always made whole" to protect, so default doesn't carry the
+// peer-funded marketplace's lender-protection meaning for those.
+func processLoanDefaults(asOf int64) {
+	var overdueIDs []string
+	for id, loan := range loanStore.Loans {
+		if loan.Status == core.LoanFunded && loan.Lender != "" && loan.DueAt > 0 && loan.DueAt < asOf {
+			overdueIDs = append(overdueIDs, id)
+		}
+	}
+	if len(overdueIDs) == 0 {
+		return
+	}
+	// Same "sort for deterministic processing order" reasoning as
+	// processDormantWallets - Go map iteration order is randomized.
+	sort.Strings(overdueIDs)
+
+	for _, id := range overdueIDs {
+		loan := loanStore.Loans[id]
+
+		// creditEngine.DefaultLoan already does exactly the right
+		// borrower-side penalty (status -> DEFAULT, profile record,
+		// reputation decrease) - see core/credit_engine.go. Only the
+		// lender-side gain and collateral forfeiture are new.
+		creditEngine.DefaultLoan(loan)
+		forfeitLoanCollateralToLender(loan)
+
+		if reward := core.IncreaseWalletReputation(walletStore.Get(loan.Lender), core.ReputationDeltaLoanDefaultLenderGain); reward > 0 {
+			mintRept(loan.Lender, reward)
+		}
+
+		reputationEventStore.Record(&core.ReputationEvent{
+			TxID: "default-" + loan.ID, Target: loan.Borrower, Delta: -int64(core.ReputationDeltaLoanDefault),
+			Reason: "Defaulted on a peer-funded loan", Timestamp: asOf,
+		})
+		reputationEventStore.Record(&core.ReputationEvent{
+			TxID: "default-" + loan.ID + "-lender", Target: loan.Lender, Delta: int64(core.ReputationDeltaLoanDefaultLenderGain),
+			Reason: "Received a defaulting borrower's collateral and reputation", Timestamp: asOf,
+		})
+
+		creditHistory.Add(loan.Borrower, core.CreditEvent{Type: "LOAN_DEFAULT", Amount: loan.Amount})
+
+		notifyUser(loan.Borrower, "LOAN_DEFAULT", fmt.Sprintf("You defaulted on a loan of %d %s - your collateral and reputation were forfeited to the lender", loan.Amount, loanSymbol(loan)), loan.ID)
+		notifyUser(loan.Lender, "LOAN_DEFAULT", fmt.Sprintf("A borrower defaulted on their %d %s loan - you received their collateral and reputation", loan.Amount, loanSymbol(loan)), loan.ID)
 	}
 }
 
@@ -2133,6 +2682,13 @@ func applyLoanOfferCreate(tx core.Transaction) {
 	if data.TotalAmount == 0 {
 		return
 	}
+	// Defense-in-depth: HandleCreateLoanOffer already checked this at
+	// request time (see requireLendingAccess), but re-checked here too
+	// since reputation could have dropped between submission and this
+	// block confirming - never trust submission-time state alone.
+	if !kycStore.IsApproved(tx.From, walletStore.Get(tx.From).Reputation) {
+		return
+	}
 
 	store, err := resolveTokenStore(data.Symbol)
 	if err != nil {
@@ -2152,6 +2708,7 @@ func applyLoanOfferCreate(tx core.Transaction) {
 		LenderPublicKey: tx.AuthPublicKey,
 		Symbol:          data.Symbol,
 		RatePercent:     data.RatePercent,
+		DurationSeconds: data.DurationSeconds,
 		TotalAmount:     data.TotalAmount,
 		RemainingAmount: data.TotalAmount,
 		Status:          core.LoanOfferOpen,
@@ -2220,6 +2777,7 @@ func applyLoanOfferDraw(tx core.Transaction) {
 		Status:           core.LoanFunded,
 		CollateralSymbol: collateralSymbol,
 		CollateralAmount: data.Amount,
+		DueAt:            dueAtFor(offer.DurationSeconds, tx.Timestamp),
 	})
 
 	creditHistory.Add(tx.From, core.CreditEvent{Type: "BORROW", Amount: data.Amount})
@@ -2233,7 +2791,7 @@ func applyLoanOfferDraw(tx core.Transaction) {
 	// rather than reusing a function whose guard would just reject it.
 	creditEngine.Profiles.Get(offer.Lender).RecordFunding(data.Amount)
 	if reward := core.IncreaseWalletReputation(walletStore.Get(offer.Lender), core.ReputationDeltaLoanFunded); reward > 0 {
-		reptStore.Mint(offer.Lender, reward)
+		mintRept(offer.Lender, reward)
 	}
 	// Target is the LENDER, not tx.From (the borrower drawing this
 	// offer) - see core.ReputationEvent's doc comment for why this
@@ -2268,13 +2826,21 @@ func applyLoanOfferClose(tx core.Transaction) {
 }
 
 func applyModeratorRegister(tx core.Transaction) {
+	// The fee may have moved between submission and confirmation -
+	// re-checked and only actually deducted here, never trusted from
+	// submission time alone (same pattern as applyTokenRegister's
+	// ETHTEST creation fee).
+	if !tokenStore.Transfer(tx.From, registrationFeeAddress(), ModeratorRegisterFeeCCT) {
+		return
+	}
+
 	if !moderatorStore.Register(tx.From, tx.AuthPublicKey, tx.Timestamp) {
 		return
 	}
 
 	wallet := walletStore.Get(tx.From)
 	if reward := core.IncreaseWalletReputation(wallet, core.ModeratorReputationBonus); reward > 0 {
-		reptStore.Mint(tx.From, reward)
+		mintRept(tx.From, reward)
 	}
 	reputationEventStore.Record(&core.ReputationEvent{
 		TxID: tx.ID, Target: tx.From, Delta: int64(core.ModeratorReputationBonus),
@@ -2308,13 +2874,34 @@ func applyModeratorConfirm(tx core.Transaction) {
 	if !data.Disputed {
 		wallet := walletStore.Get(tx.From)
 		if reward := core.IncreaseWalletReputation(wallet, core.ModeratorConfirmReputationBonus); reward > 0 {
-			reptStore.Mint(tx.From, reward)
+			mintRept(tx.From, reward)
 		}
 		reputationEventStore.Record(&core.ReputationEvent{
 			TxID: tx.ID, Target: tx.From, Delta: int64(core.ModeratorConfirmReputationBonus),
 			Reason: "Confirmed an undisputed trade as moderator", Timestamp: tx.Timestamp,
 		})
 	}
+}
+
+func applyKYCSubmit(tx core.Transaction) {
+	var data kycSubmitData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+	if len(data.FullName) == 0 || len(data.FullName) > 200 {
+		return
+	}
+	if len(data.DateOfBirth) == 0 || len(data.DateOfBirth) > 20 {
+		return
+	}
+	if len(data.Country) == 0 || len(data.Country) > 100 {
+		return
+	}
+	if !data.AgreedTerms {
+		return
+	}
+
+	kycStore.Submit(tx.From, data.FullName, data.DateOfBirth, data.Country, data.AgreedTerms, tx.Timestamp)
 }
 
 func applyCompanyApply(tx core.Transaction) {
@@ -2326,12 +2913,21 @@ func applyCompanyApply(tx core.Transaction) {
 		return
 	}
 
+	// The fee may have moved between submission and confirmation -
+	// re-checked and only actually deducted here, never trusted from
+	// submission time alone (same pattern as applyTokenRegister's
+	// ETHTEST creation fee).
+	if !tokenStore.Transfer(tx.From, registrationFeeAddress(), HubApplyFeeCCT) {
+		return
+	}
+
 	companyStore.Apply(&core.CompanyApplication{
 		Address:      tx.From,
 		PublicKey:    tx.AuthPublicKey,
 		Name:         data.Name,
 		Description:  data.Description,
 		DocumentNote: data.DocumentNote,
+		ContactEmail: data.ContactEmail,
 		Status:       core.CompanyPending,
 		// Assigned here (block-confirmation time), not in the HTTP
 		// handler, for the same determinism reasoning as every other
@@ -2339,6 +2935,18 @@ func applyCompanyApply(tx core.Transaction) {
 		ModeratorAddress: moderatorStore.AssignNext(),
 		CreatedAt:        tx.Timestamp,
 	})
+}
+
+func applyCompanyUpdateContact(tx core.Transaction) {
+	var data companyUpdateContactData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+	if len(data.ContactEmail) > 200 {
+		return
+	}
+
+	companyStore.SetContactEmail(tx.From, data.ContactEmail)
 }
 
 func applyCompanyReview(tx core.Transaction) {
@@ -2472,28 +3080,27 @@ func applyHubRateSet(tx core.Transaction) {
 	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
 		return
 	}
-	// Worker delegation (or lack of it) may have changed between
-	// submission and confirmation - re-checked here, not just trusted
-	// from submission time.
+	// Worker/operator delegation (or lack of it) may have changed
+	// between submission and confirmation - re-checked here, not just
+	// trusted from submission time.
 	hub, ok := authorizedHubActor(data.Hub, tx.From)
 	if !ok {
 		return
 	}
-	// HubPublicKey must always be the HUB's own public key (it's used
-	// elsewhere to re-derive the hub's ETHTEST/USDCTEST sub-address -
-	// see resolveBalanceAddress), never a delegated worker's - when the
-	// hub posts directly tx.AuthPublicKey already IS the hub's key, but
-	// when a worker posts on the hub's behalf it's the worker's key, so
-	// the hub's real public key is looked up from its own company
-	// application record instead.
-	hubPublicKey := tx.AuthPublicKey
+	// When the hub posts directly, this is the hub's own flagship
+	// listing and HubPublicKey is the hub's own key (tx.AuthPublicKey
+	// already IS the hub's key in that case). When an active worker
+	// posts instead, this is now THAT WORKER'S OWN independent listing
+	// (OperatorAddress set) - a separate sub-marketplace with its own
+	// inventory, not an edit to the hub's shared rate - so
+	// HubPublicKey must be the OPERATOR's own key (also
+	// tx.AuthPublicKey, since tx.From is the operator here), never
+	// looked up from the hub's company record.
+	operatorAddress := ""
 	if hub != tx.From {
-		app, ok := companyStore.Get(hub)
-		if !ok {
-			return
-		}
-		hubPublicKey = app.PublicKey
+		operatorAddress = tx.From
 	}
+	hubPublicKey := tx.AuthPublicKey
 	if _, err := resolveTokenStore(data.Symbol); err != nil {
 		return
 	}
@@ -2516,16 +3123,17 @@ func applyHubRateSet(tx core.Transaction) {
 	}
 
 	hubRateStore.Set(&core.HubRate{
-		Hub:          hub,
-		HubPublicKey: hubPublicKey,
-		Symbol:       data.Symbol,
-		FiatSymbol:   data.FiatSymbol,
-		SellRate:     data.SellRate,
-		BuyRate:      data.BuyRate,
-		Active:       data.Active,
-		Mode:         data.Mode,
-		UpdatedAt:    tx.Timestamp,
-		PostedBy:     tx.From,
+		Hub:             hub,
+		HubPublicKey:    hubPublicKey,
+		Symbol:          data.Symbol,
+		FiatSymbol:      data.FiatSymbol,
+		SellRate:        data.SellRate,
+		BuyRate:         data.BuyRate,
+		Active:          data.Active,
+		Mode:            data.Mode,
+		UpdatedAt:       tx.Timestamp,
+		PostedBy:        tx.From,
+		OperatorAddress: operatorAddress,
 	})
 }
 
@@ -2543,7 +3151,7 @@ func applyHubRulesSet(tx core.Transaction) {
 		return
 	}
 
-	hubRulesStore.Set(tx.From, data.Text, data.PaymentWindowMinutes, tx.Timestamp)
+	hubRulesStore.Set(tx.From, data.Text, data.PaymentWindowMinutes, data.MinReputationToApply, tx.Timestamp)
 }
 
 // applyHubWorkerAdd delegates day-to-day pricing to another wallet -
@@ -2628,8 +3236,8 @@ func settleHubTradeOnChain(tx core.Transaction, data hubTradeRequestData, rate *
 	}
 
 	offerID := tx.ID
-	hubSymbolSide := resolveBalanceAddress(data.Hub, rate.HubPublicKey, data.Symbol)
-	hubCounterSide := resolveBalanceAddress(data.Hub, rate.HubPublicKey, rate.FiatSymbol)
+	hubSymbolSide := resolveBalanceAddress(rate.InventoryAddress(), rate.HubPublicKey, data.Symbol)
+	hubCounterSide := resolveBalanceAddress(rate.InventoryAddress(), rate.HubPublicKey, rate.FiatSymbol)
 	userSymbolSide := resolveBalanceAddress(tx.From, tx.AuthPublicKey, data.Symbol)
 	userCounterSide := resolveBalanceAddress(tx.From, tx.AuthPublicKey, rate.FiatSymbol)
 
@@ -2670,7 +3278,7 @@ func settleHubTradeOnChain(tx core.Transaction, data hubTradeRequestData, rate *
 		// to succeed - see the refund above).
 		skimPlatformFee(symbolStore, userSymbolSide, data.Amount)
 		skimPlatformFee(counterStore, hubCounterSide, counterAmount)
-		creator, creatorPublicKey = data.Hub, rate.HubPublicKey
+		creator, creatorPublicKey = rate.InventoryAddress(), rate.HubPublicKey
 		acceptedBy, acceptedByPublicKey = tx.From, tx.AuthPublicKey
 
 	case "SELL_TO_HUB":
@@ -2696,7 +3304,7 @@ func settleHubTradeOnChain(tx core.Transaction, data hubTradeRequestData, rate *
 		skimPlatformFee(symbolStore, hubSymbolSide, data.Amount)
 		skimPlatformFee(counterStore, userCounterSide, counterAmount)
 		creator, creatorPublicKey = tx.From, tx.AuthPublicKey
-		acceptedBy, acceptedByPublicKey = data.Hub, rate.HubPublicKey
+		acceptedBy, acceptedByPublicKey = rate.InventoryAddress(), rate.HubPublicKey
 
 	default:
 		return
@@ -2715,6 +3323,7 @@ func settleHubTradeOnChain(tx core.Transaction, data hubTradeRequestData, rate *
 		AcceptedBy:          acceptedBy,
 		AcceptedByPublicKey: acceptedByPublicKey,
 		CreatedAt:           tx.Timestamp,
+		HubAddress:          data.Hub,
 	})
 }
 
@@ -2735,20 +3344,25 @@ func applyHubTradeRequest(tx core.Transaction) {
 	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
 		return
 	}
-	if data.Amount == 0 || data.Hub == tx.From {
+	if data.Amount == 0 || data.Hub == tx.From || data.Operator == tx.From {
 		return
 	}
 	if data.Direction != "BUY_FROM_HUB" && data.Direction != "SELL_TO_HUB" {
 		return
 	}
 
-	rate, ok := hubRateStore.Get(data.Hub, data.Symbol)
+	rate, ok := hubRateStore.Get(data.Hub, data.Symbol, data.Operator, data.FiatSymbol)
 	if !ok || !rate.Active {
 		return
 	}
-	// Re-verify hub is still a verified Trading Hub at confirmation
-	// time, not just when the rate was posted.
+	// Re-verify hub is still a verified Trading Hub - and, for an
+	// operator's own listing, that the operator is still an active
+	// worker of it - at confirmation time, not just when the rate was
+	// posted.
 	if !companyStore.IsVerified(data.Hub) {
+		return
+	}
+	if data.Operator != "" && !hubWorkerStore.IsActiveWorker(data.Hub, data.Operator) {
 		return
 	}
 
@@ -2775,10 +3389,11 @@ func applyHubTradeRequest(tx core.Transaction) {
 			return
 		}
 		fiatAmount := data.Amount * rate.SellRate
-		hubSide := resolveBalanceAddress(data.Hub, rate.HubPublicKey, data.Symbol)
-		// The hub's LIVE balance is the range - re-checked here, not
-		// trusted from submission time, and never a pre-fixed amount
-		// (see core.HubRate's doc comment).
+		hubSide := resolveBalanceAddress(rate.InventoryAddress(), rate.HubPublicKey, data.Symbol)
+		// The LIVE balance (hub's own, or the operator's own for an
+		// operator listing) is the range - re-checked here, not trusted
+		// from submission time, and never a pre-fixed amount (see
+		// core.HubRate's doc comment).
 		if store.BalanceOf(hubSide) < data.Amount {
 			return
 		}
@@ -2788,7 +3403,7 @@ func applyHubTradeRequest(tx core.Transaction) {
 
 		p2pOfferStore.Create(&core.P2POffer{
 			ID:                  offerID,
-			Creator:             data.Hub,
+			Creator:             rate.InventoryAddress(),
 			CreatorPublicKey:    rate.HubPublicKey,
 			OfferSymbol:         data.Symbol,
 			OfferAmount:         data.Amount,
@@ -2803,6 +3418,7 @@ func applyHubTradeRequest(tx core.Transaction) {
 			CreatedAt:            tx.Timestamp,
 			ModeratorAddress:     moderatorStore.AssignNext(),
 			ModerationStatus:     core.ModerationPending,
+			HubAddress:           data.Hub,
 		})
 
 	case "SELL_TO_HUB":
@@ -2831,13 +3447,14 @@ func applyHubTradeRequest(tx core.Transaction) {
 			WantAmount:          fiatAmount,
 			PaymentMode:         core.PaymentModeExternal,
 			Status:              core.OfferAccepted,
-			AcceptedBy:           data.Hub,
+			AcceptedBy:           rate.InventoryAddress(),
 			AcceptedByPublicKey:  rate.HubPublicKey,
 			SettlementStatus:     core.SettlementAwaitingPayment,
 			AwaitingPaymentSince: tx.Timestamp,
 			CreatedAt:            tx.Timestamp,
 			ModeratorAddress:     moderatorStore.AssignNext(),
 			ModerationStatus:     core.ModerationPending,
+			HubAddress:           data.Hub,
 		})
 	}
 }
@@ -3021,7 +3638,7 @@ func applyRepay(tx core.Transaction) {
 
 	if data.Mode == "p2p" {
 		if reward := creditEngine.RepayLoan(loan); reward > 0 {
-			reptStore.Mint(loan.Borrower, reward)
+			mintRept(loan.Borrower, reward)
 		}
 		reputationEventStore.Record(&core.ReputationEvent{
 			TxID: tx.ID, Target: loan.Borrower, Delta: int64(core.ReputationDeltaLoanRepaidOnTime),
@@ -3051,7 +3668,7 @@ func applyFundLoan(tx core.Transaction) {
 	}
 
 	if reward := creditEngine.FundLoan(loan, tx.From); reward > 0 {
-		reptStore.Mint(tx.From, reward)
+		mintRept(tx.From, reward)
 	}
 	reputationEventStore.Record(&core.ReputationEvent{
 		TxID: tx.ID, Target: tx.From, Delta: int64(core.ReputationDeltaLoanFunded),
@@ -3065,7 +3682,7 @@ func applyFundLoan(tx core.Transaction) {
 }
 
 type governanceData struct {
-	Action      string `json:"action"` // "create" or "vote"
+	Action      string `json:"action"` // "create", "vote", or "activate"
 	Title       string `json:"title"`
 	Description string `json:"description"`
 	ProposalID  string `json:"proposalId"`
@@ -3097,7 +3714,53 @@ func applyGovernance(tx core.Transaction) {
 		}
 
 		_, _ = proposalStore.Vote(data.ProposalID, tx.From, data.Support, power)
+
+	case "activate":
+		// "Activated governance" is defined as VotingPower > 0 - this
+		// field already existed but was never set anywhere (always 0),
+		// so this is the one place that turns it on. Idempotent: never
+		// lowers an already-nonzero value back down. See
+		// HandlePostGovernanceStatus, which gates status posting on
+		// this same flag.
+		wallet := walletStore.Get(tx.From)
+		if wallet.VotingPower == 0 {
+			wallet.VotingPower = 1
+		}
 	}
+}
+
+// CCTTransferFee is charged on every plain CCT send (a TxExchange
+// resolving to symbol CCT) - requested as "half a CCT," but CCT
+// balances are plain whole-number uint64 everywhere in this codebase
+// (see core/token_store.go) with no smaller unit, so a literal 0.5
+// isn't representable without rescaling every balance, constant, and
+// persisted value in the system. This is the nearest practical whole-
+// CCT substitution, a disclosed rounding rather than a silent
+// reinterpretation - true sub-CCT precision is a much larger, separate
+// change if it's ever wanted. Only CCT sends carry this fee -
+// ETHTEST/USDCTEST/REPT/custom-token transfers are untouched.
+const CCTTransferFee = 1
+
+// cctTransferFeePoolAddress is a synthetic, nobody-holds-the-private-
+// key holding address (same pattern as poolAddress/
+// tokenCreationFeeAddress) that accumulates CCT transfer fees while a
+// block's transactions are being applied - applyBlockReward sweeps
+// whatever's sitting here to that block's own validator right after,
+// so each block's fees fund whoever actually included it, and the
+// pool is back to zero before the next block's transactions run.
+func cctTransferFeePoolAddress() string {
+	return "FEE:CCT_TRANSFER"
+}
+
+// registrationFeeAddress is the shared synthetic, nobody-holds-the-
+// private-key destination for Hub/Moderator/Validator registration
+// fees (HubApplyFeeCCT, ModeratorRegisterFeeCCT,
+// ValidatorRegisterFeeCCT) - same tokenCreationFeeAddress-style
+// pattern, not swept anywhere, just a permanent visible-in-explorer
+// sink. Shared across all three roles since they're the same kind of
+// cost (an anti-spam entry fee), not three separately tracked pools.
+func registrationFeeAddress() string {
+	return "FEE:REGISTRATION"
 }
 
 // applyTransfer moves tx.Amount of whichever symbol Data names from
@@ -3123,6 +3786,20 @@ func applyTransfer(tx core.Transaction) {
 	}
 
 	fromSide := resolveBalanceAddress(tx.From, tx.AuthPublicKey, symbol)
+
+	if symbol == "CCT" {
+		// The transfer amount and its fee both have to be available, or
+		// neither moves - re-checked here (never trusted from
+		// submission time alone), same convention as every other fee in
+		// this codebase (see applyTokenRegister's ETHTEST creation fee).
+		if store.BalanceOf(fromSide) < tx.Amount+CCTTransferFee {
+			return
+		}
+		if !store.Transfer(fromSide, cctTransferFeePoolAddress(), CCTTransferFee) {
+			return
+		}
+	}
+
 	store.Transfer(fromSide, tx.To, tx.Amount)
 }
 
@@ -3155,4 +3832,159 @@ func applyFaucetClaim(tx core.Transaction) {
 	tokenStore.Mint(tx.From, FaucetAmount)
 	ethTestStore.Mint(core.DeriveTokenAddress(pub, core.ETHTestAddressTag), FaucetETHTestAmount)
 	usdcTestStore.Mint(core.DeriveTokenAddress(pub, core.USDCTestAddressTag), FaucetUSDCTestAmount)
+}
+
+// orderEscrowAddress is one escrow per order, never shared/commingled
+// across simultaneously-open orders - the exact same per-instance
+// pattern as p2pOfferEscrowAddress (api/p2p_offers.go), reusing the
+// transaction's own ID as the order ID the same way that function
+// reuses it as the offer ID.
+func orderEscrowAddress(orderID string) string {
+	return "ORDERBOOK:" + orderID
+}
+
+// orderByID resolves a TradeRecord's BuyOrderID/SellOrderID back to
+// the full core.Order (for its Owner/PublicKey) - taker isn't in
+// orderBookStore yet at the point Match runs (see
+// core.OrderBookStore.Match's doc comment), so it has to be checked
+// directly rather than only through the store, which only ever holds
+// orders that were already resting before this Match call.
+func orderByID(taker *core.Order, id string) *core.Order {
+	if id == taker.ID {
+		return taker
+	}
+	o, _ := orderBookStore.Get(id)
+	return o
+}
+
+// applyOrderPlace escrows a new limit order's funds, attempts an
+// immediate match against the resting book, settles every resulting
+// trade's real token balances, and rests whatever's left. Every check
+// the HTTP handler (HandlePlaceOrder) already did is re-verified here
+// against current state - never trusted from submission time alone,
+// same convention as every other mutating handler in this codebase.
+func applyOrderPlace(tx core.Transaction) {
+	var data orderPlaceData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+
+	if !orderBookSymbols[data.Symbol] {
+		return
+	}
+	side := core.OrderSide(data.Side)
+	if side != core.OrderBuy && side != core.OrderSell {
+		return
+	}
+	if data.Price == 0 || data.Amount == 0 {
+		return
+	}
+
+	store, err := resolveTokenStore(data.Symbol)
+	if err != nil {
+		return
+	}
+
+	escrow := orderEscrowAddress(tx.ID)
+
+	if side == core.OrderSell {
+		sellSide := resolveBalanceAddress(tx.From, tx.AuthPublicKey, data.Symbol)
+		if !store.Transfer(sellSide, escrow, data.Amount) {
+			return
+		}
+	} else {
+		cost := core.OrderCCTCost(data.Amount, data.Price)
+		if !tokenStore.Transfer(tx.From, escrow, cost) {
+			return
+		}
+	}
+
+	taker := &core.Order{
+		ID:        tx.ID,
+		Owner:     tx.From,
+		PublicKey: tx.AuthPublicKey,
+		Symbol:    data.Symbol,
+		Side:      side,
+		Price:     data.Price,
+		Amount:    data.Amount,
+		Remaining: data.Amount,
+		Status:    core.OrderOpen,
+		CreatedAt: tx.Timestamp,
+	}
+
+	trades := orderBookStore.Match(taker)
+	orderBookStore.Create(taker)
+
+	var lastPrice uint64
+	var takerFilled, takerActualCost uint64
+	for _, trade := range trades {
+		buyOrder := orderByID(taker, trade.BuyOrderID)
+		sellOrder := orderByID(taker, trade.SellOrderID)
+		if buyOrder == nil || sellOrder == nil {
+			continue
+		}
+
+		cctCost := core.OrderCCTCost(trade.Amount, trade.Price)
+		buyerBaseSide := resolveBalanceAddress(buyOrder.Owner, buyOrder.PublicKey, trade.Symbol)
+
+		store.Transfer(orderEscrowAddress(sellOrder.ID), buyerBaseSide, trade.Amount)
+		tokenStore.Transfer(orderEscrowAddress(buyOrder.ID), sellOrder.Owner, cctCost)
+
+		lastPrice = trade.Price
+		if trade.BuyOrderID == taker.ID {
+			takerFilled += trade.Amount
+			takerActualCost += cctCost
+		}
+	}
+
+	// A BUY taker that matched at a cheaper-than-limit resting price
+	// still escrowed the worst-case cost (at its own limit price) up
+	// front - refund the surplus for the filled portion back to the
+	// buyer's real CCT balance now that settlement is done, standard
+	// exchange "price improvement" convention. The unfilled portion's
+	// escrow (if any remains resting) is untouched here - it's
+	// released later, either by a future fill's settlement above or
+	// by applyOrderCancel.
+	if side == core.OrderBuy && takerFilled > 0 {
+		worstCaseCost := core.OrderCCTCost(takerFilled, data.Price)
+		if worstCaseCost > takerActualCost {
+			tokenStore.Transfer(escrow, tx.From, worstCaseCost-takerActualCost)
+		}
+	}
+
+	if len(trades) > 0 {
+		tradeHistoryStore.Record(trades)
+		priceHistoryStore.RecordPrice(data.Symbol, lastPrice, tx.Timestamp)
+	}
+}
+
+// applyOrderCancel releases whatever's left of a still-open order's
+// escrow back to its owner and marks it CANCELLED. Re-verifies
+// ownership/open-status itself (core.OrderBookStore.Cancel already
+// enforces this), never trusting the HTTP handler's own preview check
+// alone.
+func applyOrderCancel(tx core.Transaction) {
+	var data orderCancelData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+
+	order, ok := orderBookStore.Cancel(data.OrderID, tx.From)
+	if !ok || order.Remaining == 0 {
+		return
+	}
+
+	escrow := orderEscrowAddress(order.ID)
+
+	if order.Side == core.OrderSell {
+		store, err := resolveTokenStore(order.Symbol)
+		if err != nil {
+			return
+		}
+		sellSide := resolveBalanceAddress(order.Owner, order.PublicKey, order.Symbol)
+		store.Transfer(escrow, sellSide, order.Remaining)
+	} else {
+		refund := core.OrderCCTCost(order.Remaining, order.Price)
+		tokenStore.Transfer(escrow, order.Owner, refund)
+	}
 }

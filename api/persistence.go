@@ -57,16 +57,39 @@ type persistedState struct {
 	Proposals              map[string]*core.Proposal           `json:"proposals"`
 	ProposalVotes          map[string]map[string]bool          `json:"proposalVotes"`
 	Validators             map[string]*core.ValidatorStatus    `json:"validators"`
+	Delegations            map[string]map[string]uint64        `json:"delegations"`
+	DelegationUnbonding    []core.DelegationUnbondingEntry     `json:"delegationUnbonding"`
 	Moderators             core.ModeratorSnapshot              `json:"moderators"`
 	Companies              map[string]*core.CompanyApplication `json:"companies"`
 	BuyRequests            map[string]*core.BuyRequest         `json:"buyRequests"`
+	Orders                 map[string]*core.Order              `json:"orders"`
+	TradeHistory           map[string][]core.TradeRecord       `json:"tradeHistory"`
 	Recovery               map[string]*core.WalletRecovery     `json:"recovery"`
 	HubRates               map[string]*core.HubRate            `json:"hubRates"`
 	HubRules               map[string]*core.HubRules           `json:"hubRules"`
 	HubNotifications       []*core.HubNotification             `json:"hubNotifications"`
+	UserNotifications      []*core.UserNotification            `json:"userNotifications"`
+	GovernanceStatuses     []*core.GovernanceStatus            `json:"governanceStatuses"`
+	HubAgentApplications   []*core.HubAgentApplication         `json:"hubAgentApplications"`
 	HubWorkers             map[string]*core.HubWorker          `json:"hubWorkers"`
 	HubStorefronts         map[string]*core.HubStorefront      `json:"hubStorefronts"`
 	ReputationEvents       map[string]*core.ReputationEvent    `json:"reputationEvents"`
+	// EthCustodial is NOT gossiped/replicated to other nodes - see
+	// api/eth_custodial.go's top-of-file doc comment for why this store
+	// is deliberately node-local (persisted here only so a restart of
+	// THIS node doesn't lose the mapping).
+	EthCustodial map[string]*core.EthCustodialAccount `json:"ethCustodial"`
+
+	// KYC persists self-attested lending-marketplace access records -
+	// see core/kyc.go's doc comment.
+	KYC map[string]core.KYCRecord `json:"kyc"`
+
+	// PriceHistory persists the pool price time series shown on
+	// pool.html's chart - see core/price_history.go's doc comment.
+	// Without this, a restart would silently wipe every recorded
+	// price point even though the pools themselves (and the chain that
+	// produced those prices) are unaffected.
+	PriceHistory map[string][]core.PricePoint `json:"priceHistory"`
 
 	// AppliedTxIDs/AppliedBlockHashes persist the dedup guards from
 	// apply.go. Without this, a restart wipes them (fresh empty map),
@@ -102,46 +125,56 @@ func SaveState() error {
 		Unbonding: stakingStore.Unbonding,
 		// StakesLegacy is intentionally left unset - only ever read for
 		// migrating an old-format file, never written back.
-		TokenBalances:      tokenStore.Balances,
-		TokenSupply:        tokenStore.Token.TotalSupply,
-		USDCTestBalances:   usdcTestStore.Balances,
-		USDCTestSupply:     usdcTestStore.Token.TotalSupply,
-		REPTBalances:       reptStore.Balances,
-		REPTSupply:         reptStore.Token.TotalSupply,
-		CustomTokens:       tokenRegistry.Meta,
-		CustomTokenStores:  tokenRegistry.Tokens,
-		LiquidityPools:     tokenRegistry.Pools,
-		ETHTestBalances:    ethTestStore.Balances,
-		ETHTestSupply:      ethTestStore.Token.TotalSupply,
-		CCTEthTestPool:     cctEthTestPool,
-		CCTUsdcTestPool:    cctUsdcTestPool,
-		P2POffers:          p2pOfferStore.Offers,
-		LoanOffers:         loanOfferStore.Offers,
-		Negotiations:       negotiationStore.Negotiations,
-		Loans:              loanStore.Loans,
-		CollateralLocked:   collateralStore.Locked,
-		CreditProfiles:     creditStore.Profiles,
-		ReputationProfiles: creditEngine.Profiles.Profiles,
-		CreditHistory:      creditHistory.Events,
-		LenderStats:        lenderStore.Stats,
-		Proposals:          proposalStore.Proposals,
-		ProposalVotes:      proposalStore.Voted,
-		Validators:         validatorStore.Validators,
-		Moderators:         moderatorStore.Snapshot(),
-		Companies:          companyStore.Applications,
-		BuyRequests:        buyRequestStore.Requests,
-		Recovery:           recoveryStore.Records,
-		HubRates:           hubRateStore.Rates,
-		HubRules:           hubRulesStore.Snapshot(),
-		HubNotifications:   notificationStore.Snapshot(),
-		HubWorkers:         hubWorkerStore.Snapshot(),
-		HubStorefronts:     hubStorefrontStore.Snapshot(),
-		ReputationEvents:   reputationEventStore.Snapshot(),
-		AppliedTxIDs:       snapshotAppliedTxIDs(),
-		AppliedBlockHashes: snapshotAppliedBlockHashes(),
-		SlashDedupKeys:     snapshotSlashDedup(),
-		Mempool:            mempool.Transactions,
-		FaucetClaims:       snapshotFaucetClaims(),
+		TokenBalances:        tokenStore.Balances,
+		TokenSupply:          tokenStore.Token.TotalSupply,
+		USDCTestBalances:     usdcTestStore.Balances,
+		USDCTestSupply:       usdcTestStore.Token.TotalSupply,
+		REPTBalances:         reptStore.Balances,
+		REPTSupply:           reptStore.Token.TotalSupply,
+		CustomTokens:         tokenRegistry.Meta,
+		CustomTokenStores:    tokenRegistry.Tokens,
+		LiquidityPools:       tokenRegistry.Pools,
+		ETHTestBalances:      ethTestStore.Balances,
+		ETHTestSupply:        ethTestStore.Token.TotalSupply,
+		CCTEthTestPool:       cctEthTestPool,
+		CCTUsdcTestPool:      cctUsdcTestPool,
+		P2POffers:            p2pOfferStore.Offers,
+		LoanOffers:           loanOfferStore.Offers,
+		Negotiations:         negotiationStore.Negotiations,
+		Loans:                loanStore.Loans,
+		CollateralLocked:     collateralStore.Locked,
+		CreditProfiles:       creditStore.Profiles,
+		ReputationProfiles:   creditEngine.Profiles.Profiles,
+		CreditHistory:        creditHistory.Events,
+		LenderStats:          lenderStore.Stats,
+		Proposals:            proposalStore.Proposals,
+		ProposalVotes:        proposalStore.Voted,
+		Validators:           validatorStore.Validators,
+		Delegations:          delegationStore.Delegations,
+		DelegationUnbonding:  delegationStore.Unbonding,
+		Moderators:           moderatorStore.Snapshot(),
+		Companies:            companyStore.Applications,
+		BuyRequests:          buyRequestStore.Requests,
+		Orders:               orderBookStore.Orders,
+		TradeHistory:         tradeHistoryStore.Trades,
+		Recovery:             recoveryStore.Records,
+		HubRates:             hubRateStore.Rates,
+		HubRules:             hubRulesStore.Snapshot(),
+		HubNotifications:     notificationStore.Snapshot(),
+		UserNotifications:    userNotificationStore.Snapshot(),
+		GovernanceStatuses:   governanceStatusStore.Snapshot(),
+		HubAgentApplications: hubAgentApplicationStore.Snapshot(),
+		HubWorkers:           hubWorkerStore.Snapshot(),
+		HubStorefronts:       hubStorefrontStore.Snapshot(),
+		ReputationEvents:     reputationEventStore.Snapshot(),
+		EthCustodial:         ethCustodialStore.Snapshot(),
+		KYC:                  kycStore.Records,
+		PriceHistory:         priceHistoryStore.History,
+		AppliedTxIDs:         snapshotAppliedTxIDs(),
+		AppliedBlockHashes:   snapshotAppliedBlockHashes(),
+		SlashDedupKeys:       snapshotSlashDedup(),
+		Mempool:              mempool.Transactions,
+		FaucetClaims:         snapshotFaucetClaims(),
 	}
 
 	data, err := json.MarshalIndent(snapshot, "", "  ")
@@ -149,7 +182,16 @@ func SaveState() error {
 		return err
 	}
 
-	return os.WriteFile(dataPath("state.json"), data, 0644)
+	if err := core.AtomicWriteFile(dataPath("state.json"), data, 0644); err != nil {
+		return err
+	}
+
+	// Dual-write to Postgres if configured - see db.go's doc comment for
+	// why this is fire-and-forget and never affects the return value
+	// here: state.json above is still the authoritative write, this is
+	// purely an additional durable copy while that remains true.
+	saveSnapshotToDB(data)
+	return nil
 }
 
 // LoadState restores every store from disk at startup. A missing or
@@ -305,6 +347,12 @@ func LoadState() {
 	if snapshot.Validators != nil {
 		validatorStore.Validators = snapshot.Validators
 	}
+	if snapshot.Delegations != nil {
+		delegationStore.Delegations = snapshot.Delegations
+	}
+	if snapshot.DelegationUnbonding != nil {
+		delegationStore.Unbonding = snapshot.DelegationUnbonding
+	}
 	if snapshot.Moderators.Moderators != nil {
 		moderatorStore.Restore(snapshot.Moderators)
 	}
@@ -314,17 +362,37 @@ func LoadState() {
 	if snapshot.BuyRequests != nil {
 		buyRequestStore.Requests = snapshot.BuyRequests
 	}
+	if snapshot.Orders != nil {
+		orderBookStore.Orders = snapshot.Orders
+	}
+	if snapshot.TradeHistory != nil {
+		tradeHistoryStore.Trades = snapshot.TradeHistory
+	}
 	if snapshot.Recovery != nil {
 		recoveryStore.Records = snapshot.Recovery
 	}
 	if snapshot.HubRates != nil {
 		hubRateStore.Rates = snapshot.HubRates
+		// Re-key every entry from its own fields - state.json written
+		// before FiatSymbol joined the key would otherwise sit under
+		// stale keys that Get can never match again (see
+		// core.HubRateStore.Renormalize's doc comment).
+		hubRateStore.Renormalize()
 	}
 	if snapshot.HubRules != nil {
 		hubRulesStore.Restore(snapshot.HubRules)
 	}
 	if snapshot.HubNotifications != nil {
 		notificationStore.Restore(snapshot.HubNotifications)
+	}
+	if snapshot.UserNotifications != nil {
+		userNotificationStore.Restore(snapshot.UserNotifications)
+	}
+	if snapshot.GovernanceStatuses != nil {
+		governanceStatusStore.Restore(snapshot.GovernanceStatuses)
+	}
+	if snapshot.HubAgentApplications != nil {
+		hubAgentApplicationStore.Restore(snapshot.HubAgentApplications)
 	}
 	if snapshot.HubWorkers != nil {
 		hubWorkerStore.Restore(snapshot.HubWorkers)
@@ -334,6 +402,15 @@ func LoadState() {
 	}
 	if snapshot.ReputationEvents != nil {
 		reputationEventStore.Restore(snapshot.ReputationEvents)
+	}
+	if snapshot.EthCustodial != nil {
+		ethCustodialStore.Restore(snapshot.EthCustodial)
+	}
+	if snapshot.KYC != nil {
+		kycStore.Records = snapshot.KYC
+	}
+	if snapshot.PriceHistory != nil {
+		priceHistoryStore.History = snapshot.PriceHistory
 	}
 
 	restoreAppliedTxIDs(snapshot.AppliedTxIDs)

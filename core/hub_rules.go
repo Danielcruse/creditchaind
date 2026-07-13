@@ -29,6 +29,11 @@ type HubRules struct {
 	// rules saved before this field existed, or a hub that only
 	// bothered to set one direction, working exactly as before.
 	PaymentWindowMinutes map[string]int
+	// MinReputationToApply gates HubAgentApplication submission (see
+	// api/hub_agents.go's HandleApplyHubAgent) - "the hub owner sets
+	// the agent request rules." Zero (the default for a hub that never
+	// set this) means no reputation floor - anyone can apply.
+	MinReputationToApply uint64
 	UpdatedAt            int64
 }
 
@@ -58,11 +63,17 @@ func NewHubRulesStore() *HubRulesStore {
 // Set posts or replaces a hub's rules text and payment windows -
 // always the whole record, same "no partial-field update" convention
 // as HubRateStore.Set.
-func (s *HubRulesStore) Set(hub, text string, paymentWindowMinutes map[string]int, at int64) {
+func (s *HubRulesStore) Set(hub, text string, paymentWindowMinutes map[string]int, minReputationToApply uint64, at int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.Rules[hub] = &HubRules{HubAddress: hub, Text: text, PaymentWindowMinutes: paymentWindowMinutes, UpdatedAt: at}
+	s.Rules[hub] = &HubRules{
+		HubAddress:           hub,
+		Text:                 text,
+		PaymentWindowMinutes: paymentWindowMinutes,
+		MinReputationToApply: minReputationToApply,
+		UpdatedAt:            at,
+	}
 }
 
 func (s *HubRulesStore) Get(hub string) (*HubRules, bool) {

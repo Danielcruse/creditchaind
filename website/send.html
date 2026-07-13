@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>OUTERNET Send</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="css/style.css">
     <style>
         .address-row{
@@ -70,6 +71,8 @@
         enter the recipient's ETHTEST/USDCTEST address here, not their CCT address.
     </p>
 
+    <p id="sendFeeNote" style="opacity:0.75;font-size:13px;"></p>
+
     <div class="address-row">
         <input
             type="text"
@@ -107,11 +110,16 @@
         <h3 style="margin-top:0;">Scan Address QR Code</h3>
         <video id="scanVideo" autoplay playsinline muted></video>
         <p id="scanStatus" style="opacity:0.75;font-size:13px;"></p>
-        <button onclick="closeScanModal()">Cancel</button>
+        <label for="scanFileInput" style="display:block;margin-top:10px;">
+            <span style="opacity:0.75;font-size:12px;">Camera not working? Take or choose a photo of the code instead:</span>
+            <input type="file" accept="image/*" capture="environment" id="scanFileInput" style="display:block;margin-top:6px;width:100%;box-sizing:border-box;">
+        </label>
+        <button onclick="closeScanModal()" style="margin-top:10px;">Cancel</button>
     </div>
 </div>
 
 <script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
 <script src="js/send.js"></script>
 
 </body>

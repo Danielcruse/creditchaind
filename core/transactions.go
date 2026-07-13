@@ -32,6 +32,10 @@ const (
 	TxLockCollateral    TransactionType = "LOCK_COLLATERAL"
 	TxSlashReport       TransactionType = "SLASH_REPORT"
 
+	TxValidatorDelegate      TransactionType = "VALIDATOR_DELEGATE"
+	TxValidatorUndelegate    TransactionType = "VALIDATOR_UNDELEGATE"
+	TxValidatorSetCommission TransactionType = "VALIDATOR_SET_COMMISSION"
+
 	TxBridgeDeposit  TransactionType = "BRIDGE_DEPOSIT"
 	TxBridgeWithdraw TransactionType = "BRIDGE_WITHDRAW"
 
@@ -90,12 +94,23 @@ const (
 	TxP2PBuyerMarkPaid    TransactionType = "P2P_BUYER_MARK_PAID"
 	TxP2PBuyerConfirmPaid TransactionType = "P2P_BUYER_CONFIRM_PAID"
 	TxP2PModeratorResolve TransactionType = "P2P_MODERATOR_RESOLVE"
+	// TxP2PSellerDispute lets the receiving side reject a payment claim
+	// while still AWAITING_PAYMENT, instead of only being able to
+	// disagree after already confirming receipt - see
+	// core.P2POfferStore.DisputeAwaitingPayment's doc comment.
+	TxP2PSellerDispute TransactionType = "P2P_SELLER_DISPUTE"
 
 	// Company verification is a testnet-only placeholder badge - see
 	// core/company.go's doc comment for what it is (and very much
 	// isn't) a guarantee of.
 	TxCompanyApply  TransactionType = "COMPANY_APPLY"
 	TxCompanyReview TransactionType = "COMPANY_REVIEW"
+
+	// TxCompanyUpdateContact lets an applicant/hub change where they
+	// get emailed trade-attention notifications (see api/email.go,
+	// core.CompanyStore.SetContactEmail) - not moderator-gated, since
+	// it's the applicant's own notification preference.
+	TxCompanyUpdateContact TransactionType = "COMPANY_UPDATE_CONTACT"
 
 	// TxCompanyReassignModerator lets any currently-registered moderator
 	// claim a still-PENDING application away from its originally
@@ -160,6 +175,21 @@ const (
 	// node's derived state, like pool reserves, the next time a real
 	// transaction depends on that balance).
 	TxTokenMint TransactionType = "TOKEN_MINT"
+
+	// TxKYCSubmit is a self-attested KYC submission gating access to
+	// the peer-lending marketplace (Lend/Marketplace/Your Negotiations)
+	// - see core/kyc.go's doc comment for what this is (and very much
+	// isn't - no real document verification) a guarantee of.
+	TxKYCSubmit TransactionType = "KYC_SUBMIT"
+
+	// The CCT order book (see core/order_book.go's doc comment) - real
+	// bid/ask limit orders matched by price-time priority, replacing
+	// the AMM's reserve-ratio pricing for CCT-vs-ETHTEST/USDCTEST.
+	// TxOrderPlace escrows funds and attempts an immediate match (any
+	// unfilled remainder rests in the book); TxOrderCancel releases
+	// whatever's left of a still-open order's escrow back to its owner.
+	TxOrderPlace  TransactionType = "ORDER_PLACE"
+	TxOrderCancel TransactionType = "ORDER_CANCEL"
 )
 
 type Transaction struct {

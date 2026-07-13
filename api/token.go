@@ -45,6 +45,12 @@ var ethTestStore = core.NewTokenStore()
 var cctEthTestPool = core.NewLiquidityPool("ETHTEST")
 var cctUsdcTestPool = core.NewLiquidityPool("USDCTEST")
 
+// priceHistoryStore is a bounded, per-symbol price time series fed by
+// recordPoolPrice (api/apply.go) every time a swap or liquidity change
+// actually moves a pool's ratio - purely observational, never itself
+// consulted by any swap/pricing logic. See core/price_history.go.
+var priceHistoryStore = core.NewPriceHistoryStore()
+
 func init() {
 	usdcTestStore.Token.Name = "CreditChain Test USDC"
 	usdcTestStore.Token.Symbol = "USDCTEST"

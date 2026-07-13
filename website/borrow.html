@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Borrow & Lend</title>
+    <title>Borrow</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="css/style.css">
     <style>
         .explorer-search{
@@ -20,85 +21,15 @@
             color:white;
             box-sizing:border-box;
         }
-        .explorer-row{
-            display:flex;
-            justify-content:space-between;
-            align-items:center;
-            gap:12px;
-            padding:10px 12px;
-            border-bottom:1px solid rgba(255,255,255,0.08);
-            font-family:monospace;
-            font-size:13px;
-            flex-wrap:wrap;
-        }
-        .explorer-row:last-child{
-            border-bottom:none;
-        }
-        .explorer-hash{
-            opacity:0.75;
-        }
-        .explorer-empty{
-            opacity:0.6;
-            padding:10px 0;
-        }
-        .draw-amount{
-            width:100px;
-            padding:6px 8px;
-            border-radius:8px;
-            border:1px solid rgba(255,255,255,0.15);
-            background:rgba(255,255,255,0.05);
-            color:white;
-        }
-        .explorer-search select{
-            flex:1;
-            min-width:120px;
-            padding:10px 14px;
-            border-radius:10px;
-            border:1px solid rgba(255,255,255,0.15);
-            background:rgba(255,255,255,0.05);
-            color:white;
-            box-sizing:border-box;
-        }
-        .modal-overlay{
-            display:none;
-            position:fixed;
-            inset:0;
-            background:rgba(0,0,0,0.7);
-            align-items:center;
-            justify-content:center;
-            z-index:10000;
-        }
-        .modal-box{
-            background:#0b1026;
-            border-radius:16px;
-            padding:20px;
-            width:min(500px, 90vw);
-            max-height:80vh;
-            display:flex;
-            flex-direction:column;
-        }
-        .chat-messages{
-            flex:1;
-            overflow-y:auto;
-            max-height:300px;
-            border:1px solid rgba(255,255,255,0.1);
-            border-radius:10px;
-            padding:10px;
-            margin:10px 0;
-            font-size:13px;
-        }
-        .chat-message{
-            margin-bottom:8px;
-        }
-        .chat-message .sender{
-            opacity:0.6;
-            font-size:11px;
-        }
     </style>
 </head>
 <body>
 
-<h1>Borrow & Lend</h1>
+<h1>Borrow</h1>
+
+<p style="margin-top:-10px;">
+    Looking to lend instead? <a href="lend.html">Go to the Lend marketplace</a>.
+</p>
 
 <div class="card">
 
@@ -159,6 +90,14 @@
         <span id="usdcTestBalance">0</span>
     </p>
 
+    <p style="opacity:0.7;font-size:12px;">
+        Your rate starts from your credit tier's base rate. If this loan draws on locked oETH collateral, it also
+        moves with that collateral's recent price on the ETHTEST/CCT market - a falling price raises the rate
+        (up to +15 points), a rising price lowers it (down to -15 points, floored at 1%), same as a real lending
+        protocol pricing risk to what's actually backing the loan. CCT-collateralized loans are unaffected -
+        CCT has no separate price to react to.
+    </p>
+
     <input
         type="number"
         id="borrowAmount"
@@ -188,96 +127,13 @@
 
 <br>
 
-<div class="card">
-
-    <h2>Lend</h2>
-
-    <p style="opacity:0.8; font-size:13px;">
-        Post a standing offer to lend any token at a rate you choose - any borrower can discover it
-        below, request an amount, and chat with you to finalize terms before anything is recorded
-        on chain.
-    </p>
-
-    <p>
-        Balance in selected token:
-        <span id="lendBalance">0</span>
-    </p>
-
-    <div class="explorer-search">
-        <select id="offerSymbol">
-            <option value="CCT">CCT</option>
-            <option value="ETHTEST">ETHTEST</option>
-            <option value="USDCTEST" selected>USDCTEST</option>
-            <option value="REPT">REPT</option>
-        </select>
-        <input type="number" id="offerRate" placeholder="Rate % (e.g. 5)" min="0">
-        <input type="number" id="offerAmount" placeholder="Capital to lend" min="0">
-        <button onclick="createLoanOffer()">Post Offer</button>
-    </div>
-
-    <p id="lendStatus"></p>
-
-    <h3>Your Offers</h3>
-    <div id="myOfferList" class="explorer-empty">No offers yet.</div>
-
-</div>
-
-<br>
-
-<div class="card">
-
-    <h2>Loan Marketplace</h2>
-
-    <p style="opacity:0.8; font-size:13px;">
-        Every open offer from every lender - pick one, enter the amount you want, and request it.
-        This opens a chat with the lender - nothing is recorded on chain until the lender agrees.
-    </p>
-
-    <div id="marketplaceList" class="explorer-empty">Loading...</div>
-
-</div>
-
-<br>
-
-<div class="card">
-
-    <h2>Your Negotiations</h2>
-
-    <p style="opacity:0.8; font-size:13px;">
-        Open requests and chats, whether you're the borrower or the lender. Messages here are
-        plain text, not private/encrypted - anyone can read a negotiation's thread, the same way
-        every other address-keyed lookup in this app works.
-    </p>
-
-    <div id="negotiationList" class="explorer-empty">No negotiations yet.</div>
-
-</div>
-
-<br>
-
 <button
     onclick="location.href='wallet.html'">
     Back To Wallet
 </button>
 
-<div class="modal-overlay" id="chatModalOverlay">
-    <div class="modal-box">
-        <h3 style="margin-top:0;">Negotiation</h3>
-        <p id="chatSummary" style="opacity:0.75;font-size:13px;"></p>
-        <div class="chat-messages" id="chatMessages"></div>
-        <div class="explorer-search">
-            <input type="text" id="chatText" placeholder="Type a message..." maxlength="2000">
-            <button onclick="sendChatMessage()">Send</button>
-        </div>
-        <div class="explorer-search">
-            <button id="chatConfirmBtn" onclick="confirmChatNegotiation()" style="display:none;">Agree &amp; Fund</button>
-            <button onclick="cancelChatNegotiation()">Cancel Negotiation</button>
-            <button onclick="closeChatModal()">Close</button>
-        </div>
-    </div>
-</div>
-
 <script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
 <script src="js/borrow.js"></script>
 
 </body>

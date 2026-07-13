@@ -51,8 +51,16 @@ func HandleTokenTransfer(
 		return
 	}
 
+	// A CCT send also needs to cover CCTTransferFee on top of the
+	// amount itself - re-checked authoritatively in applyTransfer at
+	// confirmation time, this is just the fast-fail preview.
+	required := req.Amount
+	if req.Symbol == "CCT" {
+		required += CCTTransferFee
+	}
+
 	fromSide := resolveBalanceAddress(from, auth.PublicKey, req.Symbol)
-	if store.BalanceOf(fromSide) < req.Amount {
+	if store.BalanceOf(fromSide) < required {
 		json.NewEncoder(w).Encode(
 			map[string]bool{
 				"success": false,
@@ -64,10 +72,12 @@ func HandleTokenTransfer(
 	data, _ := json.Marshal(req)
 	tx := recordTx(auth, from, req.To, req.Amount, core.TxExchange, string(data))
 
-	json.NewEncoder(w).Encode(
-		map[string]any{
-			"status": "pending",
-			"txId":   tx.ID,
-		},
-	)
+	resp := map[string]any{
+		"status": "pending",
+		"txId":   tx.ID,
+	}
+	if req.Symbol == "CCT" {
+		resp["fee"] = CCTTransferFee
+	}
+	json.NewEncoder(w).Encode(resp)
 }

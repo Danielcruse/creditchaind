@@ -27,6 +27,15 @@ type LoanOffer struct {
 	Symbol      string // which token this offer lends - CCT, ETHTEST, USDCTEST, REPT, or a developer-registered token
 	RatePercent uint64
 
+	// DurationSeconds is how long a borrower has to repay once they
+	// draw against this offer, set by the lender when posting it - the
+	// clock that makes a real "default" possible (see
+	// api/apply.go's processLoanDefaults). Zero means no due date is
+	// enforced on loans drawn against this offer - kept as an explicit
+	// opt-in rather than defaulting every offer to some duration, so
+	// existing offers created before this field existed stay exempt.
+	DurationSeconds uint64
+
 	TotalAmount     uint64
 	RemainingAmount uint64
 

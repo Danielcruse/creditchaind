@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>Token Creation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="css/style.css">
     <style>
         .explorer-search{
@@ -49,14 +50,13 @@
 
 <div class="card">
     <p style="opacity:0.75;font-size:13px;">
-        Register a new testnet token here, then head to
-        <a href="pool.html" style="color:#8ef;">Pool</a> to deposit liquidity and give it a real
-        (testnet) price against CCT. A registered token has no value at all until someone
-        deposits liquidity into its pool. Registering requires some test ETH staked first
-        (same "skin in the game" requirement as borrowing) - see
-        <a href="staking.html" style="color:#8ef;">Stake</a> if you haven't yet - plus a
-        <span id="tkFeeAmount">5</span> ETHTEST creation fee, charged from your ETHTEST address
-        (see your wallet card on OUTERNET).
+        Register a new testnet token here. A registered token has no (testnet) price against CCT
+        until liquidity has been seeded for it - that happens automatically behind the scenes as
+        part of the trades and settlements that use it, so there's nothing extra for you to do.
+        Registering requires some test ETH staked first (same "skin in the game" requirement as
+        borrowing) - see <a href="staking.html" style="color:#8ef;">Stake</a> if you haven't yet -
+        plus a <span id="tkFeeAmount">5</span> ETHTEST creation fee, charged from your ETHTEST
+        address (see your wallet card on OUTERNET).
     </p>
 
     <div id="tokensLoggedOut" style="display:none;">
@@ -98,12 +98,12 @@
 </div>
 
 <p style="margin-top:20px;">
-    <a href="pool.html">Pool &rarr;</a> &nbsp;|&nbsp;
     <a href="explorer.html">Explorer</a> &nbsp;|&nbsp;
     <a href="outernet.html">Back to OUTERNET</a>
 </p>
 
 <script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
 <script src="js/tokens.js"></script>
 
 </body>

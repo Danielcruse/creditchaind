@@ -2,6 +2,7 @@
 <html>
 <head>
 <title>Reputation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -51,14 +52,69 @@ re-mint it.
 
 </div>
 
-<a href="reputation-math.html">How Reputation Is Calculated</a>
-&nbsp;|&nbsp;
+<div class="card" id="math">
+
+<details>
+<summary style="cursor:pointer;"><h2 style="display:inline;">How Reputation Is Calculated</h2></summary>
+
+<p style="opacity:0.75;font-size:13px;">
+Every wallet has a single trust score - Reputation - on a 1-100 scale.
+It never reaches zero: even at the floor, there is always a path back
+through honest participation. Pulled live from the same numbers the
+network enforces (nothing here is hand-typed or able to drift out of
+sync with the code).
+</p>
+
+<h3>Score Range</h3>
+
+<div class="explorer-row">
+<span>Floor</span>
+<span id="floor">-</span>
+</div>
+<div class="explorer-row">
+<span>Ceiling</span>
+<span id="ceiling">-</span>
+</div>
+
+<h3>Credit Tiers</h3>
+
+<p style="opacity:0.75;font-size:13px;">
+A tier is just a labelled range over Reputation - not a second score.
+Larger loans, lower interest, governance weight, and validator
+preference are all gated off whichever tier a wallet currently sits
+in.
+</p>
+
+<div id="tiers">Loading...</div>
+
+<h3>One-Time REPT Rewards</h3>
+
+<p style="opacity:0.75;font-size:13px;">
+The first time a wallet's reputation ever climbs into a new tier, it
+mints a one-time REPT reward. Dropping out of a tier and climbing back
+into it later does not re-mint the reward. Jumping several tiers in a
+single move pays the full cumulative total, not just the destination
+tier's.
+</p>
+
+<div id="tierRewards">Loading...</div>
+
+<h3>How Every Action Moves Reputation</h3>
+
+<div id="mechanisms">Loading...</div>
+
+</details>
+
+</div>
+
 <a href="outernet.html">
 Back to OUTERNET
 </a>
 
 <script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
 <script src="js/reputation.js"></script>
+<script src="js/reputation-math.js"></script>
 
 </body>
 </html>

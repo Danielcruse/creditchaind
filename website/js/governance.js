@@ -1,5 +1,79 @@
 const wallet = requireWallet();
 
+async function checkGovernanceActivation() {
+    if (!wallet) return;
+
+    try {
+        const w = await apiGet(`/wallet?address=${wallet.address}`);
+        const activated = w.votingPower > 0;
+
+        document.getElementById("govNotActivated").style.display = activated ? "none" : "block";
+        document.getElementById("govActivated").style.display = activated ? "block" : "none";
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function activateGovernance() {
+    if (!wallet) return;
+
+    try {
+        const result = await apiPostSigned("/governance/activate", {});
+        document.getElementById("activateStatus").innerText =
+            `Activating (tx ${result.txId}) - takes effect once the next block confirms it.`;
+        setTimeout(checkGovernanceActivation, 9000);
+    } catch (e) {
+        document.getElementById("activateStatus").innerText = "Could not activate: " + e.message;
+    }
+}
+
+async function postGovernanceStatus() {
+    if (!wallet) return;
+
+    const text = document.getElementById("statusText").value.trim();
+    if (!text) {
+        alert("Enter a status update first.");
+        return;
+    }
+
+    try {
+        await apiPostSigned("/governance/status/post", { text });
+        document.getElementById("statusText").value = "";
+        document.getElementById("statusPostResult").innerText = "Posted - now live on the landing page.";
+        loadStatusFeed();
+    } catch (e) {
+        document.getElementById("statusPostResult").innerText = "Could not post: " + e.message;
+    }
+}
+
+async function loadStatusFeed() {
+    const div = document.getElementById("statusFeed");
+
+    try {
+        const statuses = await apiGet("/governance/status/recent");
+
+        if (!statuses || statuses.length === 0) {
+            div.innerHTML = "No community updates yet.";
+            return;
+        }
+
+        div.innerHTML = statuses
+            .map((s) => {
+                const time = s.Timestamp ? new Date(s.Timestamp * 1000).toLocaleString() : "-";
+                return `
+                    <div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.08);">
+                        <p style="margin:0 0 4px;">${s.Text}</p>
+                        <p style="margin:0;opacity:0.55;font-size:11px;">${formatAddress(s.Address)} &middot; ${time}</p>
+                    </div>
+                `;
+            })
+            .join("");
+    } catch (e) {
+        console.error(e);
+        div.innerHTML = "No community updates yet.";
+    }
+}
+
 async function createProposal() {
     if (!wallet) return;
 
@@ -76,5 +150,8 @@ async function render() {
 }
 
 render();
+checkGovernanceActivation();
+loadStatusFeed();
 
 setInterval(render, 10000);
+setInterval(loadStatusFeed, 10000);

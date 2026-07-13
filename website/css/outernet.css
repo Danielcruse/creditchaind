@@ -109,6 +109,48 @@ body{
         );
 }
 
+/* Earning-services disclosure (Moderation, Validator Dashboard) -
+   styled to read as one more sidebar item when collapsed, with its
+   two buttons appearing indented underneath once opened. */
+.sidebar-collapsible{
+    margin-bottom:10px;
+}
+
+.sidebar-collapsible summary{
+    width:100%;
+    padding:12px;
+    border-radius:12px;
+    background:rgba(255,255,255,.05);
+    color:white;
+    cursor:pointer;
+    list-style:none;
+    box-sizing:border-box;
+}
+
+.sidebar-collapsible summary::-webkit-details-marker{
+    display:none;
+}
+
+.sidebar-collapsible summary::after{
+    content:"▾";
+    float:right;
+    opacity:.6;
+}
+
+.sidebar-collapsible[open] summary::after{
+    content:"▴";
+}
+
+.sidebar-collapsible summary:hover{
+    box-shadow:0 0 20px rgba(0,255,255,.4);
+}
+
+.sidebar-collapsible button{
+    width:calc(100% - 14px);
+    margin-left:14px;
+    margin-top:8px;
+}
+
 .main{
     /* Same leak as .sidebar above - style.css's .main sets a
        permanent margin-left:300px meant for its fixed-sidebar layout,
@@ -251,6 +293,231 @@ body{
         scale(1.05);
 }
 
+/* --- Wallet hero: the self-custody wallet's own balance/address/
+   actions, front and center - the first thing this dashboard shows,
+   ahead of any network/admin stats. --- */
+.wallet-hero{
+    background:
+        linear-gradient(
+            160deg,
+            rgba(0,255,149,.10),
+            rgba(255,255,255,.04)
+        );
+
+    border:
+        1px solid
+        rgba(0,255,149,.25);
+
+    border-radius:24px;
+
+    padding:28px;
+
+    margin-bottom:20px;
+
+    backdrop-filter:
+        blur(20px);
+}
+
+.wallet-hero-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:12px;
+    flex-wrap:wrap;
+}
+
+.wallet-greeting{
+    font-size:15px;
+    opacity:.85;
+    margin:0 0 4px;
+}
+
+.wallet-address-chip{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    max-width:220px;
+    padding:8px 12px;
+    border-radius:999px;
+    border:1px solid rgba(255,255,255,.15);
+    background:rgba(255,255,255,.06);
+    color:#fff;
+    font-family:monospace;
+    font-size:12px;
+    cursor:pointer;
+    transition:.2s;
+}
+
+.wallet-address-chip:hover{
+    background:rgba(255,255,255,.12);
+}
+
+.wallet-address-chip span:first-child{
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+}
+
+.wallet-address-chip-icon{
+    flex-shrink:0;
+    opacity:.8;
+}
+
+.wallet-balance-block{
+    margin:26px 0 22px;
+}
+
+.wallet-balance-label{
+    font-size:12px;
+    text-transform:uppercase;
+    letter-spacing:1px;
+    opacity:.6;
+}
+
+.wallet-balance-amount{
+    font-size:44px;
+    font-weight:700;
+    line-height:1.2;
+    margin-top:2px;
+    background:
+        linear-gradient(
+            90deg,
+            #00ff95,
+            #8ef
+        );
+    -webkit-background-clip:text;
+    background-clip:text;
+    color:transparent;
+}
+
+.wallet-custody-note{
+    opacity:.55;
+    font-size:11px;
+    margin-top:8px;
+    max-width:520px;
+}
+
+.quick-actions{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+}
+
+.quick-actions button{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:6px;
+    min-width:76px;
+    padding:12px 10px;
+    border:none;
+    border-radius:16px;
+    background:rgba(255,255,255,.07);
+    color:#fff;
+    cursor:pointer;
+    font-size:12px;
+    transition:.2s;
+}
+
+.quick-actions button:hover{
+    background:rgba(0,255,149,.18);
+    transform:translateY(-2px);
+}
+
+.quick-actions .qa-icon{
+    font-size:18px;
+    width:36px;
+    height:36px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:50%;
+    background:rgba(255,255,255,.08);
+}
+
+/* --- Asset list: one row per token, wallet-app style (icon badge +
+   symbol/name on the left, balance/price stacked on the right),
+   instead of a dense paragraph-per-token layout. --- */
+.asset-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+    padding:14px 4px;
+    border-bottom:1px solid rgba(255,255,255,.08);
+}
+
+.asset-row:last-of-type{
+    border-bottom:none;
+}
+
+.asset-row-left{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    min-width:0;
+}
+
+.asset-icon{
+    flex:0 0 auto;
+    width:38px;
+    height:38px;
+    border-radius:50%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-weight:800;
+    font-size:14px;
+    letter-spacing:0.3px;
+    background:linear-gradient(135deg,#00d2ff,#3a7bd5);
+    color:#04101f;
+}
+
+.asset-info{
+    display:flex;
+    flex-direction:column;
+    gap:3px;
+    min-width:0;
+}
+
+.asset-symbol{
+    font-weight:800;
+    font-size:16px;
+    letter-spacing:0.2px;
+}
+
+.asset-name{
+    font-size:12px;
+    opacity:.6;
+}
+
+.asset-address{
+    font-family:monospace;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    max-width:220px;
+}
+
+.asset-values{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-end;
+    gap:3px;
+}
+
+.asset-balance{
+    font-weight:700;
+    font-size:15px;
+    white-space:nowrap;
+}
+
+.asset-price{
+    font-size:12px;
+    opacity:.6;
+    white-space:nowrap;
+}
+
 .network-live{
     color:
         #00ff99;
@@ -298,30 +565,19 @@ pre{
     .sidebar{
         width:100%;
         min-height:0;
+        /* Without this, the ~20-button nav list renders first in the
+           stacked column and pushes the wallet hero (balance,
+           Send/Receive/Stake/Swap/Faucet) an entire nav-menu's height
+           down the page - order alone (not touching position, which
+           is what caused the earlier fixed-sidebar click-overlap bug
+           this file already documents above) puts it back after the
+           wallet content without reintroducing that. */
+        order:2;
     }
-}
 
-/* Mobile card carousel - js/mobile-carousel.js toggles the
-   body.mobile-carousel class on/off as the viewport crosses the same
-   900px breakpoint used above, so this only ever applies on the
-   narrow layout. Instead of one long scroll through every dashboard
-   card, one .dash-panel is shown at a time with dot navigation and a
-   floating slide-in transition; js/outernet.js's field IDs (#height,
-   #balance, etc.) are untouched, so it keeps populating panels
-   normally regardless of which one is currently visible. */
-body.mobile-carousel .grid{
-    display:contents;
-}
-
-body.mobile-carousel .dash-panel{
-    display:none;
-    width:100%;
-    box-sizing:border-box;
-}
-
-body.mobile-carousel .dash-panel.carousel-current{
-    display:block;
-    animation: panelFloatIn .35s ease both;
+    .main{
+        order:1;
+    }
 }
 
 @keyframes panelFloatIn{
@@ -335,69 +591,383 @@ body.mobile-carousel .dash-panel.carousel-current{
     }
 }
 
-.carousel-nav{
+/* Mobile off-canvas drawer + 5-tab bottom bar - js/mobile-nav.js
+   toggles body.mobile-nav on/off at the same 900px breakpoint used
+   above, and body.mobile-drawer-open while the drawer is slid out.
+   Replaces the old dot/swipe carousel: instead of a sequence of
+   swipeable panels, .mobile-page wrappers are shown one at a time by
+   an explicit tab-bar click, reusing the same panelFloatIn transition.
+   js/outernet.js's field IDs (#balance, #blocks, etc.) are untouched,
+   so they keep populating regardless of which .mobile-page is shown. */
+
+.mobile-topbar{
+    display:none;
+    align-items:center;
+    gap:12px;
+    padding:12px 16px;
     position:sticky;
     top:0;
-    z-index:50;
-    display:none;
-    gap:8px;
-    justify-content:center;
-    flex-wrap:wrap;
-    padding:10px 0 16px;
-    background:
-        linear-gradient(
-            to bottom,
-            rgba(5,8,22,.95),
-            rgba(5,8,22,0)
-        );
+    z-index:800;
+    background:rgba(10,15,30,.95);
+    backdrop-filter:blur(20px);
+    border-bottom:1px solid rgba(255,255,255,.08);
 }
 
-body.mobile-carousel .carousel-nav{
+body.mobile-nav .mobile-topbar{
     display:flex;
 }
 
-.carousel-dot{
+.hamburger-btn{
+    background:none;
     border:none;
-    border-radius:999px;
-    padding:6px 12px;
-    font-size:11px;
-    background:rgba(255,255,255,.08);
-    color:rgba(255,255,255,.6);
-    cursor:pointer;
-    transition:.2s;
-    white-space:nowrap;
-}
-
-.carousel-dot.active{
-    background:#00bfff;
-    color:#fff;
-}
-
-.carousel-arrow{
-    display:none;
-    position:fixed;
-    top:50%;
-    transform:translateY(-50%);
-    z-index:60;
-    width:40px;
-    height:40px;
-    border-radius:50%;
-    border:1px solid rgba(255,255,255,.15);
-    background:rgba(10,15,30,.85);
-    color:#fff;
-    font-size:18px;
+    color:inherit;
+    font-size:22px;
     line-height:1;
     cursor:pointer;
+    padding:4px 8px;
 }
 
-body.mobile-carousel .carousel-arrow{
+.mobile-topbar-brand{
+    font-weight:600;
+}
+
+.drawer-backdrop{
+    display:none;
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,.5);
+    z-index:900;
+}
+
+body.mobile-nav.mobile-drawer-open .drawer-backdrop{
     display:block;
 }
 
-.carousel-arrow.prev{
-    left:8px;
+body.mobile-nav .sidebar{
+    position:fixed;
+    top:0;
+    left:0;
+    height:100vh;
+    width:80vw;
+    max-width:320px;
+    z-index:1000;
+    transform:translateX(-100%);
+    transition:transform .25s ease;
+    overflow-y:auto;
+    box-shadow:4px 0 24px rgba(0,0,0,.35);
 }
 
-.carousel-arrow.next{
-    right:8px;
+body.mobile-nav.mobile-drawer-open .sidebar{
+    transform:translateX(0);
+}
+
+body.mobile-nav .sidebar-item-hide-mobile{
+    display:none;
+}
+
+.mobile-tabbar{
+    display:none;
+    position:fixed;
+    left:0;
+    right:0;
+    bottom:0;
+    z-index:700;
+    justify-content:space-around;
+    padding:6px 4px calc(6px + env(safe-area-inset-bottom));
+    background:rgba(10,15,30,.95);
+    backdrop-filter:blur(20px);
+    border-top:1px solid rgba(255,255,255,.08);
+}
+
+body.mobile-nav .mobile-tabbar{
+    display:flex;
+}
+
+.tabbar-btn{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:2px;
+    background:none;
+    border:none;
+    color:inherit;
+    opacity:.6;
+    font-size:10px;
+    padding:4px 2px;
+    cursor:pointer;
+}
+
+.tabbar-btn.active{
+    opacity:1;
+    color:#00bfff;
+}
+
+.tabbar-icon{
+    font-size:20px;
+}
+
+.engage-form-row{
+    display:flex;
+    gap:10px;
+    margin-bottom:15px;
+    flex-wrap:wrap;
+}
+
+.engage-form-row input,
+.engage-form-row select{
+    flex:1;
+    min-width:140px;
+    padding:10px 14px;
+    border-radius:10px;
+    border:1px solid rgba(255,255,255,0.15);
+    background:rgba(255,255,255,0.05);
+    color:inherit;
+    box-sizing:border-box;
+}
+
+.explorer-empty{
+    opacity:0.6;
+    padding:10px 0;
+}
+
+.modal-overlay{
+    display:none;
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.7);
+    align-items:center;
+    justify-content:center;
+    z-index:10000;
+}
+
+.modal-box{
+    background:#0b1026;
+    color:#fff;
+    border-radius:16px;
+    padding:20px;
+    width:min(500px, 90vw);
+    max-height:80vh;
+    display:flex;
+    flex-direction:column;
+}
+
+.chat-messages{
+    flex:1;
+    overflow-y:auto;
+    max-height:300px;
+    border:1px solid rgba(255,255,255,0.1);
+    border-radius:10px;
+    padding:10px;
+    margin:10px 0;
+    font-size:13px;
+}
+
+.chat-message{
+    margin-bottom:8px;
+}
+
+.chat-message .sender{
+    opacity:0.6;
+    font-size:11px;
+}
+
+.kyc-field{
+    margin-bottom:10px;
+}
+
+.kyc-field label{
+    display:block;
+    font-size:12px;
+    opacity:0.7;
+    margin-bottom:4px;
+}
+
+.kyc-field input[type="text"], .kyc-field input[type="date"]{
+    width:100%;
+    padding:10px 14px;
+    border-radius:10px;
+    border:1px solid rgba(255,255,255,0.15);
+    background:rgba(255,255,255,0.05);
+    color:inherit;
+    box-sizing:border-box;
+}
+
+body.mobile-nav .main{
+    padding-bottom:76px;
+}
+
+/* Engage and Settings are net-new mobile-only tabs (their content
+   didn't exist inline on the desktop dashboard before this) - hidden
+   unconditionally so desktop, which never gets body.mobile-nav,
+   doesn't grow new sections. Home/Transactions/Activity wrap content
+   that already rendered inline on desktop, so they get no such
+   override and keep flowing normally there. */
+.mobile-page[data-tab="engage"],
+.mobile-page[data-tab="settings"]{
+    display:none;
+}
+
+body.mobile-nav .mobile-page{
+    display:none;
+}
+
+body.mobile-nav .mobile-page.mobile-page-active{
+    display:block;
+    animation: panelFloatIn .35s ease both;
+}
+
+/* --- Light theme, scoped to body.outernet-light (outernet.html only -
+   deliberately NOT applied to every page that links this stylesheet,
+   since wallet.html/assets.html/profile.html/network.html reuse these
+   same .card/.wallet-hero/.asset-* classes against the site's default
+   dark body and shouldn't change just because this file changed).
+   Same visual language as css/pool-light.css (the other deliberately
+   light corner of the site) - #f7f8fb background, white cards, same
+   border/shadow/radius values - so a user going Marketplace -> P2P
+   wording pass -> here doesn't feel like two different apps stitched
+   together. Only overrides what actually needs to flip for light-on-
+   white readability (backgrounds, borders, text color/opacity); the
+   sizing/layout rules above are untouched and still apply. */
+
+body.outernet-light{
+    background:#f7f8fb;
+    color:#111827;
+}
+
+body.outernet-light .sidebar{
+    background:#ffffff;
+    border-right:1px solid #e5e7eb;
+}
+
+body.outernet-light .sidebar button,
+body.outernet-light .sidebar-collapsible summary{
+    background:#f3f4f6;
+    color:#111827;
+}
+
+body.outernet-light .sidebar button:hover,
+body.outernet-light .sidebar-collapsible summary:hover{
+    box-shadow:none;
+    background:#e5e7eb;
+    transform:none;
+}
+
+body.outernet-light .brand h1,
+body.outernet-light .brand p{
+    color:#111827;
+}
+
+body.outernet-light .hero-card,
+body.outernet-light .card{
+    background:#ffffff;
+    border:1px solid #e5e7eb;
+    box-shadow:0 1px 2px rgba(16,24,40,.04);
+    backdrop-filter:none;
+}
+
+body.outernet-light .card:hover{
+    transform:translateY(-4px);
+    box-shadow:0 12px 24px rgba(16,24,40,.08);
+}
+
+body.outernet-light .card h2,
+body.outernet-light .card h3{
+    color:#111827;
+}
+
+body.outernet-light .wallet-hero{
+    background:linear-gradient(160deg,#ecfdf5,#ffffff);
+    border:1px solid #a7f3d0;
+    backdrop-filter:none;
+}
+
+body.outernet-light .wallet-greeting{
+    color:#111827;
+    opacity:.85;
+}
+
+body.outernet-light .wallet-address-chip{
+    border:1px solid #d1d5db;
+    background:#f9fafb;
+    color:#111827;
+}
+
+body.outernet-light .wallet-address-chip:hover{
+    background:#f3f4f6;
+}
+
+body.outernet-light .wallet-balance-amount{
+    background:linear-gradient(90deg,#059669,#0284c7);
+    -webkit-background-clip:text;
+    background-clip:text;
+}
+
+body.outernet-light .wallet-custody-note{
+    color:#6b7280;
+    opacity:1;
+}
+
+body.outernet-light .quick-actions button{
+    background:#f3f4f6;
+    color:#111827;
+}
+
+body.outernet-light .quick-actions button:hover{
+    background:#d1fae5;
+}
+
+body.outernet-light .quick-actions .qa-icon{
+    background:#ffffff;
+    border:1px solid #e5e7eb;
+}
+
+body.outernet-light .asset-row{
+    border-bottom:1px solid #f0f1f4;
+}
+
+body.outernet-light .asset-name,
+body.outernet-light .asset-price{
+    color:#6b7280;
+    opacity:1;
+}
+
+body.outernet-light pre{
+    color:#0f766e;
+}
+
+body.outernet-light .mobile-topbar,
+body.outernet-light .mobile-tabbar{
+    background:#ffffff;
+    border-color:#e5e7eb;
+}
+
+body.outernet-light .tabbar-btn.active{
+    color:#0284c7;
+}
+
+body.outernet-light .modal-box{
+    background:#ffffff;
+    color:#111827;
+}
+
+body.outernet-light .engage-form-row input,
+body.outernet-light .engage-form-row select,
+body.outernet-light .kyc-field input[type="text"],
+body.outernet-light .kyc-field input[type="date"]{
+    border:1px solid #e5e7eb;
+    background:#f9fafb;
+    color:#111827;
+}
+
+/* .copy-icon is defined in css/style.css with a white-on-dark look
+   (color:white) - invisible against this light background, so it
+   needs its own override here rather than relying on the shared rule. */
+body.outernet-light .copy-icon{
+    background:rgba(0,0,0,0.05);
+    border:1px solid rgba(0,0,0,0.12);
+    color:#111827;
+}
+body.outernet-light .copy-icon:hover{
+    background:rgba(0,0,0,0.1);
 }

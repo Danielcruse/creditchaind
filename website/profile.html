@@ -1,170 +1,88 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Profile</title>
-    <link rel="stylesheet" href="css/style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Profile - OUTERNET</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/outernet.css">
 </head>
-<body>
+<body class="outernet-light">
 
-<header class="navbar">
-    <div class="logo">
-        OUTERNET Profile
+<div class="main" style="max-width:640px;margin:0 auto;padding:24px 16px;">
+
+    <p><a href="outernet.html" style="color:#8ef;">&larr; OUTERNET</a></p>
+
+    <h1 style="margin-bottom:4px;">Profile</h1>
+    <p style="opacity:0.6;font-size:13px;margin-top:0;">Your identity, reputation, and standing on the network.</p>
+
+    <div class="card">
+
+        <p>
+            Wallet Address:
+            <span id="profileAddress" style="font-family:monospace;"></span>
+        </p>
+
+        <p>
+            Node ID:
+            <span id="nodeId">TODO</span>
+        </p>
+
+        <p>
+            Reputation:
+            <span id="reputation">50</span>
+        </p>
+
+        <p>
+            Voting Power:
+            <span id="voting">100</span>
+        </p>
+
+        <p>
+            Credit Score:
+            <span id="credit">TODO</span>
+        </p>
+
+        <p>
+            Validator:
+            <span id="validator">TODO</span>
+        </p>
+
+        <p>
+            Account Level:
+            <span id="level">Genesis</span>
+        </p>
+
     </div>
-</header>
 
-<h1>User Profile</h1>
+    <div class="card">
 
-<div class="card">
+        <h2>Display Name</h2>
+        <p style="opacity:0.6;font-size:12px;margin-top:-8px;">
+            Shown as your greeting on the OUTERNET dashboard - stored only in this browser, not on chain.
+        </p>
 
-    <p>
-        <strong>Username:</strong>
-        <span id="username"></span>
-    </p>
+        <p>
+            Current: <strong id="currentUsername">Not set</strong>
+        </p>
 
-    <p>
-        <strong>Email:</strong>
-        <span id="email"></span>
-    </p>
+        <input type="text" id="newUsername" placeholder="New display name">
+        <button onclick="saveUsername()">Save</button>
 
-    <p>
-        <strong>Region:</strong>
-        <span id="region"></span>
-    </p>
+    </div>
 
-    <p>
-        <strong>Wallet:</strong>
-        <span id="wallet"></span>
-    </p>
-
-    <p>
-        <strong>Reputation:</strong>
-        <span id="reputation"></span>
-    </p>
-
-    <p>
-        <strong>Voting Power:</strong>
-        <span id="voting"></span>
+    <p style="margin-top:20px;">
+        <a href="reputation.html#math">How Reputation Is Calculated</a> &nbsp;|&nbsp;
+        <a href="wallet.html">Wallet</a> &nbsp;|&nbsp;
+        <a href="network.html">Network</a> &nbsp;|&nbsp;
+        <a href="outernet.html">Back to OUTERNET</a>
     </p>
 
 </div>
 
-<div class="card">
-
-    <h2>Edit Profile</h2>
-
-    <input
-        type="text"
-        id="newUsername"
-        placeholder="New Username">
-
-    <br><br>
-
-    <select id="newRegion"></select>
-
-    <br><br>
-
-    <button onclick="saveProfile()">
-        Save Profile
-    </button>
-
-</div>
-
-<br>
-
-<button onclick="location.href='outernet.html'">
-    Back to OUTERNET
-</button>
-
-<script src="js/regions.js"></script>
-<script>
-
-function loadProfile() {
-
-    document.getElementById(
-        "username"
-    ).innerText =
-        localStorage.getItem(
-            "username"
-        ) || "Not Set";
-
-    document.getElementById(
-        "email"
-    ).innerText =
-        localStorage.getItem(
-            "email"
-        ) || "Not Set";
-
-    document.getElementById(
-        "region"
-    ).innerText =
-        localStorage.getItem(
-            "region"
-        ) || "Not Set";
-
-    document.getElementById(
-        "wallet"
-    ).innerText =
-        localStorage.getItem(
-            "wallet"
-        ) || "No Wallet";
-
-    document.getElementById(
-        "reputation"
-    ).innerText =
-        localStorage.getItem(
-            "reputation"
-        ) || "50";
-
-    document.getElementById(
-        "voting"
-    ).innerText =
-        localStorage.getItem(
-            "voting"
-        ) || "100";
-
-    populateRegionSelect(
-        document.getElementById("newRegion"),
-        localStorage.getItem("region")
-    );
-}
-
-function saveProfile() {
-
-    let username =
-        document.getElementById(
-            "newUsername"
-        ).value;
-
-    let region =
-        document.getElementById(
-            "newRegion"
-        ).value;
-
-    if (username !== "") {
-        localStorage.setItem(
-            "username",
-            username
-        );
-    }
-
-    if (region !== "") {
-        localStorage.setItem(
-            "region",
-            region
-        );
-    }
-
-    loadProfile();
-
-    alert(
-        "Profile Updated!"
-    );
-}
-
-window.onload =
-    loadProfile;
-
-</script>
+<script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
+<script src="js/profile.js"></script>
 
 </body>
 </html>

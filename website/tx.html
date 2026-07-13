@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Transaction Detail</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        /* Same black explorer theme as explorer.html - this page is
+           reached FROM the explorer's transaction list, so it should
+           feel like the same tool, not a different app. */
+        body{
+            background:#000000;
+        }
+        .tx-page{
+            max-width:700px;
+            margin:0 auto;
+            padding:24px 16px 40px;
+        }
+        .card{
+            background:#0a0a0a;
+            border:1px solid rgba(255,255,255,0.08);
+            box-shadow:none;
+        }
+        .card:hover{
+            transform:none;
+            box-shadow:none;
+        }
+        .tx-row{
+            display:flex;
+            justify-content:space-between;
+            gap:16px;
+            padding:10px 0;
+            border-bottom:1px solid rgba(255,255,255,0.06);
+            font-size:13px;
+        }
+        .tx-row:last-child{
+            border-bottom:none;
+        }
+        .tx-row-label{
+            opacity:0.55;
+            font-size:11px;
+            text-transform:uppercase;
+            letter-spacing:0.5px;
+            flex:0 0 auto;
+            padding-top:2px;
+        }
+        .tx-row-value{
+            font-family:monospace;
+            text-align:right;
+            word-break:break-all;
+        }
+        .explorer-pill{
+            display:inline-block;
+            font-size:10px;
+            text-transform:uppercase;
+            letter-spacing:0.5px;
+            padding:2px 8px;
+            border-radius:8px;
+            border:1px solid rgba(255,255,255,0.2);
+        }
+        .explorer-pill.confirmed{
+            color:#00ff95;
+            border-color:#00ff95;
+        }
+        .tx-summary{
+            font-size:15px;
+            margin:0 0 16px;
+        }
+        .tx-raw{
+            margin-top:16px;
+        }
+        .tx-raw summary{
+            cursor:pointer;
+            font-size:12px;
+            opacity:0.6;
+        }
+        .tx-raw pre{
+            margin-top:10px;
+            padding:12px;
+            background:rgba(255,255,255,0.03);
+            border:1px solid rgba(255,255,255,0.08);
+            border-radius:8px;
+            font-size:11px;
+            overflow-x:auto;
+            white-space:pre-wrap;
+            word-break:break-all;
+        }
+        .explorer-empty{
+            opacity:0.6;
+            padding:10px 0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="tx-page">
+
+    <p><a href="explorer.html" style="color:#8ef;">&larr; Explorer</a></p>
+
+    <h1 style="margin-bottom:4px;">Transaction</h1>
+    <p style="opacity:0.6;font-size:13px;margin-top:0;">Full detail for a single confirmed transaction.</p>
+
+    <div class="card">
+        <div id="txDetailContent">
+            <p class="explorer-empty" style="opacity:0.6;">Loading...</p>
+        </div>
+    </div>
+
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
+<script src="js/tx.js"></script>
+
+</body>
+</html>

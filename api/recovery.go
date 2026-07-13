@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
@@ -82,6 +83,18 @@ func HandleRequestEmailCode(w http.ResponseWriter, r *http.Request) {
 	emailCodes.mu.Lock()
 	emailCodes.codes[address] = emailCodeEntry{Code: code, Email: req.Email, IssuedAt: time.Now().Unix()}
 	emailCodes.mu.Unlock()
+
+	if smtpConfigured() {
+		go func() {
+			if err := sendEmail(req.Email, "CreditChain recovery code", "Your CreditChain wallet-recovery verification code is: "+code+"\n\nThis code expires in 10 minutes. If you didn't request this, ignore this email."); err != nil {
+				fmt.Println("email: failed to send recovery code:", err)
+			}
+		}()
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "code_issued",
+		})
+		return
+	}
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "code_issued",
@@ -174,6 +187,18 @@ func HandleRequestRecoveryCode(w http.ResponseWriter, r *http.Request) {
 	emailCodes.mu.Lock()
 	emailCodes.codes["recover:"+req.OldAddress] = emailCodeEntry{Code: code, Email: rec.Email, IssuedAt: time.Now().Unix()}
 	emailCodes.mu.Unlock()
+
+	if smtpConfigured() {
+		go func() {
+			if err := sendEmail(rec.Email, "CreditChain wallet recovery code", "Your CreditChain wallet-recovery code is: "+code+"\n\nThis code expires in 10 minutes. If you didn't request this, ignore this email."); err != nil {
+				fmt.Println("email: failed to send recovery code:", err)
+			}
+		}()
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "code_issued",
+		})
+		return
+	}
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "code_issued",

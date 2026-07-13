@@ -56,14 +56,25 @@ func HandleBorrow(
 		return
 	}
 
-	// The interest rate is locked in now, at the reputation the
-	// borrower has at submission time, rather than recomputed when
-	// the block confirms - otherwise a reputation change between
-	// submission and confirmation would silently change the terms of
-	// a loan the borrower already agreed to.
+	// The interest rate is locked in now, at the reputation (and
+	// collateral price) the borrower has at submission time, rather
+	// than recomputed when the block confirms - otherwise a
+	// reputation or price change between submission and confirmation
+	// would silently change the terms of a loan the borrower already
+	// agreed to.
 	interest := core.InterestRate(
 		wallet.Reputation,
 	)
+
+	// oETH collateral is a 1:1 receipt for staked ETHTEST, so its
+	// market value - and this loan's real risk - moves with the
+	// ETHTEST/CCT pool's own price. CCT collateral gets no adjustment:
+	// CCT is the numeraire everything else prices IN, so there's no
+	// separate "CCT price" to react to. See
+	// core.PriceAdjustedInterestRate's doc comment.
+	if collateralSymbol, ok := peekCollateralSymbolForLoan(address, req.Amount); ok && collateralSymbol == "OETH" {
+		interest = core.PriceAdjustedInterestRate(interest, priceHistoryStore.Get("ETHTEST"))
+	}
 
 	data, _ := json.Marshal(borrowData{Interest: interest})
 

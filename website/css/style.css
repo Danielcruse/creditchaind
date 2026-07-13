@@ -3,6 +3,31 @@ html, body{
     overflow-x:hidden;
 }
 
+/* Shared copy-to-clipboard icon (see js/api.js's copyIconHTML) - used
+   anywhere an address is displayed so copying it is an obvious,
+   dedicated action instead of a silent side-effect of clicking
+   something else. */
+.copy-icon{
+    background:rgba(255,255,255,0.08);
+    border:1px solid rgba(255,255,255,0.15);
+    color:white;
+    border-radius:6px;
+    padding:2px 7px;
+    font-size:12px;
+    line-height:1.6;
+    cursor:pointer;
+    margin-left:6px;
+    vertical-align:middle;
+}
+.copy-icon:hover{
+    background:rgba(255,255,255,0.18);
+}
+.copy-icon.copy-icon-done{
+    background:rgba(0,255,149,0.25);
+    border-color:#00ff95;
+    color:#00ff95;
+}
+
 body{
     background:
         linear-gradient(

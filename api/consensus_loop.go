@@ -47,9 +47,24 @@ func hydrateValidator(status *core.ValidatorStatus) *core.Validator {
 	wallet := walletStore.Get(status.Address)
 	stakingStore.SyncWallet(wallet, status.Address)
 
+	// Delegated CCT counts toward this validator's PoSR weight exactly
+	// like their own bonded ETHTEST - the whole point of a delegation
+	// pool: a validator with modest personal capital but real community
+	// backing gets real selection weight, not just a cosmetic pool
+	// balance nobody's rewards ever reflect. Deliberately combined into
+	// one composite "effective stake" figure rather than a separate
+	// weight dimension - core/consensus.go's PoSR percentages (Stake
+	// 25% / Reputation 55% / Uptime 20%) are documented as "Locked...
+	// Approved," so this folds delegation into the existing Stake
+	// input instead of relitigating that split. Same reasoning applies
+	// to eligibility (core.MinValidatorStake): a validator can clear
+	// the bar on delegated backing, not just personal stake - matching
+	// how real delegated-PoS systems treat delegation as it's meant.
+	effectiveStake := wallet.StakedETH + delegationStore.TotalDelegatedTo(status.Address)
+
 	return &core.Validator{
 		Wallet:         *wallet,
-		Stake:          wallet.StakedETH,
+		Stake:          effectiveStake,
 		Uptime:         status.Uptime(),
 		SlashCount:     status.SlashCount,
 		Active:         status.Active,

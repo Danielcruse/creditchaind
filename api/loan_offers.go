@@ -22,6 +22,10 @@ type loanOfferCreateData struct {
 	Symbol      string `json:"symbol"`
 	RatePercent uint64 `json:"ratePercent"`
 	TotalAmount uint64 `json:"totalAmount"`
+	// DurationSeconds is optional - 0 means loans drawn against this
+	// offer never get a due date/can never default (see
+	// core.LoanOffer.DurationSeconds's doc comment).
+	DurationSeconds uint64 `json:"durationSeconds"`
 }
 
 // HandleCreateLoanOffer lets a lender post a standing offer to lend any
@@ -42,6 +46,9 @@ func HandleCreateLoanOffer(w http.ResponseWriter, r *http.Request) {
 	auth, address, err := requireSignedRequest(r, &req)
 	if err != nil {
 		writeUnauthorized(w, err)
+		return
+	}
+	if !requireLendingAccess(w, address) {
 		return
 	}
 

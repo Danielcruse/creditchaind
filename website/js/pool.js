@@ -13,6 +13,7 @@ function plInit() {
     }
     document.getElementById("poolActionsCard").style.display = "block";
     document.getElementById("swapCard").style.display = "block";
+    document.getElementById("priceChartCard").style.display = "block";
     loadSymbols();
 }
 
@@ -105,8 +106,67 @@ async function loadPoolInfo(symbol) {
             <p>Your LP shares: ${info.yourShares || 0} of ${info.totalShares} total</p>
             ${balanceLine}
         `;
+
+        loadPriceChart(symbol);
     } catch (e) {
         console.error(e);
+    }
+}
+
+// loadPriceChart draws a hand-built inline SVG line chart from
+// /pool/price-history - no external charting library, consistent with
+// this codebase's zero-unaudited-dependency convention. Price points
+// are CCT-per-token, scaled by 1e6 server-side (see
+// core/price_history.go's priceScale), so divide back down here.
+async function loadPriceChart(symbol) {
+    const container = document.getElementById("pcChartContainer");
+    document.getElementById("pcSymbolLabel").innerText = symbol ? `(${symbol})` : "";
+    if (!symbol) {
+        container.innerHTML = "";
+        return;
+    }
+
+    try {
+        const history = await apiGet(`/pool/price-history?symbol=${encodeURIComponent(symbol)}`);
+        if (!history || history.length < 2) {
+            container.innerHTML = `<p class="explorer-empty">Not enough trading activity yet to chart ${symbol}.</p>`;
+            return;
+        }
+
+        const prices = history.map((p) => p.price / 1e6);
+        const min = Math.min(...prices);
+        const max = Math.max(...prices);
+        const range = max - min || max || 1;
+
+        const width = 700;
+        const height = 220;
+        const pad = 12;
+
+        const points = history
+            .map((p, i) => {
+                const x = pad + (i / (history.length - 1)) * (width - pad * 2);
+                const y = height - pad - ((p.price / 1e6 - min) / range) * (height - pad * 2);
+                return `${x.toFixed(1)},${y.toFixed(1)}`;
+            })
+            .join(" ");
+
+        const first = prices[0];
+        const last = prices[prices.length - 1];
+        const changeColor = last >= first ? "#00ff95" : "#ff5f5f";
+        const changePct = first !== 0 ? (((last - first) / first) * 100).toFixed(2) : "0.00";
+
+        container.innerHTML = `
+            <svg viewBox="0 0 ${width} ${height}" style="width:100%;height:220px;display:block;">
+                <polyline points="${points}" fill="none" stroke="${changeColor}" stroke-width="2" />
+            </svg>
+            <p style="opacity:0.8;font-size:13px;">
+                1 ${symbol} = ${last.toFixed(6)} CCT
+                <span style="color:${changeColor};">(${last >= first ? "+" : ""}${changePct}% over ${history.length} recorded points)</span>
+            </p>
+        `;
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = `<p class="explorer-empty">Couldn't load price history.</p>`;
     }
 }
 

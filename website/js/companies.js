@@ -49,6 +49,7 @@ async function applyCompany() {
     const name = document.getElementById("companyName").value.trim();
     const description = document.getElementById("companyDescription").value.trim();
     const documentNote = document.getElementById("companyDocumentNote").value.trim();
+    const contactEmail = document.getElementById("companyContactEmail").value.trim();
     const statusEl = document.getElementById("companyApplyStatus");
 
     if (!name) {
@@ -57,11 +58,28 @@ async function applyCompany() {
     }
 
     try {
-        const result = await apiPostSigned("/companies/apply", { name, description, documentNote });
+        const result = await apiPostSigned("/companies/apply", { name, description, documentNote, contactEmail });
         statusEl.innerText = `Application pending (tx ${result.txId}) - a moderator will review it once the next block confirms it.`;
         await loadCompanies();
     } catch (e) {
         statusEl.innerText = "Could not submit application: " + e.message;
+    }
+}
+
+// updateContactEmail lets an existing applicant/hub change where trade-
+// attention alerts get sent - separate from the initial application
+// since a hub's inbox may change long after it's already verified.
+async function updateContactEmail() {
+    if (!wallet) return;
+
+    const contactEmail = document.getElementById("companyUpdateContactEmail").value.trim();
+    const statusEl = document.getElementById("companyUpdateContactStatus");
+
+    try {
+        const result = await apiPostSigned("/companies/update-contact", { contactEmail });
+        statusEl.innerText = `Saved (tx ${result.txId}) - takes effect once the next block confirms it.`;
+    } catch (e) {
+        statusEl.innerText = "Could not update: " + e.message;
     }
 }
 

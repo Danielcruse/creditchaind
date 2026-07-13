@@ -23,6 +23,14 @@ type HubNotification struct {
 	OfferID   string
 	Read      bool
 	CreatedAt int64
+	// AssignedAgent is which of the hub's currently-active workers this
+	// incoming request was auto-zoned to when the trader didn't already
+	// pick a specific operator to trade against - "" if the hub has no
+	// active agents yet, or if the trader picked one explicitly (see
+	// api/hub_rate.go's assignAgentForHub). Purely informational,
+	// same reasoning as everything else on this struct - doesn't change
+	// who the trade actually settles with.
+	AssignedAgent string
 }
 
 type NotificationStore struct {

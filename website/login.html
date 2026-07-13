@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>OUTERNET Login</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -119,7 +120,7 @@ async function restoreFromPhrase() {
 }
 
 async function requestRecoveryCode() {
-    const oldAddress = document.getElementById("recoverOldAddress").value.trim();
+    const oldAddress = normalizeAddress(document.getElementById("recoverOldAddress").value.trim());
     const statusEl = document.getElementById("recoveryCodeDisplay");
     if (!oldAddress) {
         statusEl.innerText = "Enter the old wallet address first.";
@@ -135,7 +136,7 @@ async function requestRecoveryCode() {
 
 async function recoverWallet() {
     const statusEl = document.getElementById("recoverStatus");
-    const oldAddress = document.getElementById("recoverOldAddress").value.trim();
+    const oldAddress = normalizeAddress(document.getElementById("recoverOldAddress").value.trim());
     const email = document.getElementById("recoverEmail").value.trim();
     const claimedYear = parseInt(document.getElementById("recoverYear").value, 10);
     const code = document.getElementById("recoverCode").value.trim();
