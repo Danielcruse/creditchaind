@@ -122,20 +122,8 @@ async function loadHero() {
         }
 
         document.getElementById("ovOtherNetworksList").innerHTML =
-            `<a href="defi.html" style="color:#8ef;">Deposits to your custodial Sepolia address auto-credit here - see DeFi Corner for your deposit address.</a>`;
+            `<a href="send-bridged-eth.html" style="color:#8ef;">Sending? Pick CCT or ERC network on the send page - no separate bridge step.</a>`;
         document.getElementById("ovOtherNetworks").style.display = "block";
-
-        // The Bridge button isn't a manual "click to bridge" action for
-        // ETHB - deposits to the custodial Sepolia address auto-credit
-        // (see api/eth_bridge.go's poll loop), so this is really a
-        // relabeled receive panel for that address (see the Auto-Bridge
-        // plan's §5).
-        const bridgeBtn = document.getElementById("assetBridgeBtn");
-        bridgeBtn.disabled = false;
-        bridgeBtn.title = "";
-        bridgeBtn.style.opacity = "1";
-        bridgeBtn.style.cursor = "pointer";
-        bridgeBtn.onclick = toggleBridgePanel;
         return;
     }
 
@@ -293,45 +281,37 @@ async function toggleReceivePanel() {
         return;
     }
 
+    // ETHB is a special case: the address that actually receives
+    // deposits is the custodial Sepolia address (a different chain
+    // entirely), never this wallet's internal CreditChain sub-address
+    // (assetAddress()'s normal answer) - showing the wrong one here
+    // would mean anything sent to it is unrecoverable. /eth-custodial/create
+    // is idempotent (returns the existing address if one's already
+    // provisioned) and, unlike /eth-custodial/balance, doesn't require
+    // a live Sepolia RPC connection just to reveal an address that's
+    // already known.
+    if (symbol === "ETHB") {
+        const statusEl = document.getElementById("assetCopyStatus");
+        statusEl.innerText = "Loading your deposit address...";
+        panel.style.display = "block";
+        try {
+            const info = await apiPostSigned("/eth-custodial/create", {});
+            document.getElementById("assetReceiveAddress").innerText = info.ethAddress;
+            QR.renderToCanvas(document.getElementById("assetQrCanvas"), info.ethAddress, 6);
+            statusEl.innerText = "Real Sepolia ETH sent here is auto-credited to your ETHB balance within a few minutes.";
+        } catch (e) {
+            console.error(e);
+            document.getElementById("assetReceiveAddress").innerText = "";
+            statusEl.innerText = "Couldn't load your deposit address: " + e.message;
+        }
+        return;
+    }
+
     const rawAddress = await assetAddress();
     const address = EXTERNAL_CHAIN_SYMBOLS[symbol] ? rawAddress : formatAddress(rawAddress);
     document.getElementById("assetReceiveAddress").innerText = address;
     QR.renderToCanvas(document.getElementById("assetQrCanvas"), address, 6);
     panel.style.display = "block";
-}
-
-// toggleBridgePanel shows the ETHB row's custodial Sepolia deposit
-// address + QR - not a manual "bridge" action, just a relabeled
-// receive panel for the address deposits auto-credit from (see
-// loadHero's ETHB branch and api/eth_bridge.go's poll loop).
-async function toggleBridgePanel() {
-    const panel = document.getElementById("assetBridgePanel");
-    if (panel.style.display === "block") {
-        panel.style.display = "none";
-        return;
-    }
-
-    const statusEl = document.getElementById("assetBridgeStatus");
-    statusEl.innerText = "Loading your custodial deposit address...";
-    panel.style.display = "block";
-
-    try {
-        // /eth-custodial/create is idempotent (returns "already exists"
-        // + the address for an account that's already provisioned) and,
-        // unlike /eth-custodial/balance, doesn't require a live Sepolia
-        // RPC connection just to reveal an address that's already known
-        // - matches how defi.js itself displays the address immediately
-        // from this same call, independent of whether the balance
-        // lookup succeeds.
-        const info = await apiPostSigned("/eth-custodial/create", {});
-        document.getElementById("assetBridgeAddress").innerText = info.ethAddress;
-        QR.renderToCanvas(document.getElementById("assetBridgeQrCanvas"), info.ethAddress, 6);
-        statusEl.innerText = "Deposits here are auto-credited to your ETHB balance within a few minutes.";
-    } catch (e) {
-        console.error(e);
-        document.getElementById("assetBridgeAddress").innerText = "";
-        statusEl.innerText = "Couldn't load your custodial deposit address: " + e.message;
-    }
 }
 
 function copyAssetAddress() {
