@@ -32,7 +32,7 @@ async function loadLeaderboard() {
                     }</td>
                     <td data-label="Status"><span class="validator-badge ${v.active ? "active" : "inactive"}">${
                         v.active ? "Active" : "Inactive"
-                    }</span></td>
+                    }</span>${v.permanentlyBanned ? ' <span class="validator-badge inactive" style="background:#c0392b;color:#fff;">Banned</span>' : ""}</td>
                     <td data-label="Commission">${fmtPct(v.commissionBps)}%</td>
                     <td data-label="Effective Stake">${v.effectiveStake}</td>
                     <td data-label="Delegators">${v.delegatorCount}</td>
@@ -63,11 +63,15 @@ function renderMyValidatorCard(mine) {
         return;
     }
     card.style.display = "block";
+    document.getElementById("myBannedWarning").style.display = mine.permanentlyBanned ? "block" : "none";
     document.getElementById("myValidatorStatus").innerText = mine.active ? "Active" : "Inactive";
     document.getElementById("myAuthorizedNode").innerText = mine.authorizedNodeId || "-";
+    document.getElementById("myStake").innerText = mine.stake;
+    document.getElementById("myMinStakeRequired").innerText = mine.minStakeRequired;
     document.getElementById("myReputation").innerText = mine.reputation;
     document.getElementById("myVotingPower").innerText = mine.votingPower;
     document.getElementById("myBlocksProduced").innerText = mine.blocksProduced;
+    document.getElementById("myCurrentBlockReward").innerText = mine.currentBlockReward;
     document.getElementById("myRewards").innerText = mine.rewards;
     document.getElementById("myMissedBlocks").innerText = mine.missedBlocks;
     document.getElementById("mySlashCount").innerText = mine.slashCount;
@@ -106,17 +110,19 @@ async function renderValidatorDetail(address) {
 
     document.getElementById("detailAddress").innerText = address;
     document.getElementById("detailStats").innerHTML = `
+        ${v.permanentlyBanned ? '<div class="explorer-row" style="color:#c0392b;font-weight:bold;"><span>PoSR Status</span><span>Permanently banned (repeated violations)</span></div>' : ""}
         <div class="explorer-row"><span>Status</span><span>${v.active ? "Active" : "Inactive"}${
         v.isCurrentLeader ? " (current leader)" : ""
     }</span></div>
         <div class="explorer-row"><span>Commission</span><span>${fmtPct(v.commissionBps)}%</span></div>
-        <div class="explorer-row"><span>Own Stake (ETHTEST)</span><span>${v.stake}</span></div>
+        <div class="explorer-row"><span>Own Stake (CCT)</span><span>${v.stake} / ${v.minStakeRequired} required</span></div>
         <div class="explorer-row"><span>Total Delegated (CCT)</span><span>${v.totalDelegated}</span></div>
         <div class="explorer-row"><span>Effective Stake</span><span>${v.effectiveStake}</span></div>
         <div class="explorer-row"><span>Delegators</span><span>${v.delegatorCount}</span></div>
         <div class="explorer-row"><span>Reputation</span><span>${v.reputation}</span></div>
         <div class="explorer-row"><span>Uptime</span><span>${Math.round(v.uptime * 100)}%</span></div>
         <div class="explorer-row"><span>Blocks Produced</span><span>${v.blocksProduced}</span></div>
+        <div class="explorer-row"><span>Current Block Reward</span><span>${v.currentBlockReward} CCT</span></div>
         <div class="explorer-row"><span>Missed Blocks</span><span>${v.missedBlocks}</span></div>
         <div class="explorer-row"><span>Slash Count</span><span>${v.slashCount}</span></div>
         <div class="explorer-row"><span>Est. APY for delegators</span><span>${

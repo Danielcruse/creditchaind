@@ -48,7 +48,7 @@ func hydrateValidator(status *core.ValidatorStatus) *core.Validator {
 	stakingStore.SyncWallet(wallet, status.Address)
 
 	// Delegated CCT counts toward this validator's PoSR weight exactly
-	// like their own bonded ETHTEST - the whole point of a delegation
+	// like their own bonded CCT - the whole point of a delegation
 	// pool: a validator with modest personal capital but real community
 	// backing gets real selection weight, not just a cosmetic pool
 	// balance nobody's rewards ever reflect. Deliberately combined into
@@ -60,7 +60,10 @@ func hydrateValidator(status *core.ValidatorStatus) *core.Validator {
 	// to eligibility (core.MinValidatorStake): a validator can clear
 	// the bar on delegated backing, not just personal stake - matching
 	// how real delegated-PoS systems treat delegation as it's meant.
-	effectiveStake := wallet.StakedETH + delegationStore.TotalDelegatedTo(status.Address)
+	// CCT specifically, not ETHTEST (PoSR's "Stake the minimum required
+	// amount of CCT" - see core/staking_sync.go's doc comment for why
+	// ETHTEST was only ever a pre-multi-token-staking holdover here).
+	effectiveStake := wallet.StakedCCT + delegationStore.TotalDelegatedTo(status.Address)
 
 	return &core.Validator{
 		Wallet:         *wallet,
@@ -76,6 +79,14 @@ func hydrateValidators() []*core.Validator {
 	statuses := validatorStore.List()
 	list := make([]*core.Validator, 0, len(statuses))
 	for _, s := range statuses {
+		// PoSR's permanent ban (core/slashing.go's
+		// PermanentBanSlashCountThreshold) is enforced here, not as a
+		// field on core.Validator itself - a banned validator is simply
+		// never entered into the selection pool at all, rather than
+		// added and then filtered by weight/eligibility math.
+		if s.PermanentlyBanned {
+			continue
+		}
 		list = append(list, hydrateValidator(s))
 	}
 	return list

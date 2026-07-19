@@ -23,6 +23,14 @@ type Treasury struct {
 	SalePriceCentsPerCCT uint64
 
 	Paused bool
+
+	// GenesisPoolsAllocated guards PoSR's one-time genesis pool mint
+	// (see api/apply.go's applyGenesisPoolAllocation) - this chain has
+	// been running for a long time already, so there's no true
+	// "genesis" moment to hook into programmatically; this flag is
+	// what makes the deliberate, explicit admin action idempotent
+	// instead.
+	GenesisPoolsAllocated bool
 }
 
 // PurchaseStatus is a one-sided purchase-request state machine,

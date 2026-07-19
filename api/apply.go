@@ -420,9 +420,19 @@ func applyBlockReward(block core.Block) {
 
 	totalDelegated := delegationStore.TotalDelegatedTo(block.Validator)
 
+	// PoSR's controlled-inflation decaying reward for the era this
+	// block falls in (see blockRewardForTimestamp) - replaces the old
+	// flat ProduceBlockReward constant, which now only serves as the
+	// Year-1 baseline the decay schedule is built from. Every mint
+	// below routes through mintCCTCapped, so this whole payout also
+	// respects MaxTotalCCTSupply - once the cap is reached, minted
+	// amounts (and therefore Rewards credited) correctly shrink toward
+	// zero rather than the ledger silently exceeding the cap.
+	reward := blockRewardForTimestamp(block.Timestamp)
+
 	if totalDelegated == 0 {
-		wallet.Rewards += ProduceBlockReward
-		tokenStore.Mint(block.Validator, ProduceBlockReward)
+		minted := mintCCTCapped(block.Validator, reward)
+		wallet.Rewards += minted
 	} else {
 		status, _ := validatorStore.Get(block.Validator)
 		var commissionBps uint64
@@ -430,11 +440,11 @@ func applyBlockReward(block core.Block) {
 			commissionBps = uint64(status.CommissionBps)
 		}
 
-		commission := ProduceBlockReward * commissionBps / 10000
-		poolShare := ProduceBlockReward - commission
+		commission := reward * commissionBps / 10000
+		poolShare := reward - commission
 
-		wallet.Rewards += commission
-		tokenStore.Mint(block.Validator, commission)
+		mintedCommission := mintCCTCapped(block.Validator, commission)
+		wallet.Rewards += mintedCommission
 
 		// Map iteration order is randomized in Go - every node applying
 		// this same block must reach an identical result, so delegators
@@ -456,8 +466,8 @@ func applyBlockReward(block core.Block) {
 				continue
 			}
 			dWallet := walletStore.Get(delegator)
-			dWallet.Rewards += share
-			tokenStore.Mint(delegator, share)
+			mintedShare := mintCCTCapped(delegator, share)
+			dWallet.Rewards += mintedShare
 			distributed += share
 		}
 
@@ -466,8 +476,8 @@ func applyBlockReward(block core.Block) {
 		// whichever delegator sorts first - same "remainder stays
 		// behind" rule reclaimDormantWallet already follows.
 		if remainder := poolShare - distributed; remainder > 0 {
-			wallet.Rewards += remainder
-			tokenStore.Mint(block.Validator, remainder)
+			mintedRemainder := mintCCTCapped(block.Validator, remainder)
+			wallet.Rewards += mintedRemainder
 		}
 	}
 
@@ -1314,6 +1324,20 @@ func verifyTxAuth(tx core.Transaction) bool {
 		// api/treasury.go) before this was ever recorded.
 		return tx.Data == string(tx.AuthPayload)
 
+	case core.TxGenesisPoolAllocation:
+		// Node-authored, admin-only - same trust model as TxTokenMint/
+		// TxTreasuryPurchaseConfirm above (ADMIN_TOKEN already checked
+		// at the HTTP layer - see api/genesis_pools.go).
+		return tx.Data == string(tx.AuthPayload)
+
+	case core.TxAdminTransfer:
+		// Node-authored, admin-only - same trust model as TxTokenMint
+		// above (ADMIN_TOKEN already checked at the HTTP layer - see
+		// api/admin_transfer.go). Deliberately does NOT check tx.From
+		// against any signature, since the entire point is moving
+		// value out of an address whose own key is unreachable.
+		return tx.Data == string(tx.AuthPayload)
+
 	case core.TxTreasuryPurchaseRequest:
 		if tx.AuthAddress != tx.From {
 			return false
@@ -1534,6 +1558,12 @@ func ApplyTransaction(tx core.Transaction) {
 
 	case core.TxTreasurySetAddress:
 		applyTreasurySetAddress(tx)
+
+	case core.TxGenesisPoolAllocation:
+		applyGenesisPoolAllocation(tx)
+
+	case core.TxAdminTransfer:
+		applyAdminTransfer(tx)
 	}
 }
 
@@ -1551,7 +1581,7 @@ func applyTokenMint(tx core.Transaction) {
 	}
 
 	if data.Symbol == "" || data.Symbol == "CCT" {
-		tokenStore.Mint(data.Address, data.Amount)
+		mintCCTCapped(data.Address, data.Amount)
 		return
 	}
 
@@ -2587,6 +2617,8 @@ func applySlashReport(tx core.Transaction) {
 
 		wallet.Reputation = v.Wallet.Reputation
 		validatorStore.RecordSlash(data.ValidatorAddress, v.SlashCount-status.SlashCount)
+		slashStake(data.ValidatorAddress, core.DoubleSignStakeSlashBps)
+		banIfSlashThresholdCrossed(status)
 
 	case "missed_block":
 		dedupKey := "missed|" + data.ValidatorAddress + "|" + data.RoundHash
@@ -2603,6 +2635,43 @@ func applySlashReport(tx core.Transaction) {
 		wallet.Reputation = v.Wallet.Reputation
 		validatorStore.RecordMiss(data.ValidatorAddress)
 		validatorStore.RecordSlash(data.ValidatorAddress, v.SlashCount-status.SlashCount)
+		slashStake(data.ValidatorAddress, core.MissedBlockStakeSlashBps)
+		banIfSlashThresholdCrossed(status)
+	}
+}
+
+// slashStake seizes bps basis points of address's currently-staked CCT
+// - PoSR's literal "may lose staked CCT" penalty. Burns the seized
+// amount from the real CCT stake escrow (stakeEscrowAddress) rather
+// than crediting anyone, so a validator can never profit from
+// reporting another one, then re-syncs Wallet.StakedCCT so the
+// read-model reflects the new, lower balance immediately.
+func slashStake(address string, bps uint64) {
+	staked := stakingStore.Stakes[address]["CCT"]
+	if staked == 0 {
+		return
+	}
+	amount := staked * bps / 10000
+	if amount == 0 {
+		return
+	}
+	seized := stakingStore.Slash(address, "CCT", amount)
+	if seized == 0 {
+		return
+	}
+	tokenStore.Burn(stakeEscrowAddress("CCT"), seized)
+	stakingStore.SyncWallet(walletStore.Get(address), address)
+}
+
+// banIfSlashThresholdCrossed sets PermanentlyBanned once status's
+// SlashCount (already updated by the caller's RecordSlash call) hits
+// core.PermanentBanSlashCountThreshold - PoSR's "repeated offences may
+// permanently remove validator privileges." Idempotent - setting an
+// already-true flag again is harmless, so no extra guard is needed
+// against this firing on every subsequent offense past the threshold.
+func banIfSlashThresholdCrossed(status *core.ValidatorStatus) {
+	if status.SlashCount >= core.PermanentBanSlashCountThreshold {
+		status.PermanentlyBanned = true
 	}
 }
 
@@ -2752,7 +2821,23 @@ func applyValidatorRegister(tx core.Transaction) {
 	wallet := walletStore.Get(tx.From)
 	stakingStore.SyncWallet(wallet, tx.From)
 
-	if wallet.StakedETH == 0 || wallet.Reputation < MinValidatorReputation {
+	// PoSR requirement: "Stake the minimum required amount of CCT" -
+	// gated on StakedCCT specifically, not StakedETH (a legacy holdover
+	// from before multi-token staking existed - see
+	// core/staking_sync.go's doc comment). This is also the actual
+	// consensus-applied check, so it must be at least as strict as
+	// HandleRegisterValidator's HTTP pre-check (api/validators.go),
+	// never weaker - a transaction crafted directly, bypassing the
+	// HTTP handler, gets no free pass.
+	if wallet.StakedCCT < core.MinValidatorStake || wallet.Reputation < MinValidatorReputation {
+		return
+	}
+
+	// PoSR requirement: "no unresolved validator penalties" - a
+	// permanently banned address (see core/slashing.go's
+	// PermanentBanSlashCountThreshold) can never (re-)register, full
+	// stop, regardless of current stake/reputation.
+	if status, ok := validatorStore.Get(tx.From); ok && status.PermanentlyBanned {
 		return
 	}
 
@@ -2934,7 +3019,7 @@ func applyStake(tx core.Transaction) {
 	// token was staked, matching the existing precedent (ETHTEST
 	// staking already rewarded in CCT, never in ETHTEST itself).
 	reward := core.RewardForStake(tx.Amount)
-	tokenStore.Mint(tx.From, reward)
+	mintCCTCapped(tx.From, reward)
 
 	// oETH is a 1:1 receipt balance for staked ETHTEST specifically
 	// (the only symbol this predates and names itself after) - minted

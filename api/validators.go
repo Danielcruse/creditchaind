@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"time"
 
 	"github.com/creditchain/creditchaind/core"
 )
@@ -28,28 +29,41 @@ const ProduceBlockReward = 10
 // registration fees: a validator produces blocks and earns
 // ProduceBlockReward indefinitely, the most consequential and highest-
 // trust of the three roles - this is on top of, not instead of, the
-// existing core.MinValidatorStake ETH stake requirement.
+// existing core.MinValidatorStake CCT stake requirement.
 const ValidatorRegisterFeeCCT = 50
 
 type ValidatorInfo struct {
-	Address          string  `json:"address"`
-	Stake            uint64  `json:"stake"`
-	Reputation       uint64  `json:"reputation"`
-	Rewards          uint64  `json:"rewards"`
-	BlocksProduced   uint64  `json:"blocksProduced"`
-	MissedBlocks     uint64  `json:"missedBlocks"`
-	SlashCount       uint64  `json:"slashCount"`
-	Uptime           float64 `json:"uptime"`
-	VotingPower      uint64  `json:"votingPower"`
-	Active           bool    `json:"active"`
-	IsCurrentLeader  bool    `json:"isCurrentLeader"`
-	AuthorizedNodeID string  `json:"authorizedNodeId"`
+	Address        string `json:"address"`
+	Stake          uint64 `json:"stake"`
+	Reputation     uint64 `json:"reputation"`
+	Rewards        uint64 `json:"rewards"`
+	BlocksProduced uint64 `json:"blocksProduced"`
+	MissedBlocks   uint64 `json:"missedBlocks"`
+	SlashCount     uint64 `json:"slashCount"`
+	// PermanentlyBanned - PoSR's "no unresolved validator penalties" /
+	// "repeated offences may permanently remove validator privileges"
+	// (see core/slashing.go's PermanentBanSlashCountThreshold).
+	PermanentlyBanned bool    `json:"permanentlyBanned"`
+	Uptime            float64 `json:"uptime"`
+	VotingPower       uint64  `json:"votingPower"`
+	Active            bool    `json:"active"`
+	IsCurrentLeader   bool    `json:"isCurrentLeader"`
+	AuthorizedNodeID  string  `json:"authorizedNodeId"`
+	// MinStakeRequired is core.MinValidatorStake, surfaced so the
+	// frontend can show "X / Y CCT staked" without hardcoding the
+	// threshold client-side.
+	MinStakeRequired uint64 `json:"minStakeRequired"`
+	// CurrentBlockReward is PoSR's controlled-inflation decaying
+	// reward (see blockRewardForTimestamp) for the current era - what
+	// a validator actually earns per block right now, not a fixed
+	// constant.
+	CurrentBlockReward uint64 `json:"currentBlockReward"`
 
 	// Pool fields - see core.DelegationStore and
 	// core.ValidatorStatus.CommissionBps's doc comments.
 	CommissionBps uint16 `json:"commissionBps"`
 	// TotalDelegated is CCT delegated by third parties, separate from
-	// Stake (this validator's own bonded ETHTEST).
+	// Stake (this validator's own bonded CCT).
 	TotalDelegated uint64 `json:"totalDelegated"`
 	DelegatorCount int    `json:"delegatorCount"`
 	// EffectiveStake is what actually feeds PoSR selection weight (see
@@ -71,26 +85,29 @@ func toValidatorInfo(v *core.ValidatorStatus, totalEffectiveStakeAcrossAll uint6
 	isLeader := leader != nil && leader.Wallet.Address == v.Address
 
 	totalDelegated := delegationStore.TotalDelegatedTo(v.Address)
-	effectiveStake := wallet.StakedETH + totalDelegated
+	effectiveStake := wallet.StakedCCT + totalDelegated
 
 	return ValidatorInfo{
-		Address:          v.Address,
-		Stake:            wallet.StakedETH,
-		Reputation:       wallet.Reputation,
-		Rewards:          wallet.Rewards,
-		BlocksProduced:   v.BlocksProduced,
-		MissedBlocks:     v.MissedBlocks,
-		SlashCount:       v.SlashCount,
-		Uptime:           v.Uptime(),
-		VotingPower:      wallet.VotingPower,
-		Active:           v.Active,
-		IsCurrentLeader:  isLeader,
-		AuthorizedNodeID: v.AuthorizedNodeID,
-		CommissionBps:    v.CommissionBps,
-		TotalDelegated:   totalDelegated,
-		DelegatorCount:   delegationStore.DelegatorCount(v.Address),
-		EffectiveStake:   effectiveStake,
-		EstimatedAPY:     estimateDelegatorAPY(v, effectiveStake, totalDelegated, totalEffectiveStakeAcrossAll),
+		Address:            v.Address,
+		Stake:              wallet.StakedCCT,
+		Reputation:         wallet.Reputation,
+		Rewards:            wallet.Rewards,
+		BlocksProduced:     v.BlocksProduced,
+		MissedBlocks:       v.MissedBlocks,
+		SlashCount:         v.SlashCount,
+		PermanentlyBanned:  v.PermanentlyBanned,
+		Uptime:             v.Uptime(),
+		VotingPower:        wallet.VotingPower,
+		Active:             v.Active,
+		IsCurrentLeader:    isLeader,
+		AuthorizedNodeID:   v.AuthorizedNodeID,
+		CommissionBps:      v.CommissionBps,
+		TotalDelegated:     totalDelegated,
+		DelegatorCount:     delegationStore.DelegatorCount(v.Address),
+		EffectiveStake:     effectiveStake,
+		EstimatedAPY:       estimateDelegatorAPY(v, effectiveStake, totalDelegated, totalEffectiveStakeAcrossAll),
+		MinStakeRequired:   core.MinValidatorStake,
+		CurrentBlockReward: blockRewardForTimestamp(time.Now().Unix()),
 	}
 }
 
@@ -125,7 +142,7 @@ func totalEffectiveStakeAcrossValidators() uint64 {
 	for _, v := range validatorStore.List() {
 		wallet := walletStore.Get(v.Address)
 		stakingStore.SyncWallet(wallet, v.Address)
-		total += wallet.StakedETH + delegationStore.TotalDelegatedTo(v.Address)
+		total += wallet.StakedCCT + delegationStore.TotalDelegatedTo(v.Address)
 	}
 	return total
 }
@@ -187,8 +204,8 @@ func HandleRegisterValidator(
 	wallet := walletStore.Get(address)
 	stakingStore.SyncWallet(wallet, address)
 
-	if wallet.StakedETH < core.MinValidatorStake {
-		http.Error(w, fmt.Sprintf("must stake at least %d ETH before becoming a validator", core.MinValidatorStake), http.StatusBadRequest)
+	if wallet.StakedCCT < core.MinValidatorStake {
+		http.Error(w, fmt.Sprintf("must stake at least %d CCT before becoming a validator", core.MinValidatorStake), http.StatusBadRequest)
 		return
 	}
 
@@ -199,6 +216,11 @@ func HandleRegisterValidator(
 
 	if tokenStore.BalanceOf(address) < ValidatorRegisterFeeCCT {
 		http.Error(w, fmt.Sprintf("you need at least %d CCT to cover the validator registration fee", ValidatorRegisterFeeCCT), http.StatusBadRequest)
+		return
+	}
+
+	if status, ok := validatorStore.Get(address); ok && status.PermanentlyBanned {
+		http.Error(w, "this address has been permanently removed from validation for repeated protocol violations", http.StatusForbidden)
 		return
 	}
 

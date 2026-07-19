@@ -194,6 +194,19 @@ const (
 	// transaction depends on that balance).
 	TxTokenMint TransactionType = "TOKEN_MINT"
 
+	// TxAdminTransfer moves a specific amount of an address's OWN
+	// already-existing balance to another address, admin-triggered
+	// rather than signed by the sending address - node-authored via
+	// selfSignedEnvelope, same trust model as TxTokenMint. Deliberately
+	// narrower than TxTokenMint (which can conjure new supply at any
+	// address): this only ever moves value an address already holds,
+	// never creates any. Built specifically as an emergency recovery
+	// tool for the case a validator's private key is permanently
+	// unreachable but its address still holds real balance that needs
+	// to migrate to a new, key-controlled address - see
+	// api/admin_transfer.go's doc comment.
+	TxAdminTransfer TransactionType = "ADMIN_TRANSFER"
+
 	// TxTreasuryPurchaseRequest is a buyer signaling intent to buy CCT
 	// from the Foundation Treasury at the current sale price - see
 	// core.TreasuryStore's doc comment. No funds move yet; this only
@@ -216,6 +229,17 @@ const (
 	TxTreasurySetSalePrice TransactionType = "TREASURY_SET_SALE_PRICE"
 	TxTreasurySetPaused    TransactionType = "TREASURY_SET_PAUSED"
 	TxTreasurySetAddress   TransactionType = "TREASURY_SET_ADDRESS"
+
+	// TxGenesisPoolAllocation is PoSR's one-time admin-triggered mint
+	// into the 5 named genesis pools (Foundation Treasury, Validator
+	// Reward Pool, Ecosystem Development, Governance Treasury,
+	// Community Incentives) - node-authored via selfSignedEnvelope,
+	// same trust model as TxTokenMint/TxTreasuryPurchaseConfirm.
+	// Guarded idempotent by core.Treasury.GenesisPoolsAllocated (see
+	// api/apply.go's applyGenesisPoolAllocation) so it can only ever
+	// fire once, since this chain has been running for a long time
+	// already and has no true "genesis" moment to hook into.
+	TxGenesisPoolAllocation TransactionType = "GENESIS_POOL_ALLOCATION"
 
 	// TxKYCSubmit is a self-attested KYC submission gating access to
 	// the peer-lending marketplace (Lend/Marketplace/Your Negotiations)

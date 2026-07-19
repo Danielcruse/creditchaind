@@ -184,9 +184,11 @@ func TestApplyValidatorRegister_DeductsFeeAndBlocksWhenInsufficient(t *testing.T
 	w := walletStore.Get(addr)
 	w.Reputation = 50
 	// applyValidatorRegister calls stakingStore.SyncWallet, which
-	// overwrites wallet.StakedETH from the staking ledger - setting it
-	// directly on the wallet would just get clobbered back to 0.
-	stakingStore.Stakes[addr] = map[string]uint64{"ETHTEST": 2000}
+	// overwrites wallet.StakedCCT from the staking ledger - setting it
+	// directly on the wallet would just get clobbered back to 0. CCT
+	// specifically (not ETHTEST) - PoSR gates validator eligibility on
+	// CCT stake, see api/apply.go's applyValidatorRegister.
+	stakingStore.Stakes[addr] = map[string]uint64{"CCT": 2000}
 	tokenStore.Mint(addr, ValidatorRegisterFeeCCT)
 
 	tx := core.Transaction{
@@ -207,7 +209,7 @@ func TestApplyValidatorRegister_DeductsFeeAndBlocksWhenInsufficient(t *testing.T
 	const poorAddr = "fee-test-validator-applicant-poor"
 	pw := walletStore.Get(poorAddr)
 	pw.Reputation = 50
-	stakingStore.Stakes[poorAddr] = map[string]uint64{"ETHTEST": 2000}
+	stakingStore.Stakes[poorAddr] = map[string]uint64{"CCT": 2000}
 	tx2 := core.Transaction{
 		ID:   "test-validator-register-poor",
 		From: poorAddr,

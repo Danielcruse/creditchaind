@@ -238,6 +238,95 @@ as a pointer to re-verify — line numbers drift as the code changes.
   directly against source this session (this entry previously said "not yet
   fixed" — that was stale).
 
+## Proof of Stake with Reputation (PoSR)
+
+Formalizes CreditChain's consensus model per the approved spec (2026-07):
+validation rights require Economic Stake (CCT) + Protocol Trust (Trust
+Score), not wealth alone. Most of the selection/reputation machinery
+already existed from earlier work (`core/consensus.go`'s weighted
+stake/reputation/uptime leader selection, continuous Reputation Credit
+mining — see the Reputation/Mining section above); this pass closed the
+remaining gaps: a real correctness bug in validator eligibility gating,
+literal stake slashing, a permanent-ban mechanism, a decaying block
+reward, and a genesis token allocation.
+
+- **RESOLVED, deeper than the earlier "min-stake mismatch" entry above:
+  validator eligibility was gated on `Wallet.StakedETH` (ETHTEST), not
+  CCT.** Confirmed via `core/staking_sync.go`'s own doc comment
+  ("predates multi-token staking"). `api/apply.go`'s
+  `applyValidatorRegister` — the actual consensus-applied check, not
+  just the HTTP pre-check — now requires `wallet.StakedCCT >=
+  core.MinValidatorStake`, matching PoSR's literal "Stake the minimum
+  required amount of CCT." `api/consensus_loop.go`'s `hydrateValidator`
+  (the function that actually feeds `core.Validator.Stake` into
+  selection weight) was updated the same way, so registration
+  eligibility and selection weight are now consistent with each other
+  and with the spec. ETHTEST staking's own yield/unbonding mechanics are
+  completely unaffected — only the validator-eligibility *read* moved.
+- **Stake-slash and permanent-ban magnitudes are judgment calls, not
+  specified numbers.** `core/slashing.go`'s `MissedBlockStakeSlashBps`
+  (0.50%) and `DoubleSignStakeSlashBps` (10.00%) are sized proportional
+  to the existing, already-locked reputation penalties (2 vs. 50 points)
+  but weren't independently derived from an economic model.
+  `PermanentBanSlashCountThreshold` (6, reusing the existing strike
+  weights — roughly 2 double-signs, or 1 double-sign + 3 missed blocks)
+  is the same kind of judgment call. Slashed stake is burned (removed
+  from `TokenStore.TotalSupply` via `stakeEscrowAddress`), never
+  redistributed to the reporting node — a deliberate choice to avoid
+  incentivizing false reports for profit.
+- **The controlled-inflation block reward schedule applies a *relative*
+  decay curve to the existing real reward, not the spec's literal
+  decimal numbers.** The spec's example (1.00/0.80/0.60/0.45/0.30 CCT)
+  uses fractional CCT, which this ledger's whole-unit `uint64` amounts
+  don't support anywhere (adding fractional-CCT support would be a much
+  larger, separate migration touching every balance/fee in the system).
+  `api/tokenomics.go`'s `blockRewardSchedule` instead applies the same
+  1.00x/0.80x/0.60x/0.45x/0.30x curve to the already-live
+  `ProduceBlockReward` (10 CCT) as the Year-1 baseline: 10 → 8 → 6 → 5 →
+  3 CCT, held flat at the Year-5 floor thereafter (the spec only defines
+  5 years). Anchored to the chain's real genesis block timestamp
+  (`blockchain.Blocks[0].Timestamp`), never wall-clock.
+- **Genesis pool allocation is a one-time, explicitly-triggered admin
+  action, not a true genesis-block mechanism.** This chain has been
+  running for a long time already (148,000+ blocks at the time this was
+  built), so there's no true "genesis" moment to hook into
+  programmatically. `POST /admin/genesis-pools/allocate`
+  (`api/tokenomics.go`) mints 1,000,000,000 CCT once, split 40% Validator
+  Reward Pool / 25% Foundation Treasury / 15% Ecosystem Development / 10%
+  Governance Treasury / 10% Community Incentives (locked amounts, per
+  explicit user approval 2026-07) — a slice of the new
+  `MaxTotalCCTSupply` cap (5,000,000,000), not the whole cap, leaving
+  ~4B headroom for the block-reward schedule above to mint into over
+  subsequent years. Guarded idempotent via
+  `core.Treasury.GenesisPoolsAllocated` so it can only ever fire once.
+- **4 of the 5 genesis pools have no controlling keypair and are not
+  spendable via an ordinary wallet-signed transaction.** Validator
+  Reward Pool, Ecosystem Development, Governance Treasury, and Community
+  Incentives live at synthetic addresses (`"POOL:*"`, same convention as
+  `STAKE:*`/`FEE:*` escrow addresses elsewhere in this codebase) —
+  balances are transparently visible on-chain (explorer/balance
+  lookups) but have no real disbursement mechanism yet. Only Foundation
+  Treasury is immediately spendable, since it reuses the existing,
+  already-built Treasury feature's real operator-controlled address
+  rather than getting a second synthetic one. A governance-controlled
+  withdrawal mechanism for the other 4 is a natural follow-up, not
+  attempted here.
+- **`TxAdminTransfer` (`api/admin_transfer.go`) is a deliberate, narrow
+  emergency-recovery capability, not a general admin override.** Added
+  specifically for this deploy: two production validators (node-001,
+  node-002) were seeded by an early bootstrap process with no
+  recoverable private key, so once the CCT-stake eligibility fix above
+  went live, neither could sign a normal `/stake` transaction to meet
+  the new requirement. `TxAdminTransfer` lets the operator move CCT an
+  address *already holds* to a new, key-controlled address - it can
+  never create new supply (unlike `TxTokenMint`, which already could),
+  only relocate existing balance, and only when triggered by the same
+  `ADMIN_TOKEN` already gating the mint faucet. Intended purely as a
+  one-time migration tool for this specific situation, not a
+  general-purpose fund-movement endpoint - each use is visible on-chain
+  as an ordinary transaction with `tx.From` empty (node-authored, per
+  `verifyTxAuth`'s `TxAdminTransfer` case).
+
 ## Economic / Game-Theoretic
 
 - **Several demo-scale timing constants stand in for real values.**

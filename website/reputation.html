@@ -132,6 +132,42 @@ Mining happens automatically in the background roughly once a day -
 there's nothing to claim or activate.
 </p>
 
+<h3>Consensus Model: Proof of Stake with Reputation (PoSR)</h3>
+
+<p style="opacity:0.75;font-size:13px;">
+CreditChain isn't plain Proof of Stake - owning CCT alone is never
+enough to become a validator. Becoming and remaining a validator
+requires <strong>both</strong> a real CCT stake and a real Trust
+Score, and which validator produces each block is chosen by a
+weighted mix of stake, reputation, and uptime - not simply whoever
+staked the most. Security comes from three independent layers:
+Economic Security (CCT stake), Social Security (Trust Score), and
+Economic Productivity (continuous Reputation Credit mining, described
+above). An attacker has to defeat all three at once, not just
+outspend everyone else.
+</p>
+
+<p style="opacity:0.75;font-size:13px;">
+Validators who miss their turn, double-sign, or otherwise attack
+consensus are penalized on <strong>three</strong> fronts at once, not
+just one: a Trust Score penalty, a real seizure of a slice of their
+staked CCT (burned, never redistributed), and a strike toward a
+permanent ban - repeated serious violations remove a validator's
+privileges for good, with no way back. Because Mining Power is
+computed live from Trust Score and validator uptime, a slashed
+validator's Reputation Credit mining rate drops automatically too,
+with no separate mechanism needed.
+</p>
+
+<p style="opacity:0.75;font-size:13px;">
+Validator income is a block reward plus real transaction fees. The
+block reward follows a controlled-inflation schedule that declines
+over time, so validator income becomes increasingly dependent on
+transaction fees rather than new issuance - the same "increasing
+scarcity, sustained incentive" tradeoff real fixed-supply networks
+use. Total CCT supply is capped.
+</p>
+
 <h3>How Every Action Moves Reputation</h3>
 
 <div id="mechanisms">Loading...</div>

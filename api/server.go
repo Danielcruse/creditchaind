@@ -695,6 +695,14 @@ func StartServer(port string) {
 		HandleAdminSetTreasuryAddress,
 	)
 	http.HandleFunc(
+		"/admin/genesis-pools/allocate",
+		HandleAllocateGenesisPools,
+	)
+	http.HandleFunc(
+		"/admin/token/transfer",
+		HandleAdminTransfer,
+	)
+	http.HandleFunc(
 		"/faucet",
 		HandleFaucet,
 	)

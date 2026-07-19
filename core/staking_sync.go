@@ -10,13 +10,13 @@ func (s *StakingStore) SyncWallet(w *Wallet, address string) {
 }
 
 // SyncValidator updates v.Stake to match the canonical StakingStore
-// ledger for the validator's own wallet address. Deliberately
-// ETHTEST-only (not the sum of all staked tokens) - validator
-// eligibility and PoSR weight are consensus-critical properties that
-// predate multi-token staking, and broadening what counts toward them
-// is a deliberate product decision this change doesn't make on its
-// own. Validator.Stake is a read-model only, exactly like Wallet's
+// ledger for the validator's own wallet address. CCT-only (not the
+// sum of all staked tokens) - PoSR's "Stake the minimum required
+// amount of CCT" ties validator eligibility and selection weight
+// specifically to CCT, matching api/consensus_loop.go's
+// hydrateValidator (the actual production-path equivalent of this
+// sync). Validator.Stake is a read-model only, exactly like Wallet's
 // Staked* fields.
 func (s *StakingStore) SyncValidator(v *Validator) {
-	v.Stake = s.Stakes[v.Wallet.Address]["ETHTEST"]
+	v.Stake = s.Stakes[v.Wallet.Address]["CCT"]
 }

@@ -12,6 +12,15 @@ type ValidatorStatus struct {
 	MissedBlocks   uint64
 	SlashCount     uint64
 
+	// PermanentlyBanned is set once SlashCount crosses
+	// PermanentBanSlashCountThreshold (see api/apply.go's
+	// applySlashReport) - PoSR's "no unresolved validator penalties"
+	// and "repeated offences may permanently remove validator
+	// privileges." No appeal path exists, consistent with how
+	// slashing itself is already a single-report-trusted mechanism
+	// with no dispute process.
+	PermanentlyBanned bool
+
 	// AuthorizedNodeID/AuthorizedNodePublicKey identify the ONE node
 	// this validator's key-holder actually delegated block-production
 	// to (implicitly, by registering through it). Every other node -
