@@ -69,6 +69,21 @@ func HandleTokenTransfer(
 		return
 	}
 
+	// ETHB's "CCT network" send charges its flat fee in CCT, not in
+	// ETHB - a second, separate balance from the one being sent (see
+	// applyTransfer's ETHB branch, which re-checks this authoritatively).
+	if req.Symbol == "ETHB" {
+		cctSide := resolveBalanceAddress(from, auth.PublicKey, "CCT")
+		if tokenStore.BalanceOf(cctSide) < ETHBBridgeCCTNetworkFee {
+			json.NewEncoder(w).Encode(
+				map[string]bool{
+					"success": false,
+				},
+			)
+			return
+		}
+	}
+
 	data, _ := json.Marshal(req)
 	tx := recordTx(auth, from, req.To, req.Amount, core.TxExchange, string(data))
 
@@ -78,6 +93,9 @@ func HandleTokenTransfer(
 	}
 	if req.Symbol == "CCT" {
 		resp["fee"] = CCTTransferFee
+	}
+	if req.Symbol == "ETHB" {
+		resp["feeCCT"] = ETHBBridgeCCTNetworkFee
 	}
 	json.NewEncoder(w).Encode(resp)
 }

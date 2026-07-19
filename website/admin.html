@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin - Treasury</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .explorer-search{
+            display:flex;
+            gap:10px;
+            margin-bottom:15px;
+            flex-wrap:wrap;
+        }
+        .explorer-search input{
+            flex:1;
+            min-width:160px;
+            padding:10px 14px;
+            border-radius:10px;
+            border:1px solid rgba(255,255,255,0.15);
+            background:rgba(255,255,255,0.05);
+            color:white;
+            box-sizing:border-box;
+        }
+        .explorer-row{
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            gap:12px;
+            padding:10px 12px;
+            border-bottom:1px solid rgba(255,255,255,0.08);
+            font-family:monospace;
+            font-size:13px;
+            flex-wrap:wrap;
+        }
+        .explorer-row:last-child{
+            border-bottom:none;
+        }
+        .explorer-empty{
+            opacity:0.6;
+            padding:10px 0;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Admin - Treasury</h1>
+
+<p style="opacity:0.75;font-size:13px;">
+    Every action here still requires the admin token on every request (checked server-side) - this page carries
+    no authority of its own, it's purely an operator convenience. The token is kept in memory only for this tab
+    (never localStorage/sessionStorage/cookies) and is lost on reload.
+</p>
+
+<div class="card" id="tokenCard">
+    <h2>Admin Token</h2>
+    <div class="explorer-search">
+        <input type="password" id="adminTokenInput" placeholder="ADMIN_TOKEN">
+        <button onclick="setAdminToken()">Unlock</button>
+    </div>
+    <p id="adminTokenStatus"></p>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Foundation Treasury Address</h2>
+    <p>Current: <span id="treasuryAddressDisplay" style="font-family:monospace;">-</span></p>
+    <div class="explorer-search">
+        <input type="text" id="treasuryAddressInput" placeholder="New treasury address">
+        <button onclick="saveTreasuryAddress()">Save</button>
+    </div>
+    <p id="treasuryAddressStatus"></p>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Sale Price</h2>
+    <p>Current: <span id="salePriceDisplay">-</span> cents per CCT</p>
+    <div class="explorer-search">
+        <input type="number" id="salePriceInput" placeholder="Price in cents per CCT" min="0">
+        <button onclick="saveSalePrice()">Save</button>
+    </div>
+    <p id="salePriceStatus"></p>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Remaining Sale Allocation</h2>
+    <p><span id="remainingAllocationDisplay">-</span> CCT</p>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Public Sale</h2>
+    <p>Status: <span id="pausedDisplay">-</span></p>
+    <button onclick="togglePaused()" id="pauseToggleBtn">Toggle Pause/Resume</button>
+    <p id="pausedStatus"></p>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Pending Purchase Requests</h2>
+    <div id="purchaseList" class="explorer-empty">Unlock with the admin token to load.</div>
+</div>
+
+<br>
+
+<p style="opacity:0.6;font-size:12px;">
+    More admin sections (validators, governance, website, system) are coming in a later phase - this page is
+    intentionally scoped to Treasury/Sale controls only for now.
+</p>
+
+<p style="margin-top:20px;">
+    <a href="outernet.html">Back to OUTERNET</a>
+</p>
+
+<script src="js/api.js"></script>
+<script src="js/admin.js"></script>
+
+</body>
+</html>

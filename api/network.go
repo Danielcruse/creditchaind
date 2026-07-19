@@ -24,19 +24,12 @@ func HandleNetwork(
 ) {
 	enableCors(&w)
 
-	activeValidators := 0
-	for _, v := range validatorStore.List() {
-		if v.Active {
-			activeValidators++
-		}
-	}
-
 	info := NetworkInfo{
 		NetworkName:       "OUTERNET",
 		BlockHeight:       len(blockchain.Blocks),
 		LatestBlockHash:   latestHash(),
 		PeerCount:         len(peerStore.List()),
-		ActiveValidators:  activeValidators,
+		ActiveValidators:  countActiveValidators(),
 		TPS:               0, // TODO: calculate from recent blocks
 		GasPrice:          1, // TODO: dynamic gas engine
 		TotalSupply:       tokenStore.Token.TotalSupply,
@@ -45,6 +38,19 @@ func HandleNetwork(
 	}
 
 	json.NewEncoder(w).Encode(info)
+}
+
+// countActiveValidators is shared by HandleNetwork and
+// HandleProtocolStats - a single real computation over
+// validatorStore.List(), not duplicated logic.
+func countActiveValidators() int {
+	count := 0
+	for _, v := range validatorStore.List() {
+		if v.Active {
+			count++
+		}
+	}
+	return count
 }
 
 func latestHash() string {
@@ -57,9 +63,8 @@ func latestHash() string {
 	}
 
 	return blockchain.
-		Blocks[
-		len(
-			blockchain.Blocks,
-		)-1].
+		Blocks[len(
+		blockchain.Blocks,
+	)-1].
 		Hash
 }

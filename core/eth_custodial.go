@@ -25,6 +25,15 @@ type EthCustodialAccount struct {
 	// account) - the key this store is indexed by.
 	CreditChainAddress string
 
+	// CreditChainPublicKey is the hex-encoded public key behind
+	// CreditChainAddress, captured from the signed request that created
+	// this account (never trusted from anywhere else - CreditChainAddress
+	// is a one-way hash of it, so it can't be re-derived later). Needed
+	// to compute this account's ETHB (bridged-ETH) sub-address via
+	// core.DeriveTokenAddress when a deposit is credited - see
+	// api/apply.go's applyBridgeDeposit.
+	CreditChainPublicKey string
+
 	// EthAddress is the real Sepolia address this account controls -
 	// derived from the signing key's own public key (KeyRef), never
 	// chosen or supplied by the client.
@@ -37,6 +46,17 @@ type EthCustodialAccount struct {
 	KeyRef string
 
 	CreatedAt int64
+
+	// LastCreditedWei is the highest real Sepolia balance this
+	// account's ETHB (bridged-ETH) sub-address has already been
+	// credited for, as a decimal string (mirrors
+	// EthCustodialWithdrawData.AmountWei's string convention - a
+	// *big.Int doesn't survive JSON round-trips cleanly on its own).
+	// Empty means never credited (treated as zero). See
+	// api/eth_bridge.go's deposit-detection loop, which advances this
+	// field only once a corresponding TxBridgeDeposit has actually
+	// been applied - never optimistically bumped at report time.
+	LastCreditedWei string
 }
 
 type EthCustodialStore struct {

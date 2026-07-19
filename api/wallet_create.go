@@ -9,52 +9,55 @@ import (
 	"github.com/creditchain/creditchaind/core"
 )
 
+// createWalletRequest is what the client now sends: the address and
+// public key it already derived itself (see website/js/hdwallet.js),
+// never a private key. This handler never generates a keypair - key
+// generation moved entirely client-side per the Multi-Chain HD Wallet
+// Phase A plan (§A.3), so the server never sees, and cannot leak, a
+// private key for a self-custodial wallet.
+type createWalletRequest struct {
+	Address   string `json:"address"`
+	PublicKey string `json:"publicKey"`
+}
+
 func HandleCreateWallet(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
 	enableCors(&w)
 
-	wallet,
-	err :=
-		core.CreateWallet()
-
-	if err != nil {
-		http.Error(
-			w,
-			err.Error(),
-			http.StatusInternalServerError,
-		)
+	var req createWalletRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	// Register a canonical core.Wallet (balances/reputation/etc.)
-	// under this same address so the rest of the system - staking,
-	// reputation, credit tier - has somewhere to persist state for
-	// this address going forward.
+	pubBytes, err := hex.DecodeString(req.PublicKey)
+	if err != nil || len(pubBytes) == 0 {
+		http.Error(w, "invalid publicKey", http.StatusBadRequest)
+		return
+	}
+	if req.Address == "" || core.GenerateAddress(pubBytes) != req.Address {
+		http.Error(w, "address does not match publicKey", http.StatusBadRequest)
+		return
+	}
+
+	// Register a canonical core.Wallet (balances/reputation/etc.) under
+	// this address so the rest of the system - staking, reputation,
+	// credit tier - has somewhere to persist state going forward.
+	// WalletStore.Register is a no-op if this address already exists
+	// (idempotent - safe to call again, e.g. if the client retries),
+	// so CreatedAt is only ever stamped once, on first registration.
 	registered := core.NewWallet()
-	registered.Address = wallet.Address
+	registered.Address = req.Address
 	registered.CreatedAt = time.Now().Unix()
-	// Starts the dormancy clock (see core/dormancy.go) - wallet
-	// creation isn't part of block-replay determinism (same reasoning
-	// CreatedAt above already relies on), so wall-clock time here is
-	// fine; every later signed action re-stamps this with the
-	// transaction's own timestamp instead.
 	registered.LastActivityAt = time.Now().Unix()
 	walletStore.Register(&registered)
 
 	json.NewEncoder(w).Encode(
 		map[string]string{
-			"address":
-				wallet.Address,
-			"publicKey":
-				hex.EncodeToString(
-					wallet.PublicKey,
-				),
-			"privateKey":
-				hex.EncodeToString(
-					wallet.PrivateKey,
-				),
+			"address":   req.Address,
+			"publicKey": req.PublicKey,
 		},
 	)
 }

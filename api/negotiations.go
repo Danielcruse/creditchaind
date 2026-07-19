@@ -23,13 +23,32 @@ func newNegotiationID() string {
 	return hex.EncodeToString(b)
 }
 
-// HandleStartNegotiation is the borrower proposing a specific amount
-// against an open offer - the same request shape as a direct draw
-// (see loanOfferDrawData), but instead of executing immediately, it
-// opens a chat thread with the lender first. The borrower's signed
+// startNegotiationData covers both negotiation directions - exactly
+// one of OfferID (the original borrower-draws-against-a-posted-offer
+// direction) or RequestID (the newer lender-funds-a-posted-request
+// direction) is ever sent by a real client; the other side's fields
+// are simply absent from the JSON body, so decoding a narrower
+// direction-specific struct out of a signed envelope that only ever
+// contained that direction's fields still round-trips exactly (see
+// verifyTxAuth's TxLoanOfferDraw/TxLoanRequestFulfill cases).
+type startNegotiationData struct {
+	OfferID     string `json:"offerId,omitempty"`
+	RequestID   string `json:"requestId,omitempty"`
+	Amount      uint64 `json:"amount,omitempty"`
+	RatePercent uint64 `json:"ratePercent,omitempty"`
+}
+
+// HandleStartNegotiation opens a chat-first negotiation, initiated by
+// whichever side is proposing a NEW commitment: for an offer
+// (OfferID set), the borrower proposes an amount and their signed
 // envelope is captured and held (see core.Negotiation's doc comment)
 // so it can be used to submit the real transaction later, once the
-// lender actually agrees - nothing here touches the chain yet.
+// lender actually agrees. For a request (RequestID set), the borrower
+// already made their commitment (signed, block-confirmed) when they
+// created the LoanRequest itself - here it's the LENDER proposing a
+// rate, and nothing is captured/held, since the lender is also the
+// one who will sign the actual fund-moving confirmation later (see
+// HandleConfirmNegotiation).
 func HandleStartNegotiation(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w)
 
@@ -38,11 +57,65 @@ func HandleStartNegotiation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req loanOfferDrawData
+	var req startNegotiationData
 
 	auth, address, err := requireSignedRequest(r, &req)
 	if err != nil {
 		writeUnauthorized(w, err)
+		return
+	}
+
+	if req.RequestID != "" {
+		if req.RatePercent == 0 {
+			http.Error(w, "ratePercent must be positive", http.StatusBadRequest)
+			return
+		}
+
+		request, ok := loanRequestStore.Get(req.RequestID)
+		if !ok {
+			http.Error(w, "request not found", http.StatusNotFound)
+			return
+		}
+		if request.Status != core.LoanRequestOpen {
+			http.Error(w, "request is no longer open", http.StatusBadRequest)
+			return
+		}
+		if req.RatePercent > request.MaxInterestPercent {
+			http.Error(w, "rate exceeds the borrower's maximum", http.StatusBadRequest)
+			return
+		}
+
+		store, err := resolveTokenStore(request.RequestedSymbol)
+		if err != nil {
+			http.Error(w, "unknown symbol", http.StatusNotFound)
+			return
+		}
+		lenderSide := resolveBalanceAddress(address, auth.PublicKey, request.RequestedSymbol)
+		if store.BalanceOf(lenderSide) < request.Amount {
+			http.Error(w, "insufficient balance to fund this request", http.StatusBadRequest)
+			return
+		}
+
+		n := &core.Negotiation{
+			ID:               newNegotiationID(),
+			RequestID:        request.ID,
+			Lender:           address,
+			Borrower:         request.Borrower,
+			Symbol:           request.RequestedSymbol,
+			Amount:           request.Amount,
+			RatePercent:      req.RatePercent,
+			Messages:         []core.NegotiationMessage{},
+			Status:           core.NegotiationOpen,
+			CreatedAt:        time.Now().Unix(),
+			ModeratorAddress: moderatorStore.AssignNext(),
+			ModerationStatus: core.ModerationPending,
+		}
+		negotiationStore.Create(n)
+
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":        "open",
+			"negotiationId": n.ID,
+		})
 		return
 	}
 
@@ -205,7 +278,7 @@ func HandleConfirmNegotiation(w http.ResponseWriter, r *http.Request) {
 
 	var req negotiationActionData
 
-	_, address, err := requireSignedRequest(r, &req)
+	auth, address, err := requireSignedRequest(r, &req)
 	if err != nil {
 		writeUnauthorized(w, err)
 		return
@@ -218,6 +291,35 @@ func HandleConfirmNegotiation(w http.ResponseWriter, r *http.Request) {
 	}
 	if address != n.Lender {
 		http.Error(w, "only the lender can confirm and fund this negotiation", http.StatusForbidden)
+		return
+	}
+
+	if n.RequestID != "" {
+		// Re-check the request still has enough capital/is still open -
+		// mirrors the offer-side re-check below, same "never trust
+		// submission-time state alone" reasoning. applyLoanRequestFulfill
+		// re-checks this again anyway at confirmation time.
+		request, ok := loanRequestStore.Get(n.RequestID)
+		if !ok || request.Status != core.LoanRequestOpen {
+			http.Error(w, "the underlying request is no longer open", http.StatusBadRequest)
+			return
+		}
+
+		if _, ok := negotiationStore.Execute(n.ID); !ok {
+			http.Error(w, "negotiation is no longer open", http.StatusBadRequest)
+			return
+		}
+
+		data, _ := json.Marshal(negotiationActionData{NegotiationID: n.ID})
+		tx := recordTx(auth, address, "", 0, core.TxLoanRequestFulfill, string(data))
+
+		notifyUser(n.Borrower, "TRADE_STARTED", fmt.Sprintf("Your loan of %d %s has started", n.Amount, n.Symbol), tx.ID)
+		notifyUser(n.Lender, "TRADE_STARTED", fmt.Sprintf("You funded a loan of %d %s", n.Amount, n.Symbol), tx.ID)
+
+		json.NewEncoder(w).Encode(map[string]string{
+			"status": "pending",
+			"txId":   tx.ID,
+		})
 		return
 	}
 

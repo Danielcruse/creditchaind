@@ -34,9 +34,44 @@ const (
 	// just left even: a defaulting borrower's reputation loss is framed
 	// as a transfer, not just a penalty, so the lender who bore none of
 	// the risk still gains from the outcome (mirrors gaining their
-	// collateral too - see api/apply.go's forfeitLoanCollateralToLender).
+	// collateral too - see api/apply.go's liquidateLoan). Kept as the
+	// historical ceiling shortfallReputationDelta scales down from, not
+	// a flat amount actually applied anymore - see that function.
 	ReputationDeltaLoanDefaultLenderGain = ReputationDeltaLoanDefault
+	// ReputationDeltaLoanDefaultMinimum is the smallest reputation
+	// penalty a nonzero shortfall can ever produce (see
+	// shortfallReputationDelta) - keeps a small shortfall from silently
+	// rounding down to a 0-point penalty, which would look identical to
+	// "the lender was made whole."
+	ReputationDeltaLoanDefaultMinimum = 1
 )
+
+// shortfallReputationDelta scales the loan-default reputation penalty
+// to how much of the debt liquidation actually failed to cover, per
+// the approved tokenomics spec: reputation impact is tied to what
+// liquidation failed to cover, not to the act of being liquidated at
+// all - a shortfall of 0 (collateral fully protected the lender) means
+// 0 penalty, since that's ordinary market volatility the borrower's
+// collateral absorbed, not a behavioral failure. A full shortfall (no
+// collateral recovery at all, e.g. CCT collateral or no live price)
+// means the full ReputationDeltaLoanDefault penalty - identical to
+// this system's original flat behavior before shortfall-awareness
+// existed. Anything in between scales linearly, floored at
+// ReputationDeltaLoanDefaultMinimum once shortfall > 0.
+func shortfallReputationDelta(shortfall, owed uint64) uint64 {
+	if shortfall == 0 || owed == 0 {
+		return 0
+	}
+
+	delta := ReputationDeltaLoanDefault * shortfall / owed
+	if delta > ReputationDeltaLoanDefault {
+		delta = ReputationDeltaLoanDefault
+	}
+	if delta < ReputationDeltaLoanDefaultMinimum {
+		delta = ReputationDeltaLoanDefaultMinimum
+	}
+	return delta
+}
 
 // FundLoan/RepayLoan return the REPT reward earned (0 if none) - see
 // IncreaseWalletReputation. The caller (api/apply.go) mints it; core
@@ -62,13 +97,24 @@ func (ce *CreditEngine) RepayLoan(loan *Loan) uint64 {
 	return IncreaseWalletReputation(ce.Wallets.Get(loan.Borrower), ReputationDeltaLoanRepaidOnTime)
 }
 
-func (ce *CreditEngine) DefaultLoan(loan *Loan) {
+// DefaultLoan flips the loan to DEFAULT and applies a reputation
+// penalty scaled to shortfall/owed (see shortfallReputationDelta) -
+// shortfall is what liquidation failed to recover, owed is the full
+// repayAmountFor(loan) the lender was due. Returns the delta actually
+// applied (0 if shortfall was 0) so the caller (api/apply.go's
+// processLoanDefaults) can mirror the identical magnitude into the
+// lender's reputation gain and skip recording a zero-magnitude event.
+func (ce *CreditEngine) DefaultLoan(loan *Loan, shortfall, owed uint64) uint64 {
 	DefaultLoan(loan)
 
 	profile := ce.Profiles.Get(loan.Borrower)
 	profile.RecordDefault()
 
-	DecreaseWalletReputation(ce.Wallets.Get(loan.Borrower), ReputationDeltaLoanDefault)
+	delta := shortfallReputationDelta(shortfall, owed)
+	if delta > 0 {
+		DecreaseWalletReputation(ce.Wallets.Get(loan.Borrower), delta)
+	}
+	return delta
 }
 
 func (ce *CreditEngine) CalculateBorrowPower(reputation uint64, oeth uint64) uint64 {

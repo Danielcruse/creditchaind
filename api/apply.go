@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"os"
 	"reflect"
 	"sort"
@@ -212,6 +213,14 @@ func ApplyBlock(block core.Block) {
 	// Same block-timestamp-driven determinism - peer-funded loans past
 	// their due date get defaulted identically on every node.
 	processLoanDefaults(block.Timestamp)
+
+	// Same block-timestamp-driven determinism - OETH-collateralized
+	// peer-funded loans whose collateral value has fallen too far
+	// (regardless of due date) get liquidated identically on every
+	// node. Runs after processLoanDefaults so a loan that's both
+	// overdue AND under-collateralized is only ever handled once (the
+	// due-date sweep already flipped its status away from FUNDED).
+	processCollateralLiquidations(block.Timestamp)
 
 	// Same block-timestamp-driven determinism - P2P trade chats that
 	// have stalled (either party's payment window ran out, or one
@@ -545,6 +554,19 @@ func verifyTxAuth(tx core.Transaction) bool {
 		}
 		return signed == claimed
 
+	case core.TxLoanAddCollateral:
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed, claimed loanAddCollateralData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed
+
 	case core.TxStakeETH, core.TxUnstakeETH:
 		if tx.AuthAddress != tx.From {
 			return false
@@ -612,6 +634,20 @@ func verifyTxAuth(tx core.Transaction) bool {
 			return false
 		}
 		return signed.To == tx.To && signed.Amount == tx.Amount
+
+	case core.TxBridgeWithdraw:
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed bridgeWithdrawData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		var claimed bridgeWithdrawData
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed
 
 	case core.TxBorrow:
 		// The borrower is the authenticated actor - stored in To,
@@ -817,6 +853,55 @@ func verifyTxAuth(tx core.Transaction) bool {
 			return false
 		}
 		var signed, claimed loanOfferCloseData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed
+
+	case core.TxLoanRequestCreate:
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed, claimed loanRequestCreateData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed
+
+	case core.TxLoanRequestCancel:
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed, claimed loanRequestCancelData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed
+
+	// TxLoanRequestFulfill is authored by the LENDER at negotiation-
+	// confirm time (see HandleConfirmNegotiation's RequestID branch) -
+	// unlike TxLoanOfferDraw, there's no pre-signed borrower envelope
+	// to reuse, since the borrower's consent was already given, signed,
+	// and block-confirmed when they created the LoanRequest itself. The
+	// signed payload is just "I confirm this negotiation" -
+	// applyLoanRequestFulfill looks up the real economic terms
+	// (RequestID, RatePercent, Amount, Symbol, Lender, Borrower) from
+	// the Negotiation record itself, which cannot be forged by the
+	// confirming party since only the lender named on it can execute it.
+	case core.TxLoanRequestFulfill:
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed, claimed negotiationActionData
 		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
 			return false
 		}
@@ -1045,6 +1130,23 @@ func verifyTxAuth(tx core.Transaction) bool {
 		}
 		return signed == claimed
 
+	case core.TxHDWalletMigrate:
+		// Unlike TxRecoverWallet, the OLD address is the authenticated
+		// actor here - it's still-controlled, still-signing key is
+		// exactly what makes this a migration rather than a recovery
+		// (see core/transactions.go's doc comment).
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed, claimed hdWalletMigrateData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed
+
 	case core.TxHubRateSet:
 		if tx.AuthAddress != tx.From {
 			return false
@@ -1175,6 +1277,31 @@ func verifyTxAuth(tx core.Transaction) bool {
 		// consensus threshold).
 		return tx.Data == string(tx.AuthPayload)
 
+	case core.TxBridgeDeposit:
+		// Node-authored, not wallet-authored - same reasoning as
+		// TxSlashReport above (api/eth_bridge.go's
+		// pollAndReportBridgeDeposit is this report's only submitter).
+		return tx.Data == string(tx.AuthPayload)
+
+	case core.TxTreasuryPurchaseConfirm, core.TxTreasurySetSalePrice, core.TxTreasurySetPaused, core.TxTreasurySetAddress:
+		// Node-authored, admin-only - same trust model as TxTokenMint:
+		// ADMIN_TOKEN was already checked at the HTTP layer (see
+		// api/treasury.go) before this was ever recorded.
+		return tx.Data == string(tx.AuthPayload)
+
+	case core.TxTreasuryPurchaseRequest:
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed, claimed treasuryPurchaseRequestData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed
+
 	default:
 		return false
 	}
@@ -1221,6 +1348,9 @@ func ApplyTransaction(tx core.Transaction) {
 	case core.TxLockCollateral:
 		applyLockCollateral(tx)
 
+	case core.TxLoanAddCollateral:
+		applyLoanAddCollateral(tx)
+
 	case core.TxOrderPlace:
 		applyOrderPlace(tx)
 
@@ -1229,6 +1359,12 @@ func ApplyTransaction(tx core.Transaction) {
 
 	case core.TxSlashReport:
 		applySlashReport(tx)
+
+	case core.TxBridgeDeposit:
+		applyBridgeDeposit(tx)
+
+	case core.TxBridgeWithdraw:
+		applyBridgeWithdraw(tx)
 
 	case core.TxUnstakeETH:
 		applyUnstake(tx)
@@ -1268,6 +1404,15 @@ func ApplyTransaction(tx core.Transaction) {
 
 	case core.TxLoanOfferClose:
 		applyLoanOfferClose(tx)
+
+	case core.TxLoanRequestCreate:
+		applyLoanRequestCreate(tx)
+
+	case core.TxLoanRequestCancel:
+		applyLoanRequestCancel(tx)
+
+	case core.TxLoanRequestFulfill:
+		applyLoanRequestFulfill(tx)
 
 	case core.TxModeratorRegister:
 		applyModeratorRegister(tx)
@@ -1323,6 +1468,9 @@ func ApplyTransaction(tx core.Transaction) {
 	case core.TxRecoverWallet:
 		applyRecoverWallet(tx)
 
+	case core.TxHDWalletMigrate:
+		applyHDWalletMigrate(tx)
+
 	case core.TxHubRateSet:
 		applyHubRateSet(tx)
 
@@ -1343,6 +1491,21 @@ func ApplyTransaction(tx core.Transaction) {
 
 	case core.TxTokenMint:
 		applyTokenMint(tx)
+
+	case core.TxTreasuryPurchaseRequest:
+		applyTreasuryPurchaseRequest(tx)
+
+	case core.TxTreasuryPurchaseConfirm:
+		applyTreasuryPurchaseConfirm(tx)
+
+	case core.TxTreasurySetSalePrice:
+		applyTreasurySetSalePrice(tx)
+
+	case core.TxTreasurySetPaused:
+		applyTreasurySetPaused(tx)
+
+	case core.TxTreasurySetAddress:
+		applyTreasurySetAddress(tx)
 	}
 }
 
@@ -1369,6 +1532,107 @@ func applyTokenMint(tx core.Transaction) {
 		return
 	}
 	store.Mint(data.Address, data.Amount)
+}
+
+// applyTreasuryPurchaseRequest records a buyer's intent to buy CCT
+// from the Foundation Treasury - no funds move yet, see
+// applyTreasuryPurchaseConfirm for the actual transfer.
+func applyTreasuryPurchaseRequest(tx core.Transaction) {
+	var data treasuryPurchaseRequestData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+	if data.CCTAmount == 0 {
+		return
+	}
+	// Re-checked here, not just at submission time - state may have
+	// changed between the two.
+	if treasuryStore.Treasury.Paused {
+		return
+	}
+
+	treasuryStore.CreatePurchase(&core.PurchaseRequest{
+		ID:             tx.ID,
+		BuyerAddress:   tx.From,
+		BuyerPublicKey: tx.AuthPublicKey,
+		CCTAmount:      data.CCTAmount,
+		PriceAtRequest: treasuryStore.Treasury.SalePriceCentsPerCCT,
+		Status:         core.PurchaseAwaitingPayment,
+		CreatedAt:      tx.Timestamp,
+	})
+}
+
+type treasuryPurchaseConfirmData struct {
+	PurchaseID string `json:"purchaseId"`
+}
+
+// applyTreasuryPurchaseConfirm is the one Treasury transaction that
+// actually moves value - a pure ledger transfer from the Foundation's
+// address to the buyer, applied identically by every node once this
+// admin attestation is confirmed in a block (see HandleTokenMint's
+// doc comment for why this can't just mutate tokenStore directly in
+// the HTTP handler). A failed transfer (insufficient treasury
+// balance) is a silent no-op, the same convention TokenStore.Transfer
+// already uses everywhere else - the purchase stays AWAITING_PAYMENT
+// rather than erroring, a known rough edge for this phase (the admin
+// should check /treasury/info before confirming).
+func applyTreasuryPurchaseConfirm(tx core.Transaction) {
+	var data treasuryPurchaseConfirmData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+
+	purchase, ok := treasuryStore.GetPurchase(data.PurchaseID)
+	if !ok || purchase.Status != core.PurchaseAwaitingPayment {
+		return
+	}
+
+	if !tokenStore.Transfer(treasuryStore.Treasury.FoundationAddress, purchase.BuyerAddress, purchase.CCTAmount) {
+		return
+	}
+
+	if confirmed, ok := treasuryStore.ConfirmPurchase(purchase.ID); ok {
+		confirmed.ConfirmedAt = tx.Timestamp
+	}
+}
+
+type treasurySetSalePriceData struct {
+	SalePriceCentsPerCCT uint64 `json:"salePriceCentsPerCCT"`
+}
+
+func applyTreasurySetSalePrice(tx core.Transaction) {
+	var data treasurySetSalePriceData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+	treasuryStore.SetSalePrice(data.SalePriceCentsPerCCT)
+}
+
+type treasurySetPausedData struct {
+	Paused bool `json:"paused"`
+}
+
+func applyTreasurySetPaused(tx core.Transaction) {
+	var data treasurySetPausedData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+	treasuryStore.SetPaused(data.Paused)
+}
+
+type treasurySetAddressData struct {
+	FoundationAddress string `json:"foundationAddress"`
+}
+
+func applyTreasurySetAddress(tx core.Transaction) {
+	var data treasurySetAddressData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+	if data.FoundationAddress == "" {
+		return
+	}
+	treasuryStore.SetFoundationAddress(data.FoundationAddress)
 }
 
 // poolAddress is a synthetic, non-signable "wallet" that holds
@@ -2067,6 +2331,35 @@ func applyLockCollateral(tx core.Transaction) {
 	collateralStore.Add(tx.From, data.Symbol, data.Amount)
 }
 
+// applyLoanAddCollateral moves data.Amount out of the borrower's
+// already-locked collateral pool (collateralStore) into a specific,
+// existing FUNDED loan's CollateralAmount - re-validated here against
+// current state, not trusted from submission time, since the loan's
+// status or the caller's locked balance could have moved (repayment,
+// liquidation, another lock/unlock) between submission and
+// confirmation. Mirrors reserveCollateralForLoan's earmarking
+// mechanism against a brand-new loan, just against an existing one.
+func applyLoanAddCollateral(tx core.Transaction) {
+	var data loanAddCollateralData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+	if data.Amount == 0 {
+		return
+	}
+
+	loan, ok := loanStore.Get(data.LoanID)
+	if !ok || loan.Borrower != tx.From || loan.Status != core.LoanFunded || loan.CollateralSymbol == "" {
+		return
+	}
+
+	if !collateralStore.Release(tx.From, loan.CollateralSymbol, data.Amount) {
+		return
+	}
+
+	loan.CollateralAmount += data.Amount
+}
+
 func applyUnstake(tx core.Transaction) {
 	// Queues the unbond rather than instantly removing stake - see
 	// core/staking_logic.go's UnbondingEntry doc. Maturity is derived
@@ -2234,6 +2527,104 @@ func applySlashReport(tx core.Transaction) {
 		validatorStore.RecordMiss(data.ValidatorAddress)
 		validatorStore.RecordSlash(data.ValidatorAddress, v.SlashCount-status.SlashCount)
 	}
+}
+
+// applyBridgeDeposit credits ETHB (the auto-bridge feature's unified
+// wei-denominated ETH balance) once a TxBridgeDeposit report - see
+// api/eth_bridge.go's pollAndReportBridgeDeposit - confirms. Only the
+// node that owns a given custodial account will ever detect and
+// submit reports for it (the same disclosed non-gossip limitation as
+// core/eth_custodial.go generally), but this apply function itself
+// runs identically on every node once the report IS confirmed, so
+// every node converges on the same ETHB credit regardless of which
+// node originally noticed the deposit.
+func applyBridgeDeposit(tx core.Transaction) {
+	var data bridgeDepositReportData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+
+	account, ok := ethCustodialStore.Get(data.CreditChainAddress)
+	if !ok {
+		return
+	}
+
+	// Dedup key includes the reported balance itself, not just the
+	// account - a genuinely new (higher) deposit naturally gets a new
+	// key, while a resubmission of the same report is caught here
+	// rather than by trusting the reporting node not to resend it.
+	dedupKey := "bridgedeposit|" + data.CreditChainAddress + "|" + data.NewBalanceWei
+	if slashAlreadyApplied(dedupKey) {
+		return
+	}
+
+	newBalance, ok := new(big.Int).SetString(data.NewBalanceWei, 10)
+	if !ok {
+		return
+	}
+
+	baseline := new(big.Int)
+	if account.LastCreditedWei != "" {
+		if _, ok := baseline.SetString(account.LastCreditedWei, 10); !ok {
+			baseline.SetInt64(0)
+		}
+	}
+
+	if newBalance.Cmp(baseline) <= 0 {
+		return // stale/non-increasing report - nothing to credit
+	}
+
+	delta := new(big.Int).Sub(newBalance, baseline)
+	if !delta.IsUint64() {
+		// Overflow guard (see bridgedEthStore's doc comment in
+		// api/token.go on the uint64 wei cap) - reject rather than
+		// silently truncate a credit this large.
+		return
+	}
+
+	ethbAddress := resolveBalanceAddress(data.CreditChainAddress, account.CreditChainPublicKey, "ETHB")
+	bridgedEthStore.Mint(ethbAddress, delta.Uint64())
+	account.LastCreditedWei = data.NewBalanceWei
+}
+
+// applyBridgeWithdraw debits ETHB for an "ERC network" withdrawal
+// (see api/eth_bridge_withdraw.go's HandleBridgedEthWithdraw, which
+// already triggered the real Sepolia broadcast synchronously before
+// this confirms - see that file's doc comment for the full ordering/
+// atomicity discussion). Debits amount+ETHBridgeFeeWei from the
+// sender's ETHB sub-address; the fee portion is swept to a synthetic
+// sink address, same pattern as cctTransferFeePoolAddress. Silently
+// no-ops on insufficient balance (TokenStore.Transfer's standard
+// convention) - the real broadcast already happened by the time this
+// runs, so a no-op here would only occur if the fast-fail/reservation
+// checks in the handler were somehow bypassed, which releases the
+// node-local reservation on this node once this transaction is seen
+// (it originated here, so it's the same node either way).
+func applyBridgeWithdraw(tx core.Transaction) {
+	var data bridgeWithdrawData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+
+	ethbSide := resolveBalanceAddress(tx.From, tx.AuthPublicKey, "ETHB")
+	total := tx.Amount + ETHBridgeFeeWei
+
+	if bridgedEthStore.BalanceOf(ethbSide) >= total {
+		bridgedEthStore.Transfer(ethbSide, ethbBridgeFeeAddress(), ETHBridgeFeeWei)
+		bridgedEthStore.Burn(ethbSide, tx.Amount) // the real ETH already left the custodial reserve, not routed to any CCT-side address
+	}
+
+	releaseBridgeWithdrawal(ethbSide, total)
+}
+
+// ethbBridgeFeeAddress is a synthetic, nobody-holds-the-private-key
+// sink for ETHB bridge fees - same pattern as
+// cctTransferFeePoolAddress/registrationFeeAddress. Not swept
+// anywhere (unlike the CCT transfer fee, which funds each block's
+// validator) - this is CreditChain's own bridge revenue, a policy
+// decision on what to do with it is out of scope for this feature.
+func ethbBridgeFeeAddress() string {
+	return "FEE:ETHB_BRIDGE"
 }
 
 // verifyDoubleSignEvidence independently re-derives the fraud proof
@@ -2532,52 +2923,127 @@ func peekCollateralSymbolForLoan(address string, amount uint64) (symbol string, 
 	return "", false
 }
 
+// collateralValueInYen prices collateral in YEN-e-equivalent terms for
+// the liquidation engine, reusing applySwapTokenToToken's exact two-hop
+// pattern as a pure quote (no state mutation): OETH -> CCT via
+// cctEthTestPool, then that CCT amount -> USDCTEST via cctUsdcTestPool,
+// treating the USDCTEST-equivalent result as YEN-e's value too (YEN-e
+// has no market of its own - see the approved Phase B design, which
+// deliberately proxies through USDCTEST's existing pool rather than
+// seeding a new one). ok=false means "no live price available - fall
+// back to due-date-only handling", NEVER "worth zero" or "worth
+// infinite" - callers must treat it as "can't assess", not a value.
+// CCT collateral always returns ok=false: CCT is this system's pricing
+// numeraire, nothing else prices CCT against a single arbitrary pool,
+// so CCT-collateralized loans stay due-date-only in this phase, exactly
+// matching today's behavior.
+func collateralValueInYen(symbol string, amount uint64) (valueInYen uint64, ok bool) {
+	if symbol != "OETH" || amount == 0 {
+		return 0, false
+	}
+
+	quotedCCT, ok := cctEthTestPool.QuoteTokenForCCT(amount)
+	if !ok {
+		return 0, false
+	}
+	quotedYen, ok := cctUsdcTestPool.QuoteCCTForToken(quotedCCT)
+	if !ok {
+		return 0, false
+	}
+	return quotedYen, true
+}
+
 // releaseLoanCollateral returns a repaid loan's earmarked collateral
 // to the exact staked/oETH balance it was reserved from -
 // collateralStore is deliberately NOT credited back here, since this
 // collateral is fully released to the user, not returned to the
 // general locked-but-unallocated pool.
 func releaseLoanCollateral(loan *core.Loan) {
-	if loan.CollateralAmount == 0 {
+	creditCollateralTo(loan.Borrower, loan.CollateralSymbol, loan.CollateralAmount)
+}
+
+// creditCollateralTo moves a collateral amount into recipient's real
+// staked-CCT/oETH balance - the same destination releaseLoanCollateral
+// and (formerly) forfeitLoanCollateralToLender each credited into,
+// just factored out so liquidateLoan can split a single loan's
+// collateral between two recipients (partial seize + partial refund)
+// without duplicating the CCT/OETH switch three times over.
+func creditCollateralTo(recipient, symbol string, amount uint64) {
+	if amount == 0 || recipient == "" {
 		return
 	}
 
-	switch loan.CollateralSymbol {
+	switch symbol {
 	case "CCT":
-		if stakingStore.Stakes[loan.Borrower] == nil {
-			stakingStore.Stakes[loan.Borrower] = make(map[string]uint64)
+		if stakingStore.Stakes[recipient] == nil {
+			stakingStore.Stakes[recipient] = make(map[string]uint64)
 		}
-		stakingStore.Stakes[loan.Borrower]["CCT"] += loan.CollateralAmount
+		stakingStore.Stakes[recipient]["CCT"] += amount
 
 	case "OETH":
-		walletStore.Get(loan.Borrower).OETHBalance += loan.CollateralAmount
+		walletStore.Get(recipient).OETHBalance += amount
 	}
 }
 
-// forfeitLoanCollateralToLender is releaseLoanCollateral's counterpart
-// for a defaulted loan - the collateral becomes the LENDER's, not
-// returned to the borrower, since the peer-funded loan marketplace's
-// core economics are that default costs the borrower everything they
-// put up while the lender is made whole (see
-// core.ReputationDeltaLoanDefaultLenderGain's doc comment for the
-// reputation half of the same idea). Moves the exact staked/oETH
-// balance without minting or burning anything, same supply-preserving
-// pattern releaseLoanCollateral uses - only the destination changes.
-func forfeitLoanCollateralToLender(loan *core.Loan) {
+// liquidateLoan is the shared collateral-disposal path for BOTH the
+// due-date sweep (processLoanDefaults) and the proactive price sweep
+// (processCollateralLiquidations) - replaces the old
+// forfeitLoanCollateralToLender, which always seized 100% of
+// collateral unconditionally regardless of what it was actually worth.
+// Returns the shortfall (0 if the lender was fully covered) - the
+// caller decides what that shortfall means for loan status/reputation
+// (see processLoanDefaults), since that's identical regardless of
+// which sweep triggered the liquidation.
+//
+// reason is accepted for caller-side logging/notification context
+// (e.g. "overdue" vs "price-triggered") - liquidateLoan itself treats
+// every trigger identically, which is the whole point of sharing it.
+func liquidateLoan(loan *core.Loan, asOf int64, reason string) (shortfall uint64) {
+	owed := repayAmountFor(loan)
+
 	if loan.CollateralAmount == 0 || loan.Lender == "" {
-		return
+		return owed
 	}
 
-	switch loan.CollateralSymbol {
-	case "CCT":
-		if stakingStore.Stakes[loan.Lender] == nil {
-			stakingStore.Stakes[loan.Lender] = make(map[string]uint64)
+	// CCT collateral has no live YEN-e price (CCT is this system's
+	// pricing numeraire - nothing prices CCT against a single
+	// arbitrary pool), so it keeps today's exact behavior: seize
+	// everything, assume the lender recovered nothing.
+	collateralValue, ok := collateralValueInYen(loan.CollateralSymbol, loan.CollateralAmount)
+	if !ok {
+		creditCollateralTo(loan.Lender, loan.CollateralSymbol, loan.CollateralAmount)
+		loan.CollateralAmount = 0
+		return owed
+	}
+
+	if collateralValue >= owed {
+		// Collateral covers the debt - seize only the proportional
+		// slice needed (approximated linearly off the quoted value;
+		// the AMM curve isn't perfectly linear at this size, but this
+		// is close enough for a demo-scale liquidation engine and
+		// never seizes more than CollateralAmount), refund the rest.
+		seize := loan.CollateralAmount
+		if collateralValue > 0 {
+			seize = loan.CollateralAmount * owed / collateralValue
+			if seize > loan.CollateralAmount {
+				seize = loan.CollateralAmount
+			}
 		}
-		stakingStore.Stakes[loan.Lender]["CCT"] += loan.CollateralAmount
+		refund := loan.CollateralAmount - seize
 
-	case "OETH":
-		walletStore.Get(loan.Lender).OETHBalance += loan.CollateralAmount
+		creditCollateralTo(loan.Lender, loan.CollateralSymbol, seize)
+		creditCollateralTo(loan.Borrower, loan.CollateralSymbol, refund)
+		loan.CollateralAmount = 0
+		loan.Status = core.LoanRepaid
+		loan.RepaidAt = asOf
+		return 0
 	}
+
+	// Collateral falls short - seize all of it, shortfall is whatever
+	// value it couldn't cover.
+	creditCollateralTo(loan.Lender, loan.CollateralSymbol, loan.CollateralAmount)
+	loan.CollateralAmount = 0
+	return owed - collateralValue
 }
 
 // dueAtFor computes a peer-funded loan's due timestamp from the
@@ -2618,30 +3084,122 @@ func processLoanDefaults(asOf int64) {
 	for _, id := range overdueIDs {
 		loan := loanStore.Loans[id]
 
-		// creditEngine.DefaultLoan already does exactly the right
-		// borrower-side penalty (status -> DEFAULT, profile record,
-		// reputation decrease) - see core/credit_engine.go. Only the
-		// lender-side gain and collateral forfeiture are new.
-		creditEngine.DefaultLoan(loan)
-		forfeitLoanCollateralToLender(loan)
+		owed := repayAmountFor(loan)
+		shortfall := liquidateLoan(loan, asOf, "overdue")
 
-		if reward := core.IncreaseWalletReputation(walletStore.Get(loan.Lender), core.ReputationDeltaLoanDefaultLenderGain); reward > 0 {
-			mintRept(loan.Lender, reward)
+		if shortfall == 0 {
+			// Collateral fully covered what was owed even though the
+			// loan went overdue - economically the lender was made
+			// whole exactly as on a normal repayment, so this isn't a
+			// default and carries no reputation penalty (see
+			// core.shortfallReputationDelta's doc comment).
+			// liquidateLoan already flipped loan.Status to LoanRepaid.
+			creditHistory.Add(loan.Borrower, core.CreditEvent{Type: "LOAN_REPAID", Amount: loan.Amount})
+			notifyUser(loan.Borrower, "LOAN_REPAID", fmt.Sprintf("Your overdue loan of %d %s was liquidated, but your collateral fully covered what was owed - no reputation penalty, and any leftover collateral was returned to you", loan.Amount, loanSymbol(loan)), loan.ID)
+			notifyUser(loan.Lender, "LOAN_REPAID", fmt.Sprintf("An overdue %d %s loan was liquidated and you were made whole from the borrower's collateral", loan.Amount, loanSymbol(loan)), loan.ID)
+			continue
 		}
 
-		reputationEventStore.Record(&core.ReputationEvent{
-			TxID: "default-" + loan.ID, Target: loan.Borrower, Delta: -int64(core.ReputationDeltaLoanDefault),
-			Reason: "Defaulted on a peer-funded loan", Timestamp: asOf,
-		})
-		reputationEventStore.Record(&core.ReputationEvent{
-			TxID: "default-" + loan.ID + "-lender", Target: loan.Lender, Delta: int64(core.ReputationDeltaLoanDefaultLenderGain),
-			Reason: "Received a defaulting borrower's collateral and reputation", Timestamp: asOf,
-		})
+		// creditEngine.DefaultLoan does the borrower-side penalty
+		// (status -> DEFAULT, profile record, shortfall-scaled
+		// reputation decrease) - see core/credit_engine.go.
+		delta := creditEngine.DefaultLoan(loan, shortfall, owed)
+
+		if delta > 0 {
+			if reward := core.IncreaseWalletReputation(walletStore.Get(loan.Lender), delta); reward > 0 {
+				mintRept(loan.Lender, reward)
+			}
+
+			reputationEventStore.Record(&core.ReputationEvent{
+				TxID: "default-" + loan.ID, Target: loan.Borrower, Delta: -int64(delta),
+				Reason: "Defaulted on a peer-funded loan", Timestamp: asOf,
+			})
+			reputationEventStore.Record(&core.ReputationEvent{
+				TxID: "default-" + loan.ID + "-lender", Target: loan.Lender, Delta: int64(delta),
+				Reason: "Received a defaulting borrower's collateral and reputation", Timestamp: asOf,
+			})
+		}
 
 		creditHistory.Add(loan.Borrower, core.CreditEvent{Type: "LOAN_DEFAULT", Amount: loan.Amount})
 
-		notifyUser(loan.Borrower, "LOAN_DEFAULT", fmt.Sprintf("You defaulted on a loan of %d %s - your collateral and reputation were forfeited to the lender", loan.Amount, loanSymbol(loan)), loan.ID)
-		notifyUser(loan.Lender, "LOAN_DEFAULT", fmt.Sprintf("A borrower defaulted on their %d %s loan - you received their collateral and reputation", loan.Amount, loanSymbol(loan)), loan.ID)
+		notifyUser(loan.Borrower, "LOAN_DEFAULT", fmt.Sprintf("You defaulted on a loan of %d %s - your collateral was liquidated and your reputation was penalized for the %d shortfall left uncovered", loan.Amount, loanSymbol(loan), shortfall), loan.ID)
+		notifyUser(loan.Lender, "LOAN_DEFAULT", fmt.Sprintf("A borrower defaulted on their %d %s loan - their liquidated collateral covered %d of what was owed", loan.Amount, loanSymbol(loan), owed-shortfall), loan.ID)
+	}
+}
+
+// processCollateralLiquidations sweeps every peer-funded, OETH-
+// collateralized loan whose collateral value has fallen below
+// core.LiquidationThresholdPercent of what's owed - regardless of due
+// date, since a price crash can put a lender at risk long before a
+// loan's due date ever arrives. Same block-timestamp-driven
+// determinism as processLoanDefaults (sorted iteration - Go map order
+// is randomized, every node must reach the identical liquidation set).
+// CCT-collateralized loans are never scanned here - collateralValueInYen
+// always returns ok=false for CCT, so they'd never trigger anyway, but
+// skipping them explicitly documents that this phase's proactive
+// liquidation is OETH-only by design (see the approved Phase B plan).
+func processCollateralLiquidations(asOf int64) {
+	var atRiskIDs []string
+	for id, loan := range loanStore.Loans {
+		if loan.Status != core.LoanFunded || loan.Lender == "" || loan.CollateralSymbol != "OETH" {
+			continue
+		}
+
+		collateralValue, ok := collateralValueInYen(loan.CollateralSymbol, loan.CollateralAmount)
+		if !ok {
+			continue
+		}
+
+		owed := repayAmountFor(loan)
+		if owed == 0 {
+			continue
+		}
+
+		// collateralValue/owed < threshold/100, rearranged to avoid
+		// floating point: collateralValue*100 < threshold*owed.
+		if collateralValue*100 < core.LiquidationThresholdPercent*owed {
+			atRiskIDs = append(atRiskIDs, id)
+		}
+	}
+	if len(atRiskIDs) == 0 {
+		return
+	}
+	sort.Strings(atRiskIDs)
+
+	for _, id := range atRiskIDs {
+		loan := loanStore.Loans[id]
+
+		owed := repayAmountFor(loan)
+		shortfall := liquidateLoan(loan, asOf, "price-triggered")
+
+		if shortfall == 0 {
+			creditHistory.Add(loan.Borrower, core.CreditEvent{Type: "LOAN_REPAID", Amount: loan.Amount})
+			notifyUser(loan.Borrower, "LOAN_REPAID", fmt.Sprintf("Your %d %s loan's OETH collateral dropped below the safe threshold and was liquidated - it still fully covered what was owed, so there's no reputation penalty and any leftover collateral was returned to you", loan.Amount, loanSymbol(loan)), loan.ID)
+			notifyUser(loan.Lender, "LOAN_REPAID", fmt.Sprintf("A %d %s loan's collateral value dropped and was liquidated - you were made whole", loan.Amount, loanSymbol(loan)), loan.ID)
+			continue
+		}
+
+		delta := creditEngine.DefaultLoan(loan, shortfall, owed)
+
+		if delta > 0 {
+			if reward := core.IncreaseWalletReputation(walletStore.Get(loan.Lender), delta); reward > 0 {
+				mintRept(loan.Lender, reward)
+			}
+
+			reputationEventStore.Record(&core.ReputationEvent{
+				TxID: "liquidation-" + loan.ID, Target: loan.Borrower, Delta: -int64(delta),
+				Reason: "Loan collateral was liquidated below what was owed", Timestamp: asOf,
+			})
+			reputationEventStore.Record(&core.ReputationEvent{
+				TxID: "liquidation-" + loan.ID + "-lender", Target: loan.Lender, Delta: int64(delta),
+				Reason: "Received a liquidated borrower's collateral and reputation", Timestamp: asOf,
+			})
+		}
+
+		creditHistory.Add(loan.Borrower, core.CreditEvent{Type: "LOAN_DEFAULT", Amount: loan.Amount})
+
+		notifyUser(loan.Borrower, "LOAN_DEFAULT", fmt.Sprintf("Your %d %s loan's OETH collateral dropped below the safe threshold and was liquidated - it fell short of what was owed by %d, and your reputation was penalized proportionally", loan.Amount, loanSymbol(loan), shortfall), loan.ID)
+		notifyUser(loan.Lender, "LOAN_DEFAULT", fmt.Sprintf("A %d %s loan's collateral was liquidated after its value dropped - it covered %d of what was owed", loan.Amount, loanSymbol(loan), owed-shortfall), loan.ID)
 	}
 }
 
@@ -2659,19 +3217,20 @@ func applyBorrow(tx core.Transaction) {
 
 	id := "loan-" + tx.ID[:min(8, len(tx.ID))]
 
-	loanStore.CreateLoan(id, tx.To, tx.Amount, data.Interest, collateralSymbol, tx.Amount)
+	loanStore.CreateLoan(id, tx.To, tx.Amount, data.Interest, collateralSymbol, tx.Amount, tx.Timestamp)
 
 	creditHistory.Add(tx.To, core.CreditEvent{Type: "BORROW", Amount: tx.Amount})
 	core.RecordLoanTaken(creditStore.Get(tx.To))
 
-	// Borrowed funds land in the separate USDCTEST ledger, not CCT -
-	// keeps "earned by staking/governance" and "borrowed" visibly
-	// distinct balances, never commingled. Minted into the borrower's
-	// derived USDCTEST sub-address (see resolveBalanceAddress), not
-	// their CCT address - tx.AuthPublicKey is the borrower's own
-	// authenticated public key (see verifyTxAuth's TxBorrow case).
-	usdcSide := resolveBalanceAddress(tx.To, tx.AuthPublicKey, "USDCTEST")
-	usdcTestStore.Mint(usdcSide, tx.Amount)
+	// Borrowed funds land in the separate YEN-e ledger, not CCT - keeps
+	// "earned by staking/governance" (CCT) and "borrowed" (YEN-e, the
+	// stable settlement currency) visibly distinct balances, never
+	// commingled. Minted into the borrower's derived YEN-e sub-address
+	// (see resolveBalanceAddress), not their CCT address -
+	// tx.AuthPublicKey is the borrower's own authenticated public key
+	// (see verifyTxAuth's TxBorrow case).
+	yenSide := resolveBalanceAddress(tx.To, tx.AuthPublicKey, "YENE")
+	yenStore.Mint(yenSide, tx.Amount)
 }
 
 func applyLoanOfferCreate(tx core.Transaction) {
@@ -2778,6 +3337,7 @@ func applyLoanOfferDraw(tx core.Transaction) {
 		CollateralSymbol: collateralSymbol,
 		CollateralAmount: data.Amount,
 		DueAt:            dueAtFor(offer.DurationSeconds, tx.Timestamp),
+		CreatedAt:        tx.Timestamp,
 	})
 
 	creditHistory.Add(tx.From, core.CreditEvent{Type: "BORROW", Amount: data.Amount})
@@ -2823,6 +3383,158 @@ func applyLoanOfferClose(tx core.Transaction) {
 	lenderSide := resolveBalanceAddress(tx.From, tx.AuthPublicKey, offer.Symbol)
 	escrow := loanOfferEscrowAddress(offer.ID)
 	store.Transfer(escrow, lenderSide, offer.RemainingAmount)
+}
+
+// applyLoanRequestCreate re-validates everything HandleCreateLoanRequest
+// already checked at submission time (collateral could have moved
+// since then) before actually reserving it - the same never-trust-
+// submission-time-alone discipline every other two-step mutation in
+// this codebase follows.
+func applyLoanRequestCreate(tx core.Transaction) {
+	var data loanRequestCreateData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+	if data.Amount == 0 || data.CollateralAmount < data.Amount || data.MaxInterestPercent == 0 {
+		return
+	}
+	if data.CollateralSymbol != "CCT" && data.CollateralSymbol != "OETH" {
+		return
+	}
+	if len(data.Purpose) > core.MaxLoanRequestPurposeLen {
+		return
+	}
+
+	wallet := walletStore.Get(tx.From)
+	if data.Amount > core.BorrowLimit(wallet.Reputation) {
+		return
+	}
+
+	// Reserves exactly the borrower's chosen CollateralAmount (unlike
+	// reserveCollateralForLoan, which always reserves an amount equal
+	// to the loan itself, picking CCT-then-OETH automatically) - here
+	// the borrower already chose both the symbol and the amount, which
+	// may exceed the loan amount (a deliberate, disclosed enhancement
+	// over the legacy 1:1-only paths - see core.LoanRequest's doc
+	// comment).
+	if !collateralStore.Release(tx.From, data.CollateralSymbol, data.CollateralAmount) {
+		return
+	}
+
+	id := "loanreq-" + tx.ID[:min(8, len(tx.ID))]
+	loanRequestStore.Create(&core.LoanRequest{
+		ID:                 id,
+		Borrower:           tx.From,
+		BorrowerPublicKey:  tx.AuthPublicKey,
+		RequestedSymbol:    data.RequestedSymbol,
+		Amount:             data.Amount,
+		CollateralSymbol:   data.CollateralSymbol,
+		CollateralAmount:   data.CollateralAmount,
+		MaxInterestPercent: data.MaxInterestPercent,
+		DurationSeconds:    data.DurationSeconds,
+		Purpose:            data.Purpose,
+		Status:             core.LoanRequestOpen,
+		CreatedAt:          tx.Timestamp,
+	})
+}
+
+// applyLoanRequestCancel releases the reserved collateral back to the
+// borrower's general locked pool - mirrors applyLoanOfferClose's
+// refund, just against CollateralStore instead of a token escrow.
+func applyLoanRequestCancel(tx core.Transaction) {
+	var data loanRequestCancelData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+
+	request, ok := loanRequestStore.Cancel(data.RequestID, tx.From)
+	if !ok {
+		return
+	}
+
+	collateralStore.Add(tx.From, request.CollateralSymbol, request.CollateralAmount)
+}
+
+// applyLoanRequestFulfill is the lender-initiated mirror of
+// applyLoanOfferDraw - see core.Negotiation's RequestID field and
+// TxLoanRequestFulfill's verifyTxAuth case for why the signed payload
+// here is just "I confirm this negotiation" rather than the economic
+// terms directly: the real terms (RequestID, RatePercent) live on the
+// Negotiation record, which only the lender it names can ever execute.
+// Order matters below - the fund transfer is attempted before
+// LoanRequestStore.Fulfill mutates anything, so a failed transfer
+// (insufficient lender balance) leaves no partial state to unwind.
+func applyLoanRequestFulfill(tx core.Transaction) {
+	var data negotiationActionData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+
+	n, ok := negotiationStore.Get(data.NegotiationID)
+	if !ok || n.RequestID == "" || n.Lender != tx.From {
+		return
+	}
+
+	request, ok := loanRequestStore.Get(n.RequestID)
+	if !ok || request.Status != core.LoanRequestOpen {
+		return
+	}
+	if n.RatePercent == 0 || n.RatePercent > request.MaxInterestPercent {
+		return
+	}
+
+	store, err := resolveTokenStore(request.RequestedSymbol)
+	if err != nil {
+		return
+	}
+
+	lenderSide := resolveBalanceAddress(tx.From, tx.AuthPublicKey, request.RequestedSymbol)
+	borrowerSide := resolveBalanceAddress(request.Borrower, request.BorrowerPublicKey, request.RequestedSymbol)
+	if !store.Transfer(lenderSide, borrowerSide, request.Amount) {
+		return
+	}
+
+	if _, ok := loanRequestStore.Fulfill(request.ID); !ok {
+		// Extremely unlikely (would mean the request was cancelled/
+		// fulfilled by something else between the read above and here,
+		// impossible within this single-threaded apply pass, but
+		// checked rather than assumed) - the funds already moved, so
+		// refund rather than leave them stuck at the borrower with no
+		// loan record.
+		store.Transfer(borrowerSide, lenderSide, request.Amount)
+		return
+	}
+
+	id := "loan-" + tx.ID[:min(8, len(tx.ID))]
+	loanStore.Add(&core.Loan{
+		ID:               id,
+		Borrower:         request.Borrower,
+		Lender:           tx.From,
+		LenderPublicKey:  tx.AuthPublicKey,
+		Symbol:           request.RequestedSymbol,
+		Amount:           request.Amount,
+		Interest:         n.RatePercent,
+		Status:           core.LoanFunded,
+		CollateralSymbol: request.CollateralSymbol,
+		CollateralAmount: request.CollateralAmount,
+		DueAt:            dueAtFor(request.DurationSeconds, tx.Timestamp),
+		CreatedAt:        tx.Timestamp,
+	})
+
+	creditHistory.Add(request.Borrower, core.CreditEvent{Type: "BORROW", Amount: request.Amount})
+	core.RecordLoanTaken(creditStore.Get(request.Borrower))
+
+	// Lender-side reputation/profile reward - same inlined pattern
+	// applyLoanOfferDraw uses (see its own comment on why
+	// creditEngine.FundLoan isn't reused here either).
+	creditEngine.Profiles.Get(tx.From).RecordFunding(request.Amount)
+	if reward := core.IncreaseWalletReputation(walletStore.Get(tx.From), core.ReputationDeltaLoanFunded); reward > 0 {
+		mintRept(tx.From, reward)
+	}
+	reputationEventStore.Record(&core.ReputationEvent{
+		TxID: tx.ID, Target: tx.From, Delta: int64(core.ReputationDeltaLoanFunded),
+		Reason: "Funded a loan (borrower request)", Timestamp: tx.Timestamp,
+	})
 }
 
 func applyModeratorRegister(tx core.Transaction) {
@@ -3047,15 +3759,15 @@ func applyBuyRequestFulfill(tx core.Transaction) {
 	}
 
 	p2pOfferStore.Create(&core.P2POffer{
-		ID:                  offerID,
-		Creator:             tx.From,
-		CreatorPublicKey:    tx.AuthPublicKey,
-		OfferSymbol:         request.WantSymbol,
-		OfferAmount:         request.WantAmount,
-		WantSymbol:          request.PaySymbol,
-		WantAmount:          request.PayAmount,
-		PaymentMode:         core.PaymentModeExternal,
-		Status:              core.OfferAccepted,
+		ID:                   offerID,
+		Creator:              tx.From,
+		CreatorPublicKey:     tx.AuthPublicKey,
+		OfferSymbol:          request.WantSymbol,
+		OfferAmount:          request.WantAmount,
+		WantSymbol:           request.PaySymbol,
+		WantAmount:           request.PayAmount,
+		PaymentMode:          core.PaymentModeExternal,
+		Status:               core.OfferAccepted,
 		AcceptedBy:           request.Hub,
 		AcceptedByPublicKey:  request.HubPublicKey,
 		SettlementStatus:     core.SettlementAwaitingPayment,
@@ -3402,15 +4114,15 @@ func applyHubTradeRequest(tx core.Transaction) {
 		}
 
 		p2pOfferStore.Create(&core.P2POffer{
-			ID:                  offerID,
-			Creator:             rate.InventoryAddress(),
-			CreatorPublicKey:    rate.HubPublicKey,
-			OfferSymbol:         data.Symbol,
-			OfferAmount:         data.Amount,
-			WantSymbol:          rate.FiatSymbol,
-			WantAmount:          fiatAmount,
-			PaymentMode:         core.PaymentModeExternal,
-			Status:              core.OfferAccepted,
+			ID:                   offerID,
+			Creator:              rate.InventoryAddress(),
+			CreatorPublicKey:     rate.HubPublicKey,
+			OfferSymbol:          data.Symbol,
+			OfferAmount:          data.Amount,
+			WantSymbol:           rate.FiatSymbol,
+			WantAmount:           fiatAmount,
+			PaymentMode:          core.PaymentModeExternal,
+			Status:               core.OfferAccepted,
 			AcceptedBy:           tx.From,
 			AcceptedByPublicKey:  tx.AuthPublicKey,
 			SettlementStatus:     core.SettlementAwaitingPayment,
@@ -3438,15 +4150,15 @@ func applyHubTradeRequest(tx core.Transaction) {
 		}
 
 		p2pOfferStore.Create(&core.P2POffer{
-			ID:                  offerID,
-			Creator:             tx.From,
-			CreatorPublicKey:    tx.AuthPublicKey,
-			OfferSymbol:         data.Symbol,
-			OfferAmount:         data.Amount,
-			WantSymbol:          rate.FiatSymbol,
-			WantAmount:          fiatAmount,
-			PaymentMode:         core.PaymentModeExternal,
-			Status:              core.OfferAccepted,
+			ID:                   offerID,
+			Creator:              tx.From,
+			CreatorPublicKey:     tx.AuthPublicKey,
+			OfferSymbol:          data.Symbol,
+			OfferAmount:          data.Amount,
+			WantSymbol:           rate.FiatSymbol,
+			WantAmount:           fiatAmount,
+			PaymentMode:          core.PaymentModeExternal,
+			Status:               core.OfferAccepted,
 			AcceptedBy:           rate.InventoryAddress(),
 			AcceptedByPublicKey:  rate.HubPublicKey,
 			SettlementStatus:     core.SettlementAwaitingPayment,
@@ -3484,6 +4196,19 @@ func migrateWalletAssets(oldAddress, newAddress, newPublicKey, oldPublicKeyHex s
 	}
 	if bal := reptStore.BalanceOf(oldAddress); bal > 0 {
 		reptStore.Transfer(oldAddress, newAddress, bal)
+	}
+
+	// Rewrite any open loan's Borrower/Lender pointing at the old
+	// address - LoanStore.Loans is a plain unindexed map (confirmed via
+	// core/loan_store.go), so this is a bounded full scan, not a
+	// lookup; harmless no-op for addresses with no loans.
+	for _, loan := range loanStore.Loans {
+		if loan.Borrower == oldAddress {
+			loan.Borrower = newAddress
+		}
+		if loan.Lender == oldAddress {
+			loan.Lender = newAddress
+		}
 	}
 
 	// Escrowed balance itself doesn't need to move - each symbol's
@@ -3533,6 +4258,12 @@ func migrateWalletAssets(oldAddress, newAddress, newPublicKey, oldPublicKeyHex s
 	if bal := usdcTestStore.BalanceOf(oldUsdc); bal > 0 {
 		usdcTestStore.Transfer(oldUsdc, newUsdc, bal)
 	}
+
+	oldYen := core.DeriveTokenAddress(oldPub, core.YenAddressTag)
+	newYen := core.DeriveTokenAddress(newPub, core.YenAddressTag)
+	if bal := yenStore.BalanceOf(oldYen); bal > 0 {
+		yenStore.Transfer(oldYen, newYen, bal)
+	}
 }
 
 func applyRecoverWallet(tx core.Transaction) {
@@ -3559,6 +4290,38 @@ func applyRecoverWallet(tx core.Transaction) {
 	migrateWalletAssets(data.OldAddress, tx.From, tx.AuthPublicKey, data.OldPublicKey)
 }
 
+type hdWalletMigrateData struct {
+	NewAddress   string `json:"newAddress"`
+	NewPublicKey string `json:"newPublicKey"`
+}
+
+// applyHDWalletMigrate moves a pre-Multi-Chain-HD-Wallet legacy
+// address's assets to a new HD-derived address. tx.From/tx.AuthAddress
+// is the OLD address (verifyTxAuth already required its signature) -
+// unlike applyRecoverWallet, there's no email/security-question check
+// here because the old key itself is the proof of ownership.
+func applyHDWalletMigrate(tx core.Transaction) {
+	var data hdWalletMigrateData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+
+	newPub, err := hex.DecodeString(data.NewPublicKey)
+	if err != nil || core.GenerateAddress(newPub) != data.NewAddress {
+		return
+	}
+
+	if !recoveryStore.MarkMigrated(tx.From, data.NewAddress) {
+		return
+	}
+
+	// tx.AuthPublicKey is the OLD address's public key (it's who signed
+	// this transaction) - always available here, unlike
+	// applyRecoverWallet's optional OldPublicKey field, so ETHTEST/
+	// USDCTEST/YENE sub-addresses and loan Borrower/Lender always move.
+	migrateWalletAssets(tx.From, data.NewAddress, data.NewPublicKey, tx.AuthPublicKey)
+}
+
 type repayData struct {
 	LoanID string `json:"loanId"`
 	Mode   string `json:"mode"` // "direct" (/repay) or "p2p" (/loans/repay)
@@ -3576,7 +4339,7 @@ func repayAmountFor(loan *core.Loan) uint64 {
 // self-funded borrowing has ever minted into).
 func loanSymbol(loan *core.Loan) string {
 	if loan.Symbol == "" {
-		return "USDCTEST"
+		return "YENE"
 	}
 	return loan.Symbol
 }
@@ -3648,6 +4411,7 @@ func applyRepay(tx core.Transaction) {
 	}
 
 	loan.Status = core.LoanRepaid
+	loan.RepaidAt = tx.Timestamp
 
 	profile := creditStore.Get(loan.Borrower)
 	core.RecordLoanRepaid(profile)
@@ -3741,6 +4505,16 @@ func applyGovernance(tx core.Transaction) {
 // ETHTEST/USDCTEST/REPT/custom-token transfers are untouched.
 const CCTTransferFee = 1
 
+// ETHBBridgeCCTNetworkFee is the flat CCT fee charged on an ETHB
+// ("CCT network") send - the cheap/fast side of the auto-bridge
+// feature's network choice (see api/eth_bridge.go), as opposed to an
+// ERC-network withdrawal's bridge fee + real gas cost
+// (applyBridgeWithdraw). Deliberately charged in CCT, not in ETHB -
+// same value as CCTTransferFee purely by coincidence of both being
+// "the network's standard flat fee," not because the two are the same
+// fee conceptually.
+const ETHBBridgeCCTNetworkFee = 1
+
 // cctTransferFeePoolAddress is a synthetic, nobody-holds-the-private-
 // key holding address (same pattern as poolAddress/
 // tokenCreationFeeAddress) that accumulates CCT transfer fees while a
@@ -3796,6 +4570,19 @@ func applyTransfer(tx core.Transaction) {
 			return
 		}
 		if !store.Transfer(fromSide, cctTransferFeePoolAddress(), CCTTransferFee) {
+			return
+		}
+	} else if symbol == "ETHB" {
+		// "CCT network" send (see api/eth_bridge.go) - the fee is
+		// charged in CCT, a DIFFERENT balance from fromSide (which is
+		// this sender's ETHB sub-address), so both sides must be
+		// checked before either moves, same all-or-nothing convention
+		// as the CCT case above.
+		cctSide := resolveBalanceAddress(tx.From, tx.AuthPublicKey, "CCT")
+		if tokenStore.BalanceOf(cctSide) < ETHBBridgeCCTNetworkFee || store.BalanceOf(fromSide) < tx.Amount {
+			return
+		}
+		if !tokenStore.Transfer(cctSide, cctTransferFeePoolAddress(), ETHBBridgeCCTNetworkFee) {
 			return
 		}
 	}

@@ -51,7 +51,7 @@ func HandleCreateEthCustodialAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req ethCustodialCreateData
-	_, address, err := requireSignedRequest(r, &req)
+	envelope, address, err := requireSignedRequest(r, &req)
 	if err != nil {
 		writeUnauthorized(w, err)
 		return
@@ -75,10 +75,11 @@ func HandleCreateEthCustodialAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ethCustodialStore.Create(&core.EthCustodialAccount{
-		CreditChainAddress: address,
-		EthAddress:         ethAddress,
-		KeyRef:             keyRef,
-		CreatedAt:          time.Now().Unix(),
+		CreditChainAddress:   address,
+		CreditChainPublicKey: envelope.PublicKey,
+		EthAddress:           ethAddress,
+		KeyRef:               keyRef,
+		CreatedAt:            time.Now().Unix(),
 	})
 
 	json.NewEncoder(w).Encode(map[string]string{

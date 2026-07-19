@@ -27,6 +27,13 @@ func GenerateAddress(
 const (
 	ETHTestAddressTag  = "ETHTEST-SUBADDRESS"
 	USDCTestAddressTag = "USDCTEST-SUBADDRESS"
+	YenAddressTag      = "YENE-SUBADDRESS"
+	// ETHBAddressTag namespaces the auto-bridge unified ETH balance
+	// (see core/eth_custodial.go's doc comment) - deliberately its own
+	// tag, not reused from ETHTestAddressTag, since ETHB is a real
+	// bridged-balance token backed by a live custodial Sepolia deposit
+	// address, not the purely synthetic faucet token ETHTEST is.
+	ETHBAddressTag = "ETHB-SUBADDRESS"
 )
 
 // DeriveTokenAddress computes a distinct address for a specific

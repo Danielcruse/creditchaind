@@ -54,9 +54,10 @@ style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);align-ite
             anyone who has it can control your wallet.
         </p>
         <p style="opacity:0.7;font-size:12px;">
-            Testnet-only backup scheme (not the industry-standard BIP39) - see
-            <a href="settings.html" style="color:#8ef;">Settings</a> later for the email-based
-            recovery option too.
+            This is a standard 12-word BIP-39 recovery phrase - it's the master key for your
+            CreditChain, Ethereum, and Bitcoin (testnet) accounts, all derived from this one
+            phrase. See <a href="settings.html" style="color:#8ef;">Settings</a> later for the
+            email-based recovery option too.
         </p>
         <div id="seedPhraseText" style="font-family:monospace;font-size:13px;background:rgba(255,255,255,0.05);border-radius:10px;padding:15px;line-height:1.8;word-spacing:6px;"></div>
         <br>
@@ -72,7 +73,9 @@ style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);align-ite
 </div>
 
 <script src="js/api.js"></script>
-<script src="js/mnemonic.js"></script>
+<script src="js/vendor/bip39-wordlist.js"></script>
+<script src="js/vendor/hd-crypto.js"></script>
+<script src="js/hdwallet.js"></script>
 <script src="js/regions.js"></script>
 <script>
 
@@ -131,23 +134,36 @@ async function register() {
         region
     );
 
-    let created;
+    // Everything below happens client-side: the mnemonic and every
+    // derived private key are generated in this browser and never
+    // sent anywhere. The server only ever sees the CreditChain
+    // account's address + public key (see api/wallet_create.go).
+    const mnemonic = await HDWallet.generateMnemonic();
+    const accounts = await HDWallet.deriveAllAccounts(mnemonic, "");
 
     try {
-        created = await apiPost("/wallet/create", {});
+        await apiPost("/wallet/create", {
+            address: accounts.creditchain.address,
+            publicKey: accounts.creditchain.publicKey,
+        });
     } catch (e) {
         alert("Could not reach CreditChain node: " + e.message);
         return;
     }
 
     setWallet({
-        address: created.address,
-        publicKey: created.publicKey,
-        privateKey: created.privateKey,
+        address: accounts.creditchain.address,
+        publicKey: accounts.creditchain.publicKey,
+        privateKey: accounts.creditchain.privateKey,
+        kind: "hd",
     });
 
-    const phrase = privateKeyToMnemonic(created.privateKey);
-    document.getElementById("seedPhraseText").innerText = phrase;
+    localStorage.setItem("cc_hd_accounts", JSON.stringify({
+        eth: accounts.eth,
+        btc: accounts.btc,
+    }));
+
+    document.getElementById("seedPhraseText").innerText = mnemonic;
     document.getElementById("seedPhraseModal").style.display = "flex";
 }
 

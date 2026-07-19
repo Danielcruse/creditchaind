@@ -1,139 +1,260 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Borrow</title>
+    <title>Borrow Marketplace - OUTERNET</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/outernet.css">
     <style>
-        .explorer-search{
-            display:flex;
-            gap:10px;
-            margin-bottom:15px;
-            flex-wrap:wrap;
+        .explorer-search{ display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap; }
+        .explorer-search input, .explorer-search select{
+            flex:1; min-width:160px; padding:10px 14px; border-radius:10px;
+            border:1px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.05);
+            color:white; box-sizing:border-box;
         }
-        .explorer-search input{
-            flex:1;
-            min-width:160px;
-            padding:10px 14px;
+
+        /* --- Collapsible section header: used for Collateral and
+             Instant Self-Funded Borrow, whose contents are hidden
+             until the header itself is clicked (icon, name, or
+             anywhere on the row) - keeps the page from reading as one
+             long flat list of always-open cards, and gives a quick
+             at-a-glance summary (the .collapsible-summary badge) even
+             while collapsed. Borrowing Power intentionally does NOT
+             use this - it stays fully visible, per the brief. --- */
+        .collapsible-header{
+            cursor:pointer;
+            display:flex;
+            align-items:center;
+            gap:10px;
+            user-select:none;
             border-radius:10px;
-            border:1px solid rgba(255,255,255,0.15);
-            background:rgba(255,255,255,0.05);
-            color:white;
-            box-sizing:border-box;
+            padding:6px 8px;
+            margin:-6px -8px 0 -8px;
+            transition:background .15s ease;
+        }
+        .collapsible-header:hover{
+            background:rgba(2,132,199,0.08);
+        }
+        .collapsible-icon{
+            font-size:22px;
+            line-height:1;
+        }
+        .collapsible-summary{
+            margin-left:auto;
+            font-size:12.5px;
+            font-weight:400;
+            opacity:.65;
+            white-space:nowrap;
+        }
+        .collapsible-chevron{
+            font-size:13px;
+            opacity:.5;
+            transition:transform .2s ease;
+            display:inline-block;
+        }
+        .collapsible-chevron.open{
+            transform:rotate(90deg);
+        }
+        .collapsible-content{
+            display:none;
+            margin-top:12px;
+        }
+        .collapsible-content.open{
+            display:block;
         }
     </style>
 </head>
-<body>
+<body class="outernet-light">
 
-<h1>Borrow</h1>
+<div class="main" style="max-width:960px;margin:0 auto;padding:24px 16px;">
 
-<p style="margin-top:-10px;">
-    Looking to lend instead? <a href="lend.html">Go to the Lend marketplace</a>.
+<p><a href="outernet.html" style="color:#0284c7;">&larr; OUTERNET</a></p>
+
+<h1>Borrow Marketplace</h1>
+<p style="margin-top:-10px;opacity:.7;">
+    Looking to lend instead? <a href="lend.html">Go to the Lend / Investment marketplace</a>.
 </p>
 
+<!-- Protocol stats -->
+<div class="stat-grid" id="statGrid">
+    <div class="stat-tile"><div class="stat-tile-label">Total Liquidity</div><div class="stat-tile-value" id="statLiquidity">-</div></div>
+    <div class="stat-tile"><div class="stat-tile-label">Total Borrowed</div><div class="stat-tile-value" id="statBorrowed">-</div></div>
+    <div class="stat-tile"><div class="stat-tile-label">Active Loans</div><div class="stat-tile-value" id="statActive">-</div></div>
+    <div class="stat-tile"><div class="stat-tile-label">Avg. Interest</div><div class="stat-tile-value" id="statInterest">-</div></div>
+    <div class="stat-tile"><div class="stat-tile-label">Default Rate</div><div class="stat-tile-value" id="statDefault">-</div></div>
+    <div class="stat-tile"><div class="stat-tile-label">Avg. Reputation</div><div class="stat-tile-value" id="statReputation">-</div></div>
+    <div class="stat-tile"><div class="stat-tile-label">Validators Online</div><div class="stat-tile-value" id="statValidators">-</div></div>
+    <div class="stat-tile"><div class="stat-tile-label">Total Staked</div><div class="stat-tile-value" id="statStaked">-</div></div>
+</div>
+
+<!-- Borrowing Power -->
 <div class="card">
+    <h2 style="margin-top:0;">Your Borrowing Power</h2>
+    <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;">
+        <div>
+            <div class="bp-score" id="bpScore">-</div>
+            <div style="opacity:.7;font-size:13px;" id="bpTier">-</div>
+        </div>
+        <div style="flex:1;min-width:220px;">
+            <p style="margin:4px 0;">Maximum Borrow: <strong id="bpMaxBorrow">-</strong></p>
+            <p style="margin:4px 0;">Interest Discount vs. Bronze: <strong id="bpDiscount">-</strong></p>
+            <p style="margin:4px 0;">Loan History: <span id="bpHistory">-</span></p>
+            <p style="margin:4px 0;">Default Rate: <span id="bpDefaultRate">-</span></p>
+        </div>
+        <div style="flex:1;min-width:200px;">
+            <div class="bp-factor-row"><span>Reputation (40%)</span><span id="factorRep">-</span></div>
+            <div class="bp-factor-row"><span>Repayment History (25%)</span><span id="factorRepay">-</span></div>
+            <div class="bp-factor-row"><span>Staked CCT (15%)</span><span id="factorStake">-</span></div>
+            <div class="bp-factor-row"><span>Collateral (10%)</span><span id="factorCollateral">-</span></div>
+            <div class="bp-factor-row"><span>Governance (10%)</span><span id="factorGov">-</span></div>
+            <div class="bp-factor-row future"><span>Validator Endorsements</span><span>not yet active</span></div>
+        </div>
+    </div>
+</div>
 
-    <h2>Collateral</h2>
+<!-- Collateral -->
+<div class="card">
+    <h2 class="collapsible-header" style="margin-top:0;" onclick="toggleCollapsible('collateralContent','collateralChevron')">
+        <span class="collapsible-icon">🛡️</span>
+        <span>Collateral</span>
+        <span class="collapsible-summary" id="collateralSummary">-</span>
+        <span class="collapsible-chevron" id="collateralChevron">&#9656;</span>
+    </h2>
+    <div class="collapsible-content" id="collateralContent">
+        <p style="opacity:0.8; font-size:13px;">
+            Collateral is locked from your STAKED CCT or your oETH balance (the receipt you got for staking ETHTEST) -
+            never your liquid/spendable CCT. Borrowed funds are paid out in YEN-e.
+        </p>
+        <p>Staked CCT (lockable): <span id="stakedCct">0</span></p>
+        <p>oETH - staked-ETHTEST receipt (lockable): <span id="oethBalance">0</span></p>
+        <p>Locked Collateral - CCT: <span id="lockedCollateralCct">0</span> &nbsp;|&nbsp; oETH: <span id="lockedCollateralOeth">0</span></p>
+        <div class="explorer-search">
+            <select id="lockSymbol">
+                <option value="CCT">Staked CCT</option>
+                <option value="OETH">oETH</option>
+            </select>
+            <input type="number" id="lockAmount" placeholder="Amount">
+        </div>
+        <button onclick="lockCollateral()">Lock Collateral</button>
+    </div>
+</div>
 
-    <p style="opacity:0.8; font-size:13px;">
-        Collateral is locked from your STAKED CCT or your oETH balance (the
-        receipt you got for staking ETHTEST) - never your liquid/spendable
-        CCT. oETH itself is never transferable or sendable anywhere else in
-        this app; locking it as collateral here is its only real use.
-        Borrowed funds are paid out in USDCTEST. Repaying a loan returns the
-        exact collateral that backed it to the exact same staked CCT / oETH
-        balance it came from.
+<!-- Self-funded borrow -->
+<div class="card">
+    <h2 class="collapsible-header" style="margin-top:0;" onclick="toggleCollapsible('instantBorrowContent','instantBorrowChevron')">
+        <span class="collapsible-icon">⚡</span>
+        <span>Instant Self-Funded Borrow</span>
+        <span class="collapsible-summary" id="instantBorrowSummary">-</span>
+        <span class="collapsible-chevron" id="instantBorrowChevron">&#9656;</span>
+    </h2>
+    <div class="collapsible-content" id="instantBorrowContent">
+        <p>YEN-e Balance: <span id="yeneBalance">0</span></p>
+        <p style="opacity:0.7;font-size:12px;">
+            Your rate starts from your credit tier's base rate and moves with your collateral's recent market price
+            (see Borrowing Power above for your current discount).
+        </p>
+        <input type="number" id="borrowAmount" placeholder="Amount">
+        <br><br>
+        <button onclick="borrow()">Borrow Instantly</button>
+        <p id="pendingStatus"></p>
+    </div>
+</div>
+
+<!-- Create a Borrow Request -->
+<div class="card">
+    <h2 style="margin-top:0;">Create a Borrow Request</h2>
+    <p style="opacity:.8;font-size:13px;">
+        Post an open request for lenders to browse and fund - unlike instant self-funded borrow, you set the terms
+        you're willing to accept and a lender competes for your business.
     </p>
-
-    <p>
-        Staked CCT (lockable as collateral):
-        <span id="stakedCct">0</span>
-    </p>
-
-    <p>
-        oETH - staked-ETHTEST receipt (lockable as collateral):
-        <span id="oethBalance">0</span>
-    </p>
-
-    <p>
-        Locked Collateral - CCT:
-        <span id="lockedCollateralCct">0</span>
-        &nbsp;|&nbsp; oETH:
-        <span id="lockedCollateralOeth">0</span>
-    </p>
-
     <div class="explorer-search">
-        <select id="lockSymbol">
-            <option value="CCT">Staked CCT</option>
-            <option value="OETH">oETH</option>
+        <input type="number" id="reqAmount" placeholder="Borrow amount (YEN-e)">
+        <select id="reqCollateralSymbol">
+            <option value="OETH">oETH collateral</option>
+            <option value="CCT">CCT collateral</option>
         </select>
-        <input
-            type="number"
-            id="lockAmount"
-            placeholder="Amount">
+        <input type="number" id="reqCollateralAmount" placeholder="Collateral amount">
+    </div>
+    <div class="explorer-search">
+        <input type="number" id="reqMaxInterest" placeholder="Max interest willing to pay (%)">
+        <input type="number" id="reqDurationDays" placeholder="Duration (days, 0 = no due date)">
+    </div>
+    <input type="text" id="reqPurpose" placeholder="Purpose (optional)" style="width:100%;box-sizing:border-box;margin-bottom:10px;">
+
+    <div id="reqCalculator" style="font-size:13px;opacity:.85;margin-bottom:10px;">
+        <div class="bp-factor-row"><span>Estimated Risk Rating</span><span id="calcRisk">-</span></div>
+        <div class="bp-factor-row"><span>Estimated Liquidation Price</span><span id="calcLiquidation">-</span></div>
+        <div class="bp-factor-row"><span>Estimated Monthly Cost</span><span id="calcMonthly">-</span></div>
     </div>
 
-    <button onclick="lockCollateral()">
-        Lock Collateral
-    </button>
-
+    <button onclick="submitLoanRequest()">Submit Request</button>
+    <p id="reqStatus"></p>
 </div>
 
-<br>
-
+<!-- Live Loan Offers -->
 <div class="card">
-
-    <h2>Borrow</h2>
-
-    <p>
-        USDCTEST Balance (borrowed funds):
-        <span id="usdcTestBalance">0</span>
-    </p>
-
-    <p style="opacity:0.7;font-size:12px;">
-        Your rate starts from your credit tier's base rate. If this loan draws on locked oETH collateral, it also
-        moves with that collateral's recent price on the ETHTEST/CCT market - a falling price raises the rate
-        (up to +15 points), a rising price lowers it (down to -15 points, floored at 1%), same as a real lending
-        protocol pricing risk to what's actually backing the loan. CCT-collateralized loans are unaffected -
-        CCT has no separate price to react to.
-    </p>
-
-    <input
-        type="number"
-        id="borrowAmount"
-        placeholder="Amount">
-
-    <br><br>
-
-    <button onclick="borrow()">
-        Borrow
-    </button>
-
-    <p id="pendingStatus"></p>
-
-</div>
-
-<br>
-
-<div class="card">
-
-    <h2>Your Loans</h2>
-
-    <div id="loanList">
-        No Loans
+    <h2 style="margin-top:0;">Live Loan Offers</h2>
+    <p style="opacity:.7;font-size:13px;">Lenders competing for your business - sort by any column.</p>
+    <div class="lend-table-wrap">
+        <table class="lend-table">
+            <thead id="offersThead">
+                <tr>
+                    <th data-sort-key="RatePercent">Interest</th>
+                    <th data-sort-key="DurationSeconds">Duration</th>
+                    <th data-sort-key="RemainingAmount">Available</th>
+                    <th>Lender Reputation</th>
+                    <th>Symbol</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody id="offersTbody"><tr class="no-rows"><td colspan="6">Loading...</td></tr></tbody>
+        </table>
     </div>
-
 </div>
 
-<br>
+<!-- Your loans -->
+<div class="card">
+    <h2 style="margin-top:0;">Your Loans</h2>
+    <div id="loanList">No Loans</div>
+</div>
 
-<button
-    onclick="location.href='wallet.html'">
-    Back To Wallet
-</button>
+<!-- Default Protection explainer -->
+<div class="card">
+    <h2 style="margin-top:0;">Default Protection</h2>
+    <p style="font-size:13px;opacity:.85;">
+        If your OETH-collateralized loan's collateral value falls, its health indicator moves from Healthy to Safe
+        to Warning. Once collateral value drops below 120% of what's owed, the next block's liquidation sweep seizes
+        only the proportional slice of your collateral needed to cover the debt (never more), refunding the rest -
+        a full grace period isn't modeled yet, so top up collateral early if you're at Warning. If liquidation still
+        can't fully cover the lender, the shortfall reduces your reputation proportionally to how much was missed
+        (never a flat penalty), and the lender's reputation gains the mirror amount. CCT-collateralized and
+        self-funded loans have no live price feed, so they're due-date-only - they default (and forfeit 100% of
+        collateral) only if not repaid by their due date, not on a price move.
+    </p>
+</div>
+
+<button onclick="location.href='wallet.html'">Back To Wallet</button>
+
+<!-- Chat modal (shared with lend.html) -->
+<div class="modal-overlay" id="chatModalOverlay">
+    <div class="modal-box">
+        <h3 style="margin-top:0;">Negotiation</h3>
+        <p id="chatSummary" style="opacity:.8;font-size:13px;"></p>
+        <div class="chat-messages" id="chatMessages"></div>
+        <input type="text" id="chatText" placeholder="Message..." style="width:100%;box-sizing:border-box;margin:8px 0;">
+        <button onclick="sendChatMessage()">Send</button>
+        <button id="chatConfirmBtn" onclick="confirmChatNegotiation()" style="display:none;">Agree &amp; Fund</button>
+        <button onclick="cancelChatNegotiation()">Cancel Negotiation</button>
+        <button onclick="closeChatModal()">Close</button>
+    </div>
+</div>
+
+</div>
 
 <script src="js/api.js"></script>
 <script src="js/ai-assistant.js"></script>
+<script src="js/lending-shared.js"></script>
+<script src="js/negotiation-chat.js"></script>
 <script src="js/borrow.js"></script>
 
 </body>

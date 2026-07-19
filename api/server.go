@@ -113,6 +113,7 @@ func StartServer(port string) {
 	InitDB()
 	InitEthSigner()
 	InitEthRPC()
+	startEthBridgeDepositLoop()
 	loadNodeIdentity()
 	loadPeersFromConfig()
 
@@ -277,6 +278,10 @@ func StartServer(port string) {
 		HandleUSDCTestBalance,
 	)
 	http.HandleFunc(
+		"/yene/balance",
+		HandleYenBalance,
+	)
+	http.HandleFunc(
 		"/rept/balance",
 		HandleREPTBalance,
 	)
@@ -375,6 +380,30 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/loans/offers/close",
 		HandleCloseLoanOffer,
+	)
+	http.HandleFunc(
+		"/loan-requests",
+		HandleListLoanRequests,
+	)
+	http.HandleFunc(
+		"/loan-requests/create",
+		HandleCreateLoanRequest,
+	)
+	http.HandleFunc(
+		"/loan-requests/cancel",
+		HandleCancelLoanRequest,
+	)
+	http.HandleFunc(
+		"/protocol/stats",
+		HandleProtocolStats,
+	)
+	http.HandleFunc(
+		"/borrowing-power",
+		HandleBorrowingPower,
+	)
+	http.HandleFunc(
+		"/lender/portfolio",
+		HandleLenderPortfolio,
 	)
 	http.HandleFunc(
 		"/negotiations",
@@ -493,6 +522,22 @@ func StartServer(port string) {
 		HandleEthCustodialWithdraw,
 	)
 	http.HandleFunc(
+		"/eth-selfcustody/balance",
+		HandleEthSelfCustodyBalance,
+	)
+	http.HandleFunc(
+		"/eth-selfcustody/broadcast",
+		HandleEthSelfCustodyBroadcast,
+	)
+	http.HandleFunc(
+		"/ethb/balance",
+		HandleEthbBalance,
+	)
+	http.HandleFunc(
+		"/eth-bridge/withdraw",
+		HandleBridgedEthWithdraw,
+	)
+	http.HandleFunc(
 		"/hub-rates",
 		HandleListHubRates,
 	)
@@ -589,6 +634,10 @@ func StartServer(port string) {
 		HandleRecoverWallet,
 	)
 	http.HandleFunc(
+		"/wallet/hd-migrate",
+		HandleHDWalletMigrate,
+	)
+	http.HandleFunc(
 		"/health/sync",
 		HandleHealth,
 	)
@@ -600,6 +649,34 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/token/mint",
 		HandleTokenMint,
+	)
+	http.HandleFunc(
+		"/treasury/info",
+		HandleTreasuryInfo,
+	)
+	http.HandleFunc(
+		"/treasury/purchase/create",
+		HandleCreatePurchaseRequest,
+	)
+	http.HandleFunc(
+		"/admin/treasury/purchases",
+		HandleAdminListPurchases,
+	)
+	http.HandleFunc(
+		"/admin/treasury/purchase/confirm",
+		HandleAdminConfirmPurchase,
+	)
+	http.HandleFunc(
+		"/admin/treasury/sale-price",
+		HandleAdminSetSalePrice,
+	)
+	http.HandleFunc(
+		"/admin/treasury/paused",
+		HandleAdminSetPaused,
+	)
+	http.HandleFunc(
+		"/admin/treasury/address",
+		HandleAdminSetTreasuryAddress,
 	)
 	http.HandleFunc(
 		"/faucet",
@@ -626,6 +703,14 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/collateral",
 		HandleCollateral,
+	)
+	http.HandleFunc(
+		"/loans/add-collateral",
+		HandleLoanAddCollateral,
+	)
+	http.HandleFunc(
+		"/loans/health",
+		HandleLoanHealth,
 	)
 	http.HandleFunc(
 		"/wallet/create",

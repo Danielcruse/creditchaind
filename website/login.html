@@ -68,6 +68,9 @@
 
 <script src="js/api.js"></script>
 <script src="js/mnemonic.js"></script>
+<script src="js/vendor/bip39-wordlist.js"></script>
+<script src="js/vendor/hd-crypto.js"></script>
+<script src="js/hdwallet.js"></script>
 <script>
 
 const wallet = getWallet();
@@ -128,7 +131,9 @@ async function requestRecoveryCode() {
     }
     try {
         const result = await apiPost("/recovery/request-recovery-code", { oldAddress });
-        statusEl.innerText = `Code: ${result.code} (${result.note})`;
+        statusEl.innerText = result.code
+            ? `Code: ${result.code} (${result.note})`
+            : `Code sent to the email on file - check your inbox.`;
     } catch (e) {
         statusEl.innerText = "Could not request code: " + e.message;
     }
@@ -148,14 +153,28 @@ async function recoverWallet() {
     }
 
     try {
-        const newWallet = await apiPost("/wallet/create", {});
-        setWallet({ address: newWallet.address, publicKey: newWallet.publicKey, privateKey: newWallet.privateKey });
+        const mnemonic = await HDWallet.generateMnemonic();
+        const accounts = await HDWallet.deriveAllAccounts(mnemonic, "");
+
+        await apiPost("/wallet/create", {
+            address: accounts.creditchain.address,
+            publicKey: accounts.creditchain.publicKey,
+        });
+        setWallet({
+            address: accounts.creditchain.address,
+            publicKey: accounts.creditchain.publicKey,
+            privateKey: accounts.creditchain.privateKey,
+            kind: "hd",
+        });
+        localStorage.setItem("cc_hd_accounts", JSON.stringify({ eth: accounts.eth, btc: accounts.btc }));
 
         const result = await apiPostSigned("/recovery/recover", {
             oldAddress, email, claimedYear, code, oldPublicKey,
         });
-        statusEl.innerText = `Recovery pending (tx ${result.txId}) - your new address is ${newWallet.address}. Redirecting...`;
-        setTimeout(() => { location.href = "outernet.html"; }, 2000);
+        statusEl.innerHTML = `Recovery pending (tx ${result.txId}) - your new address is ${accounts.creditchain.address}.<br>` +
+            `<strong>Your new recovery phrase (save this now, it will not be shown again):</strong><br>` +
+            `<span style="font-family:monospace;">${mnemonic}</span>`;
+        setTimeout(() => { location.href = "outernet.html"; }, 8000);
     } catch (e) {
         statusEl.innerText = "Could not recover: " + e.message;
     }

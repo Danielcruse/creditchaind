@@ -45,6 +45,25 @@ var ethTestStore = core.NewTokenStore()
 var cctEthTestPool = core.NewLiquidityPool("ETHTEST")
 var cctUsdcTestPool = core.NewLiquidityPool("USDCTEST")
 
+// yenStore is YEN-e, the stable settlement currency (lending,
+// marketplace payments, transfers) - deliberately separate from CCT
+// (network utility/staking/governance) per the approved tokenomics
+// split. cctYenPool exists (same pattern as cctEthTestPool/
+// cctUsdcTestPool) purely so pool-consuming handlers that dereference
+// a symbol's pool unconditionally don't nil-panic on YENE - it starts
+// at zero reserves and is deliberately left unseeded/untradeable in
+// this phase, since YEN-e is meant to be a fixed-price stable asset,
+// not something floating against CCT yet.
+var yenStore = core.NewTokenStore()
+var cctYenPool = core.NewLiquidityPool("YENE")
+
+// bridgedEthStore is ETHB - the auto-bridge feature's single unified
+// ETH balance (api/eth_bridge.go). Unlike YEN-e/ETHTEST/USDCTEST it
+// has no CCT-paired liquidity pool at all (see resolveTokenStore's
+// comment in api/p2p_offers.go for why) - it's meant to track real
+// bridged Sepolia ETH 1:1, not float against CCT. Units are wei.
+var bridgedEthStore = core.NewTokenStore()
+
 // priceHistoryStore is a bounded, per-symbol price time series fed by
 // recordPoolPrice (api/apply.go) every time a swap or liquidity change
 // actually moves a pool's ratio - purely observational, never itself
@@ -60,4 +79,10 @@ func init() {
 
 	ethTestStore.Token.Name = "CreditChain Test ETH"
 	ethTestStore.Token.Symbol = "ETHTEST"
+
+	yenStore.Token.Name = "CreditChain YEN-e"
+	yenStore.Token.Symbol = "YENE"
+
+	bridgedEthStore.Token.Name = "CreditChain Bridged ETH"
+	bridgedEthStore.Token.Symbol = "ETHB"
 }

@@ -40,6 +40,7 @@ type persistedState struct {
 	CCTUsdcTestPool   *core.LiquidityPool            `json:"cctUsdcTestPool"`
 	P2POffers         map[string]*core.P2POffer      `json:"p2pOffers"`
 	LoanOffers        map[string]*core.LoanOffer     `json:"loanOffers"`
+	LoanRequests      map[string]*core.LoanRequest   `json:"loanRequests"`
 	Negotiations      map[string]*core.Negotiation   `json:"negotiations"`
 	Loans             map[string]*core.Loan          `json:"loans"`
 	// CollateralLockedLegacy is the pre-multi-symbol shape (address ->
@@ -111,6 +112,30 @@ type persistedState struct {
 	// FaucetClaims persists which addresses already claimed the
 	// testnet faucet, so a restart doesn't let everyone claim again.
 	FaucetClaims []string `json:"faucetClaims"`
+
+	// YenBalances/YenSupply/CCTYenPool are YEN-e's own ledger and
+	// CCT-paired pool, same pattern as the USDCTEST fields above - see
+	// api/token.go's yenStore/cctYenPool doc comments.
+	YenBalances map[string]uint64   `json:"yenBalances"`
+	YenSupply   uint64              `json:"yenSupply"`
+	CCTYenPool  *core.LiquidityPool `json:"cctYenPool"`
+
+	// ETHBBalances/ETHBSupply are bridgedEthStore's ledger - the auto-
+	// bridge feature's unified ETH balance (api/eth_bridge.go). No
+	// CCT-paired pool field, unlike YEN-e - see bridgedEthStore's doc
+	// comment in api/token.go for why. Deposit-detection's own dedup
+	// state rides along in SlashDedupKeys below (applyBridgeDeposit
+	// reuses slashDedup directly) and in EthCustodial's own
+	// LastCreditedWei field on each account - no separate persistence
+	// needed for either.
+	ETHBBalances map[string]uint64 `json:"ethbBalances"`
+	ETHBSupply   uint64            `json:"ethbSupply"`
+
+	// Treasury/Purchases persist the Foundation Treasury Wallet's
+	// sale configuration and purchase-request history - see
+	// core/treasury.go's doc comment.
+	Treasury  core.Treasury                    `json:"treasury"`
+	Purchases map[string]*core.PurchaseRequest `json:"treasuryPurchases"`
 }
 
 // SaveState writes a snapshot of every store to disk. Called after
@@ -140,6 +165,7 @@ func SaveState() error {
 		CCTUsdcTestPool:      cctUsdcTestPool,
 		P2POffers:            p2pOfferStore.Offers,
 		LoanOffers:           loanOfferStore.Offers,
+		LoanRequests:         loanRequestStore.Requests,
 		Negotiations:         negotiationStore.Negotiations,
 		Loans:                loanStore.Loans,
 		CollateralLocked:     collateralStore.Locked,
@@ -175,6 +201,13 @@ func SaveState() error {
 		SlashDedupKeys:       snapshotSlashDedup(),
 		Mempool:              mempool.Transactions,
 		FaucetClaims:         snapshotFaucetClaims(),
+		YenBalances:          yenStore.Balances,
+		YenSupply:            yenStore.Token.TotalSupply,
+		CCTYenPool:           cctYenPool,
+		Treasury:             treasuryStore.Treasury,
+		Purchases:            treasuryStore.Purchases,
+		ETHBBalances:         bridgedEthStore.Balances,
+		ETHBSupply:           bridgedEthStore.Token.TotalSupply,
 	}
 
 	data, err := json.MarshalIndent(snapshot, "", "  ")
@@ -302,6 +335,9 @@ func LoadState() {
 	if snapshot.LoanOffers != nil {
 		loanOfferStore.Offers = snapshot.LoanOffers
 	}
+	if snapshot.LoanRequests != nil {
+		loanRequestStore.Requests = snapshot.LoanRequests
+	}
 	if snapshot.Negotiations != nil {
 		negotiationStore.Negotiations = snapshot.Negotiations
 	}
@@ -422,4 +458,21 @@ func LoadState() {
 	}
 
 	restoreFaucetClaims(snapshot.FaucetClaims)
+
+	if snapshot.YenBalances != nil {
+		yenStore.Balances = snapshot.YenBalances
+	}
+	yenStore.Token.TotalSupply = snapshot.YenSupply
+	if snapshot.CCTYenPool != nil {
+		cctYenPool = snapshot.CCTYenPool
+	}
+	treasuryStore.Treasury = snapshot.Treasury
+	if snapshot.Purchases != nil {
+		treasuryStore.Purchases = snapshot.Purchases
+	}
+
+	if snapshot.ETHBBalances != nil {
+		bridgedEthStore.Balances = snapshot.ETHBBalances
+	}
+	bridgedEthStore.Token.TotalSupply = snapshot.ETHBSupply
 }

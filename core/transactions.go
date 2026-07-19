@@ -73,6 +73,17 @@ const (
 	TxLoanOfferDraw   TransactionType = "LOAN_OFFER_DRAW"
 	TxLoanOfferClose  TransactionType = "LOAN_OFFER_CLOSE"
 
+	// Loan requests are the borrower-initiated mirror of loan offers - a
+	// borrower posts what they want to borrow and against what
+	// collateral (see core/loan_request.go's doc comment), and a lender
+	// discovers it and funds it at or below the borrower's stated
+	// maximum rate. Fulfillment reuses the existing negotiation
+	// chat/confirm system rather than a separate direct-fund path - see
+	// core.Negotiation's RequestID field.
+	TxLoanRequestCreate  TransactionType = "LOAN_REQUEST_CREATE"
+	TxLoanRequestCancel  TransactionType = "LOAN_REQUEST_CANCEL"
+	TxLoanRequestFulfill TransactionType = "LOAN_REQUEST_FULFILL"
+
 	// Moderators are reputation-vetted community members automatically
 	// assigned to observe trade agreements (loan negotiations, P2P
 	// offers) and attest on-chain whether they concluded successfully -
@@ -133,6 +144,13 @@ const (
 	TxSetRecoveryEmail TransactionType = "SET_RECOVERY_EMAIL"
 	TxRecoverWallet    TransactionType = "RECOVER_WALLET"
 
+	// TxHDWalletMigrate moves a pre-Multi-Chain-HD-Wallet legacy
+	// address's balances/reputation/loans to a new HD-derived address,
+	// signed by the OLD key (unlike TxRecoverWallet, which exists for
+	// when the old key is lost) - see core/recovery.go's MarkMigrated
+	// and api/apply.go's migrateWalletAssets, both reused here.
+	TxHDWalletMigrate TransactionType = "HD_WALLET_MIGRATE"
+
 	// A HubRate is a verified Trading Hub's standing rate quote for an
 	// in-app token against an off-app currency - see core/hub_rate.go's
 	// doc comment. TxHubRateSet posts/updates it; TxHubTradeRequest is
@@ -176,6 +194,29 @@ const (
 	// transaction depends on that balance).
 	TxTokenMint TransactionType = "TOKEN_MINT"
 
+	// TxTreasuryPurchaseRequest is a buyer signaling intent to buy CCT
+	// from the Foundation Treasury at the current sale price - see
+	// core.TreasuryStore's doc comment. No funds move yet; this only
+	// records the request and snapshots the price, so a later admin
+	// price change can't retroactively change what this buyer owes.
+	TxTreasuryPurchaseRequest TransactionType = "TREASURY_PURCHASE_REQUEST"
+
+	// TxTreasuryPurchaseConfirm is an admin-only attestation that the
+	// buyer's off-app payment was received - node-authored via
+	// selfSignedEnvelope, same trust model as TxTokenMint/
+	// TxSlashReport (ADMIN_TOKEN already checked at the HTTP layer;
+	// other nodes trust this node's attestation). Triggers the actual
+	// CCT transfer from the treasury address to the buyer at apply
+	// time.
+	TxTreasuryPurchaseConfirm TransactionType = "TREASURY_PURCHASE_CONFIRM"
+
+	// TxTreasurySetSalePrice/TxTreasurySetPaused/TxTreasurySetAddress
+	// are admin-only Treasury/Sale configuration changes - same
+	// node-authored trust model as TxTreasuryPurchaseConfirm.
+	TxTreasurySetSalePrice TransactionType = "TREASURY_SET_SALE_PRICE"
+	TxTreasurySetPaused    TransactionType = "TREASURY_SET_PAUSED"
+	TxTreasurySetAddress   TransactionType = "TREASURY_SET_ADDRESS"
+
 	// TxKYCSubmit is a self-attested KYC submission gating access to
 	// the peer-lending marketplace (Lend/Marketplace/Your Negotiations)
 	// - see core/kyc.go's doc comment for what this is (and very much
@@ -190,6 +231,16 @@ const (
 	// whatever's left of a still-open order's escrow back to its owner.
 	TxOrderPlace  TransactionType = "ORDER_PLACE"
 	TxOrderCancel TransactionType = "ORDER_CANCEL"
+
+	// TxLoanAddCollateral lets a borrower top up an existing FUNDED
+	// loan's earmarked collateral (see core.Loan.CollateralAmount's doc
+	// comment - it's fixed at draw time and tied to one specific loan,
+	// not a shared wallet-level pool, so "add more collateral" needs
+	// its own transaction rather than just staking more). Releases from
+	// the borrower's already-locked collateral pool (see
+	// api/apply.go's reserveCollateralForLoan) into that specific
+	// loan's CollateralAmount - see api/loan_collateral.go.
+	TxLoanAddCollateral TransactionType = "LOAN_ADD_COLLATERAL"
 )
 
 type Transaction struct {

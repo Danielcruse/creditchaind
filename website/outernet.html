@@ -155,7 +155,7 @@ function logout() {
         </button>
     </details>
 
-    <button disabled title="Coming soon" style="opacity: 0.5; cursor: default;">
+    <button onclick="location.href='asset.html?symbol=ETHB'">
         Cross-Chain Bridge
     </button>
 
@@ -304,7 +304,8 @@ Loading...
 
         <p style="opacity:0.8; font-size:13px;">
             Collateral is locked from your STAKED CCT or your oETH balance (the receipt you got for
-            staking ETHTEST) - never your liquid/spendable CCT. Borrowed funds are paid out in USDCTEST.
+            staking ETHTEST) - never your liquid/spendable CCT. Borrowed funds are paid out in YEN-e
+            (older loans drawn before this default changed still pay out/repay in USDCTEST).
         </p>
 
         <p>
@@ -341,7 +342,13 @@ Loading...
         <h2>Borrow</h2>
 
         <p>
-            USDCTEST Balance (borrowed funds):
+            YEN-e Balance (borrowed funds):
+            <span id="yeneBalance">0</span>
+        </p>
+
+        <p style="opacity:0.7;font-size:12px;">
+            USDCTEST Balance (legacy - only relevant if you have an older
+            USDCTEST-denominated loan):
             <span id="usdcTestBalance">0</span>
         </p>
 
@@ -594,6 +601,45 @@ style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);align-item
     </div>
 </div>
 
+<div
+id="hdMigrateOverlay"
+style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);align-items:center;justify-content:center;z-index:10001;">
+    <div style="background:#0b1026;color:#fff;border-radius:16px;padding:25px;max-width:600px;width:92vw;max-height:85vh;overflow-y:auto;">
+        <div id="hdMigrateIntro">
+            <h2 style="margin-top:0;color:#ffd166;">Wallet Upgrade Available</h2>
+            <p>
+                CreditChain now supports a single 12-word recovery phrase covering CreditChain,
+                Ethereum, and Bitcoin (testnet) accounts. Your current wallet predates this and
+                uses the old scheme.
+            </p>
+            <p>
+                Migrating creates a brand-new address, moves your CCT/REPT/staked balance,
+                reputation, and any open loans to it, and permanently freezes this old address.
+                <strong>This cannot be undone.</strong> You'll need your current wallet (already
+                loaded in this browser) to authorize it - nothing else is required.
+            </p>
+            <p id="hdMigrateStatus" style="opacity:0.8;font-size:13px;"></p>
+            <button id="hdMigrateStartBtn" onclick="startHDMigration()">Migrate Now</button>
+            <button onclick="dismissHDMigratePrompt()">Remind Me Later</button>
+        </div>
+        <div id="hdMigrateResult" style="display:none;">
+            <h2 style="margin-top:0;color:#ffd166;">Save Your New Recovery Phrase</h2>
+            <p>
+                This is the <strong>only time</strong> this phrase will ever be shown. It's the
+                master key for your new CreditChain, Ethereum, and Bitcoin accounts.
+            </p>
+            <div id="hdMigratePhraseText" style="font-family:monospace;font-size:13px;background:rgba(255,255,255,0.05);border-radius:10px;padding:15px;line-height:1.8;word-spacing:6px;"></div>
+            <br>
+            <label style="display:flex;gap:8px;align-items:flex-start;">
+                <input type="checkbox" id="hdMigratePhraseAck" style="margin-top:4px;">
+                <span>I've saved this recovery phrase somewhere safe.</span>
+            </label>
+            <br>
+            <button id="hdMigrateContinueBtn" disabled onclick="location.reload()">Continue to OUTERNET</button>
+        </div>
+    </div>
+</div>
+
 <script src="js/api.js"></script>
 <script src="js/ai-assistant.js"></script>
 <script src="js/qrcode.js"></script>
@@ -602,6 +648,10 @@ style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);align-item
 <script src="js/lend.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/tokens.js"></script>
+<script src="js/vendor/bip39-wordlist.js"></script>
+<script src="js/vendor/hd-crypto.js"></script>
+<script src="js/hdwallet.js"></script>
+<script src="js/hd_migrate.js"></script>
 <script src="js/mobile-nav.js"></script>
 
 </body>

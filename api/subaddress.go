@@ -22,6 +22,10 @@ func resolveBalanceAddress(cctAddress string, publicKeyHex string, symbol string
 		tag = core.ETHTestAddressTag
 	case "USDCTEST":
 		tag = core.USDCTestAddressTag
+	case "YENE":
+		tag = core.YenAddressTag
+	case "ETHB":
+		tag = core.ETHBAddressTag
 	default:
 		return cctAddress
 	}

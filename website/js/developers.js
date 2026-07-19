@@ -25,7 +25,7 @@ const ENDPOINT_GROUPS = [
     {
         name: "Wallet & Identity",
         endpoints: [
-            ["POST /wallet/create", "Generate a new keypair + address (client can also do this locally - see js/wallet.js)"],
+            ["POST /wallet/create", "Register {address, publicKey} derived client-side from a BIP-39 mnemonic (see js/hdwallet.js) - server never generates or sees a private key"],
             ["/wallet?address=", "Balance, reputation, voting power, node ID for one address"],
             ["/reputation?address=", "Reputation score + credit tier"],
             ["POST /session/login-ping", "(signed) Record a login-activity notification"],

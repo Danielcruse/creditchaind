@@ -142,13 +142,25 @@ async function importSigningKey(wallet) {
 }
 
 async function apiPostSigned(path, payload) {
+    return apiPostSignedRaw(path, JSON.stringify(payload || {}));
+}
+
+// apiPostSignedRaw signs and posts a pre-built JSON payload STRING,
+// rather than an object apiPostSigned would run through
+// JSON.stringify. Needed whenever a field carries a value
+// JSON.stringify can't represent losslessly - e.g. a wei-scale amount
+// (ETHB, bridge withdrawals) that exceeds JS's 2^53 safe-integer
+// range: constructing it as a plain JS Number silently rounds it
+// before serialization ever runs, so the caller must build the exact
+// decimal digit string itself (typically via BigInt) and hand it to
+// this function directly instead.
+async function apiPostSignedRaw(path, payloadJSON) {
     const wallet = requireWallet();
     if (!wallet) throw new Error("no wallet");
 
     const key = await importSigningKey(wallet);
 
     const timestamp = Math.floor(Date.now() / 1000);
-    const payloadJSON = JSON.stringify(payload || {});
     const canonical = `${wallet.address}|${wallet.publicKey}|${timestamp}|${payloadJSON}`;
 
     const sigBuffer = await window.crypto.subtle.sign(
@@ -189,6 +201,8 @@ async function apiPostSigned(path, payload) {
 // truncated to the first 20 bytes, hex-encoded).
 const ETHTEST_ADDRESS_TAG = "ETHTEST-SUBADDRESS";
 const USDCTEST_ADDRESS_TAG = "USDCTEST-SUBADDRESS";
+const YENE_ADDRESS_TAG = "YENE-SUBADDRESS";
+const ETHB_ADDRESS_TAG = "ETHB-SUBADDRESS";
 
 const subAddressCache = new Map();
 
@@ -219,13 +233,23 @@ function getUsdcTestAddress(wallet) {
     return deriveTokenAddress(wallet.publicKey, USDCTEST_ADDRESS_TAG);
 }
 
+function getYenAddress(wallet) {
+    return deriveTokenAddress(wallet.publicKey, YENE_ADDRESS_TAG);
+}
+
+function getEthbAddress(wallet) {
+    return deriveTokenAddress(wallet.publicKey, ETHB_ADDRESS_TAG);
+}
+
 // balanceAddressForSymbol mirrors api/subaddress.go's
 // resolveBalanceAddress on the frontend - CCT/REPT/custom tokens stay
-// on the wallet's own address, only ETHTEST/USDCTEST resolve to their
-// derived sub-address.
+// on the wallet's own address, only ETHTEST/USDCTEST/YENE/ETHB resolve
+// to their derived sub-address.
 async function balanceAddressForSymbol(wallet, symbol) {
     if (symbol === "ETHTEST") return getEthTestAddress(wallet);
     if (symbol === "USDCTEST") return getUsdcTestAddress(wallet);
+    if (symbol === "YENE") return getYenAddress(wallet);
+    if (symbol === "ETHB") return getEthbAddress(wallet);
     return wallet.address;
 }
 
@@ -241,6 +265,8 @@ async function fetchTokenBalance(wallet, symbol) {
     if (symbol === "REPT") return apiGet(`/rept/balance?address=${address}`);
     if (symbol === "ETHTEST") return apiGet(`/ethtest/balance?address=${address}`);
     if (symbol === "USDCTEST") return apiGet(`/usdctest/balance?address=${address}`);
+    if (symbol === "YENE") return apiGet(`/yene/balance?address=${address}`);
+    if (symbol === "ETHB") return apiGet(`/ethb/balance?address=${address}`);
     return apiGet(`/tokens/balance?symbol=${encodeURIComponent(symbol)}&address=${address}`);
 }
 

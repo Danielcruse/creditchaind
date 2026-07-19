@@ -54,9 +54,9 @@ type recoveryEmailRequestData struct {
 
 // HandleRequestEmailCode is step one of setting up recovery - signed
 // by the wallet itself (the owner still has their key at this point).
-// In a real deployment this code would be emailed; here it's returned
-// directly in the response, clearly as a testnet placeholder, since
-// there's no real email service wired up.
+// If SMTP is configured (see api/email.go's smtpConfigured) the code
+// is actually emailed; otherwise it falls back to returning the code
+// directly in the response, clearly labeled as a testnet placeholder.
 func HandleRequestEmailCode(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w)
 

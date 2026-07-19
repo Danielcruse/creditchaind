@@ -97,6 +97,38 @@ document.getElementById("btcAddressInput").addEventListener("keydown", (e) => {
     if (e.key === "Enter") lookupBtcAddress();
 });
 
+// --- Self-custodial HD accounts (ETH/BTC derived from the same
+// recovery phrase as the CreditChain wallet - see website/js/hdwallet.js
+// and the Multi-Chain HD Wallet plan's Assets UX). This section links
+// out to the existing asset.html receive views rather than duplicating
+// them, and gives the BTC lookup tool above a one-click way to look up
+// the user's own address instead of only accepting a blind paste.
+function initHDAccountsCard() {
+    let accounts = null;
+    try {
+        accounts = JSON.parse(localStorage.getItem("cc_hd_accounts") || "null");
+    } catch (e) {
+        accounts = null;
+    }
+
+    if (!accounts || !accounts.eth || !accounts.btc) {
+        document.getElementById("hdAccountsMissing").style.display = "block";
+        return;
+    }
+
+    document.getElementById("hdAccountsPresent").style.display = "block";
+    document.getElementById("hdEthLink").innerText = accounts.eth.address;
+    document.getElementById("hdBtcLink").innerText = accounts.btc.address;
+
+    document.getElementById("viewMyBtcBtn").addEventListener("click", () => {
+        document.getElementById("btcAddressInput").value = accounts.btc.address;
+        lookupBtcAddress();
+        document.getElementById("btcResult").scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+}
+
+initHDAccountsCard();
+
 // --- ETH custodial corner (Sepolia testnet) -------------------------------
 // Unlike the BTC viewer above, CreditChain holds this key on the user's
 // behalf - see core/eth_custodial.go's doc comment and audit/KNOWN_GAPS.md

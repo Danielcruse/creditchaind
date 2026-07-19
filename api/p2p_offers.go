@@ -21,6 +21,14 @@ func resolveTokenStore(symbol string) (*core.TokenStore, error) {
 		return tokenStore, nil
 	case "REPT":
 		return reptStore, nil
+	case "ETHB":
+		// Deliberately resolved directly here, NOT via
+		// lookupCustomToken (which pairs a symbol with a CCT-priced
+		// AMM pool) - ETHB represents real bridged Sepolia ETH 1:1
+		// (see api/eth_bridge.go), so it must never float against CCT
+		// at a synthetic swap-pool rate. Still fully usable for
+		// ordinary transfers/P2P offers via this path.
+		return bridgedEthStore, nil
 	}
 	store, _, err := lookupCustomToken(symbol)
 	return store, err

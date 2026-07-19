@@ -2,11 +2,13 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math/big"
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
@@ -65,6 +67,55 @@ func ethBalance(addr string) (*big.Int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
 	defer cancel()
 	return ethRPCClient.BalanceAt(ctx, common.HexToAddress(addr), nil)
+}
+
+// ethNonceAndGasPrice returns addr's next pending nonce and the RPC's
+// currently suggested gas price - both needed by a self-custodial
+// client to build an unsigned transaction locally, since the browser
+// has no way to query the chain itself (see eth_selfcustody.go's doc
+// comment for why this proxy exists at all). Same two ethRPCClient
+// calls buildAndBroadcastWithdrawal already trusts, just for an
+// arbitrary caller-supplied address instead of a stored custodial one.
+func ethNonceAndGasPrice(addr string) (uint64, *big.Int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), rpcTimeout)
+	defer cancel()
+	nonce, err := ethRPCClient.PendingNonceAt(ctx, common.HexToAddress(addr))
+	if err != nil {
+		return 0, nil, err
+	}
+	gasPrice, err := ethRPCClient.SuggestGasPrice(ctx)
+	if err != nil {
+		return 0, nil, err
+	}
+	return nonce, gasPrice, nil
+}
+
+// ethBroadcastRaw relays an already-signed transaction (RLP-encoded,
+// exactly what tx.MarshalBinary()/eth_sendRawTransaction expects) to
+// the network. It never constructs, signs, or holds a private key -
+// the caller (a self-custodial browser wallet) already did all of
+// that; this is a pure relay, mirroring buildAndBroadcastWithdrawal's
+// final broadcast step but skipping every step before it.
+func ethBroadcastRaw(ctx context.Context, rawTxHex string) (string, error) {
+	rawBytes, err := hexutil.Decode(rawTxHex)
+	if err != nil {
+		return "", fmt.Errorf("invalid raw tx hex: %w", err)
+	}
+	tx := new(types.Transaction)
+	if err := tx.UnmarshalBinary(rawBytes); err != nil {
+		return "", fmt.Errorf("invalid RLP-encoded transaction: %w", err)
+	}
+	// Reject anything not targeting Sepolia before it ever reaches the
+	// RPC call - the chain ID here is attacker(client)-controlled
+	// input, unlike InitEthRPC's own one-time startup check on the RPC
+	// endpoint itself, so this needs its own per-request guard.
+	if tx.ChainId() == nil || tx.ChainId().Cmp(sepoliaChainID) != 0 {
+		return "", fmt.Errorf("transaction is not for Sepolia (chain id %s)", tx.ChainId())
+	}
+	if err := ethRPCClient.SendTransaction(ctx, tx); err != nil {
+		return "", err
+	}
+	return tx.Hash().Hex(), nil
 }
 
 // buildAndBroadcastWithdrawal constructs a real EIP-155 Sepolia

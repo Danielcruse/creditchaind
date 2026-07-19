@@ -60,6 +60,134 @@ as a pointer to re-verify — line numbers drift as the code changes.
     transmission licensing review before any code change points this at
     real value - the Sepolia-only chain-ID check exists specifically to
     make that boundary hard to cross by accident.
+- **Multi-Chain HD Wallet (Phase A): hand-implemented crypto primitives,
+  not a vendored/audited library.** (`website/js/vendor/hd-crypto.js`,
+  `website/js/vendor/bip39-wordlist.js`, `website/js/hdwallet.js`) One
+  recovery phrase now derives a CreditChain (SLIP-10 Ed25519), Ethereum
+  (BIP-32 secp256k1, testnet), and Bitcoin (BIP-32 secp256k1, BIP-84
+  testnet bech32) account. Vendoring an audited library (`@scure/bip39`
+  + `@scure/bip32` + `@noble/curves`, per the original design) was
+  blocked - no download capability, no Node/npm in the build
+  environment - so secp256k1 point arithmetic, Keccak-256, RIPEMD-160,
+  and Bech32 are hand-implemented instead (CreditChain's own Ed25519
+  path only needs HMAC-SHA512 chaining plus native WebCrypto). Every
+  primitive was cross-checked against an independent Go reference
+  implementation (`cmd/hdoracle`, built only from dependencies already
+  shipped in production - `golang.org/x/crypto`, go-ethereum's own
+  secp256k1 curve) against known BIP-32/BIP-39 test vectors, including
+  a full real Ed25519 signing round-trip. The bundled BIP-39 English
+  wordlist was hand-typed (same download restriction) and has since
+  been diffed word-for-word against the authoritative copy at
+  `github.com/bitcoin/bips/blob/master/bip-0039/english.txt` - zero
+  differences across all 2048 entries, matching SHA-256 hashes. Treat
+  this exception as scoped narrowly to HD derivation math and address
+  encoding; it does not extend to any other crypto in this codebase.
+- **Ethereum/Bitcoin accounts in the HD wallet were receive-only in
+  Phase A; Multi-Chain HD Wallet Phase B made the self-custodial
+  Ethereum account able to really send/receive real (testnet) Sepolia
+  ETH — Bitcoin remains receive-only, unchanged.** (`website/js/hdwallet.js`,
+  `website/asset.html`, `website/send-eth.html`) Bitcoin still has no
+  balance lookup, transaction construction, or broadcast - no RPC
+  wiring exists for it yet. This is architecturally separate from the
+  existing KMS-custodial Sepolia DeFi corner above (different trust
+  model: user-held keys, not server-held) and is not related to it
+  beyond both touching Ethereum.
+- **Multi-Chain HD Wallet Phase B: hand-implemented RFC 6979
+  deterministic ECDSA signing + RLP encoding, not a vendored/audited
+  library — same disclosed exception class as Phase A's derivation
+  math, now extended to transaction signing.** (`website/js/vendor/eth-tx.js`)
+  Gives the self-custodial Ethereum account (private key held only in
+  the browser, never sent to the server) the ability to sign and
+  broadcast a real legacy Sepolia transaction: RFC 6979 deterministic
+  nonce generation (no randomness, so a weak/predictable/reused
+  per-signature `k` — the exact vulnerability class that leaked Sony's
+  PS3 signing key — can't occur from a bad RNG), r/s ECDSA math done
+  mod the curve order (`SECP256K1_N`, never the field prime used for
+  point coordinates), EIP-2 low-S normalization, and a hand-rolled RLP
+  encoder. Verified via the same oracle-cross-check methodology as
+  Phase A's derivation math: a throwaway Go reference tool
+  (`cmd/ethsignoracle`, built only from go-ethereum functions this
+  project's own KMS-custodial signer already trusts in production -
+  `crypto.Sign`, `types.NewTx`, `types.LatestSignerForChainID`,
+  `tx.WithSignature`) produced 4 fixed test vectors (including a
+  zero-value transfer and a `gasPrice=128` value sitting exactly on
+  the RLP single-byte/length-prefixed encoding boundary), each
+  independently re-verified via `crypto.Ecrecover` to confirm the
+  signature genuinely recovers to the known sender - not just "the
+  numbers matched." The JS implementation's output was byte-for-byte
+  identical to the oracle's raw signed transaction hex on all 4
+  vectors. `cmd/ethsignoracle` is deleted once no longer needed for
+  further spot-checks, same lifecycle as the deleted `cmd/hdoracle`.
+  **`/eth-selfcustody/broadcast` deliberately has no CreditChain
+  request-signature auth** (`requireSignedRequest` verifies a
+  CreditChain Ed25519 envelope tied to a CreditChain address, which
+  has no relationship to the Ethereum address that actually signed
+  the transaction being relayed) - the real authorization boundary is
+  Ethereum's own signature verification, independently re-checked by
+  every Sepolia node the transaction reaches; an attacker without the
+  private key can only submit garbage that fails RLP-decode or the
+  network's own check. Residual spam/abuse risk is covered by the
+  existing global per-IP rate limiter, same as every other route.
+  **Read path (balance/nonce/gas-price) has since been verified
+  against real live Sepolia infrastructure** - `SEPOLIA_RPC_URL` wired
+  to a public keyless Sepolia RPC endpoint, chain-ID-verified by
+  `InitEthRPC` same as production, `/eth-selfcustody/balance` returns
+  genuine on-chain data (confirmed nonce/balance/live gas price for
+  the real derived test address). **The write path (an actual signed
+  broadcast reaching real Sepolia) remains unverified against a live
+  network** - the user explicitly declined to fund a throwaway test
+  account via a faucet, so this specific step is accepted as an
+  intentional, disclosed risk rather than a completed check: the
+  broadcast code has only ever been proven correct via the oracle
+  byte-for-byte match (§ above) and a from-the-real-page signing dry
+  run, never a live send. First real signed Sepolia transaction from
+  this code, whenever it happens, is the actual first live-fire test.
+- **The spec's "USDT (CCC1)" has no backend equivalent.** `USDCTEST`
+  (`core/address.go`'s `USDCTestAddressTag`) is CreditChain's existing
+  imported-test-USDC token, not USDT - Phase A does not rename or
+  repurpose it as a USDT stand-in. No USDT row/asset exists anywhere
+  in the app.
+- **Legacy-wallet migration is user-driven, not automatic.** (`api/apply.go`'s
+  `applyHDWalletMigrate`, `website/js/hd_migrate.js`) A self-custodial
+  wallet can't be silently upgraded server-side (the server never has
+  a private key to derive a new mnemonic from) - every pre-Phase-A
+  wallet is prompted on login and must explicitly walk through
+  migration, signed by its own still-controlled old key. Until a user
+  does this, their wallet keeps working exactly as before, just
+  without ETH/BTC accounts.
+- **Auto-bridge feature: deposit detection inherits the ETH custodial
+  corner's non-gossip limitation.** (`api/eth_bridge.go`'s
+  `startEthBridgeDepositLoop`/`pollAndReportBridgeDeposit`) Deposit
+  polling only runs against `ethCustodialStore.Snapshot()` - the same
+  node-local, not-replicated store documented above under "Not
+  replicated across nodes." A custodial account's real Sepolia balance
+  is therefore only ever polled and reported by the one node that
+  created that account; other nodes never independently notice a
+  deposit. Once a report *is* submitted, though, it's an ordinary
+  signed `TxBridgeDeposit` that gossips and confirms like any other
+  transaction (reusing the exact `TxSlashReport`
+  single-node-attestation pattern - see `applyBridgeDeposit`'s doc
+  comment), so every node converges on the same ETHB credit once
+  confirmed. The gap is detection-side only, not settlement-side.
+- **Auto-bridge feature: ERC-network withdrawal's ETHB debit and its
+  real Sepolia broadcast are two separate, non-atomic steps.**
+  (`api/eth_bridge_withdraw.go`'s `HandleBridgedEthWithdraw`) Same
+  disclosed risk class as the ETH custodial corner's own withdrawal
+  path above, now extended to the bridge: the handler records the
+  ETHB debit through the normal signed-tx/block-confirmation pipeline,
+  then - deliberately not waiting for that confirmation - broadcasts
+  the real Sepolia transaction synchronously on the same node. A crash
+  between those two steps leaves a debited-but-not-broadcast state
+  (recoverable - nothing was actually sent); a crash or non-confirmation
+  of the debit after a successful broadcast leaves a
+  broadcast-but-not-debited state (not automatically recoverable). A
+  node-local, best-effort reservation guard (`bridgeWithdrawReserved`)
+  closes the more urgent double-broadcast race (two rapid requests
+  passing the same stale balance check), but this single-request
+  crash-timing edge case is accepted as a disclosed, testnet-scoped
+  simplification, not solved - matching this project's own precedent
+  at `eth_custodial.go` for why a two-phase-commit/outbox pattern is
+  judged disproportionate here.
 
 ## Consensus / Validator Security
 
@@ -97,19 +225,18 @@ as a pointer to re-verify — line numbers drift as the code changes.
   alone when applying it from a gossiped block — the same single-attestor
   trust model used for slash reports, not a separate cross-node consensus
   threshold.
-- **Known bug (not yet fixed): validator min-stake mismatch.**
-  `HandleRegisterValidator` (`api/validators.go`) only requires
-  `StakedETH > 0` to register, but the actual leader-selection code
-  (`core.isEligible`) requires stake `>= MinValidatorStake` (1,000). A
-  validator can register successfully and show `"active": true` in the
-  dashboard while never actually being selected as a block producer. Purely
-  a UX/expectation-mismatch bug, not an exploitable security hole, but worth
-  fixing before it confuses a real operator.
-- **Known bug (not yet fixed): `GET /peers` always returns `[]`.**
-  `api/peers.go` encodes a dead, never-updated placeholder variable instead
-  of the real, live peer registry (`peerStore` in `api/node_identity.go`).
-  Display-only bug — actual gossip/handshake/sync is unaffected and uses the
-  correct store.
+- **RESOLVED: validator min-stake mismatch.** `HandleRegisterValidator`
+  (`api/validators.go`) now rejects registration below `core.MinValidatorStake`
+  (1,000) with a clear error, matching the actual leader-selection threshold
+  (`core.isEligible`) exactly — a validator can no longer register
+  successfully and show `"active": true` while never actually being
+  eligible to produce. Re-verified directly against source this session
+  (this entry previously said "not yet fixed" — that was stale).
+- **RESOLVED: `GET /peers` always returned `[]`.** `api/peers.go` now
+  encodes `peerStore.List()`, the real live peer registry (`api/
+  node_identity.go`), not the old dead placeholder variable. Re-verified
+  directly against source this session (this entry previously said "not yet
+  fixed" — that was stale).
 
 ## Economic / Game-Theoretic
 
@@ -120,12 +247,20 @@ as a pointer to re-verify — line numbers drift as the code changes.
   cap, not an economic security mechanism") all need real-world values set
   before mainnet — they exist at demo scale purely so their lifecycles could
   be exercised quickly during development.
-- **Late-repayment and default reputation penalties are defined but not
-  wired up.** `core/credit_engine.go` / `api/reputation_math.go` — the code
-  paths for `-30` (default) and `+3` (late-but-paid) reputation deltas exist
-  but require a loan due-date/lateness-detection mechanism that hasn't been
-  built; only on-time repayment currently ever applies its delta. Confirmed
-  explicitly disclosed in `/reputation-math` API output (`Wired: false`).
+- **Default reputation penalty is now wired up and shortfall-proportional;
+  late-but-repaid still is not.** `core/credit_engine.go`'s
+  `shortfallReputationDelta` + `DefaultLoan(loan, shortfall, owed)`, driven by
+  `api/apply.go`'s `processLoanDefaults` (due-date sweep) and
+  `processCollateralLiquidations` (proactive price-crash sweep, OETH
+  collateral only) — a real default now scales the borrower's penalty (and
+  the lender's mirror-image gain) to how much of the debt liquidation
+  actually failed to recover, floored/capped between 1 and the historical
+  flat `-30`, with zero penalty if collateral fully covered the shortfall.
+  The separate `+3` (repaid-but-late, distinct from default) path still has
+  no lateness-detection wired up — `RepayLoan` always treats a repayment as
+  on-time regardless of `DueAt`. Confirmed against current `/reputation-math`
+  API output: default is now `Wired: true` (previously `false`, was stale
+  through the Phase B session); late-but-paid remains `Wired: false`.
 - **Reputation-delta magnitudes are judgment calls, not a locked spec.**
   E.g. `ReputationDeltaP2PTrade = 14` is documented in code as "40% above
   another reward, arbitrarily chosen," not derived from any modeled
@@ -168,6 +303,63 @@ as a pointer to re-verify — line numbers drift as the code changes.
   (e.g. moving to a smaller base unit, "milli-CCT") would allow exact
   fractional fees but wasn't undertaken as part of this change; worth
   considering before mainnet if precise fee amounts matter economically.
+- **Lending marketplace redesign: Borrowing Power Score weights and the
+  client-side Risk Rating are judgment calls, not a locked economic
+  model.** (`api/borrowing_power.go`, `website/js/lending-shared.js`)
+  The composite score (reputation 40% / repayment history 25% / staked
+  CCT 15% / collateral 10% / governance participation 10%) and its
+  normalization caps (`stakedCCTNormalizationCap=10000`,
+  `governanceParticipationCap=5`) are a reasonable starting formula
+  documented in code as exactly that — not derived from a specified
+  economic model, and worth revisiting with real usage data before
+  the weights are treated as authoritative. The sixth named factor,
+  validator endorsements, has no real mechanism anywhere in this
+  codebase (`core.Validator.CommunityTrust` is scaffolded, always 0,
+  never written) and is reported at an explicit weight of 0 with a
+  "not yet active" status — never a fabricated number. The per-loan
+  Risk Rating (Very Low–Very High) shown on the marketplace pages is
+  a pure frontend display convenience computed from already-fetched
+  real data (collateral ratio, reputation, loan size, duration) — it
+  is not a new backend source of truth and is not used anywhere in
+  the actual lending/liquidation logic.
+- **`GET /lender/stats` (`core.LenderStats`) is a known-orphaned
+  endpoint from a superseded funding path — do not build new features
+  on it.** Confirmed by reading both funding paths in full: the only
+  code that ever writes to `lenderStats` is the legacy direct
+  `/loans/fund` → `applyFundLoan` path (`api/apply.go`), which no
+  current frontend calls. The actual funding path every real lender
+  uses today — `applyLoanOfferDraw` (negotiation-confirm) and the new
+  `applyLoanRequestFulfill` (see below) — both inline their own
+  reputation bookkeeping and never touch `lenderStats` at all, so this
+  endpoint returns all-zero/stale data for every real lender. The new
+  Lender Dashboard (`website/lend.html`) is deliberately built on a
+  new `GET /lender/portfolio` endpoint instead, which computes every
+  figure live from `loanStore.Loans` on each read rather than relying
+  on this stale running counter. `core.LenderStats.InterestEarned`
+  specifically was also found to be mislabeled even on the path that
+  does write it — it sums the loan's rate *percentage* at fund time,
+  not a currency amount, and fires regardless of whether the loan is
+  ever actually repaid; `/lender/portfolio`'s `interestEarned` field
+  computes the real collected-currency figure instead
+  (`repayAmountFor(loan) - loan.Amount`, summed only for loans that
+  reached `REPAID`). Not fixed in place — `lenderStats`/
+  `applyFundLoan` are left exactly as they were, matching this
+  project's "don't delete, disclose" convention for superseded code.
+- **Borrower-initiated loan requests (`core.LoanRequest`) allow real
+  over-collateralization; the older self-funded/offer-draw borrow
+  paths still don't.** A deliberate, disclosed enhancement, not an
+  inconsistency to be "fixed" — `applyBorrow`/`applyLoanOfferDraw`
+  both still reserve collateral exactly equal to the loan amount
+  (1:1, no choice), while `applyLoanRequestCreate` lets the borrower
+  choose any `CollateralAmount >= Amount` in their chosen symbol.
+  Verified end-to-end in a live local browser session (two real
+  registered wallets, real signed transactions, real fund movement):
+  a request for 20 YEN-e against 30 CCT collateral was created,
+  discovered by a second wallet, negotiated at an 8% rate (within the
+  request's 10% max), confirmed, and settled — the borrower received
+  exactly 20 YEN-e, the lender's balance dropped by exactly 20, the
+  request flipped to `FULFILLED`, and the resulting `Loan` carried the
+  correct negotiated rate and the borrower's original collateral.
 
 ## Data Integrity / Replication
 
@@ -228,12 +420,16 @@ as a pointer to re-verify — line numbers drift as the code changes.
   creation year" security question plus a verified email address. The code's
   own doc comment states this security model is "deliberately weaker than a
   signature" and must be treated as a testnet convenience only.
-- **No real email service is wired up.** `api/recovery.go` — the one-time
-  verification code for both the "set recovery email" and "recover wallet"
-  flows is returned directly in the HTTP response body (with an explicit
-  "TESTNET MODE" label), not actually emailed anywhere. This must be replaced
-  with a real SMTP/SendGrid-style integration before any real user relies on
-  email recovery.
+- **Real SMTP is wired in code but not configured in production.**
+  `api/email.go` implements a real SMTP sender (STARTTLS + AUTH PLAIN,
+  stdlib only), and both `api/recovery.go` (recovery-code emails) and
+  `api/hub_rate.go` (hub-attention notifications) already call it when
+  `smtpConfigured()` is true. Neither node currently has `SMTP_HOST`/
+  `SMTP_USERNAME`/`SMTP_PASSWORD`/`SMTP_FROM` set, so both fall back to
+  their testnet-placeholder behavior live (recovery code returned directly
+  in the HTTP response with an explicit "TESTNET MODE" label; hub
+  notifications silently skipped) — see `ops/EMAIL_SETUP.md` for the setup
+  steps once an operator is ready to supply real SMTP credentials.
 - **The recovery verification code itself is not part of the consensus/
   security boundary** — it's described in code as playing the same role as
   a CAPTCHA (bot-deterrence), not as cryptographic authentication.
@@ -282,12 +478,49 @@ as a pointer to re-verify — line numbers drift as the code changes.
   rendered any other way. Worth an auditor's explicit sign-off given it's
   the one place in the app that intentionally executes arbitrary
   user-supplied code.
-- **QR code encoder was verified structurally, not via an actual scan
-  test.** `website/js/qrcode.js` was checked by inspecting canvas pixel
-  output against the expected encoding pattern, not by scanning the
-  generated code with a real QR reader. Low risk (display-only, not a
-  security boundary) but worth a quick manual scan-test before shipping to
-  real users who'll rely on it to receive funds.
+- **QR code encoder had 3 real placement bugs, now fixed, plus a new
+  hand-rolled decoder for the in-app scanner.** The above entry
+  originally flagged that the encoder was checked only structurally,
+  never against a real scan - that risk materialized: the QR scanner
+  ("does not yet work") turned out to have two independent problems.
+  (1) `website/js/send.js`/`send-eth.js` gated all scanning on the
+  browser-native `BarcodeDetector` API, which only ships on Android
+  Chrome/ChromeOS - absent on desktop Chrome/Edge/Firefox/Safari, so
+  the scanner silently failed for nearly everyone regardless of the
+  encoder. (2) `website/js/qrcode.js` itself had 3 genuine bugs in its
+  zigzag data-placement logic, meaning the QR codes it rendered were
+  actually corrupted and would fail on *any* correct scanner, not just
+  this app's own: (a) format-info bits were written into the matrix
+  *after* the data-placement loop instead of before, so those cells
+  looked "available" during placement and got clobbered; (b) it drew
+  alignment patterns at all 4 combinations of the version-5 coordinate
+  list `[6, 30]` instead of the single spec-correct position `(30,
+  30)`, so 2 of the 3 "alignment patterns" silently overwrote parts of
+  the top-right/bottom-left finder patterns; (c) the column-pair walk
+  substituted column 5 for the reserved timing column (6) on only the
+  one iteration where it hit exactly 6, without shifting subsequent
+  iterations, causing column 4 to be visited (and overwritten) twice
+  while column 0 was never visited at all. All 3 are fixed in
+  `qrcode.js` directly (see its inline comments for the mechanism).
+  Fix for (1): a new hand-rolled `website/js/qr-decode.js` reads QR
+  codes without needing `BarcodeDetector` - deliberately scoped to
+  exactly what `qrcode.js` produces (fixed Version 5 / EC level L /
+  mask 0 / byte mode), not a general-purpose QR decoder. It has no
+  Reed-Solomon error correction; instead a scanned code's data is
+  verified by locally recomputing its expected EC codewords (via the
+  same `QR.computeECCodewords` the encoder itself uses) and requiring
+  an exact match - a clean capture decodes, a bad/blurry one is
+  rejected with "try again" rather than silently returning corrupted
+  data. Verified via round-trip tests (encode then decode, byte-for-
+  byte match) across multiple addresses plus synthetic rotation/blur/
+  downscale variants, and via a real end-to-end browser test driving
+  the actual file-upload scan path. Known residual limitation, worth
+  flagging to an auditor: no live-camera-in-the-loop test was possible
+  in this environment (no physical camera) - only the file-upload
+  fallback path was exercised against a real `<input type="file">`
+  element; the live-video path shares the same `decodeImageSource`
+  function so this is low risk, but hasn't been confirmed against an
+  actual phone camera.
 
 ## Infrastructure / Operational (from this session's work, not yet in code
 comments)

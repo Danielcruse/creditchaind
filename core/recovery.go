@@ -97,13 +97,21 @@ func (s *RecoveryStore) IsMigrated(address string) bool {
 // that it hasn't already been recovered away from - guards against
 // two competing recovery transactions (e.g. two different "new
 // addresses" both racing to claim the same lost wallet) both
-// succeeding.
+// succeeding. Auto-creates the record if this address has never set a
+// recovery email (e.g. TxHDWalletMigrate, which is signed by the old
+// key directly and has no email/security-question prerequisite the
+// way TxRecoverWallet does) - the address being frozen is what
+// matters, not whether it happened to have a prior record.
 func (s *RecoveryStore) MarkMigrated(address, newAddress string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	r, ok := s.Records[address]
-	if !ok || r.MigratedTo != "" {
+	if !ok {
+		r = &WalletRecovery{Address: address}
+		s.Records[address] = r
+	}
+	if r.MigratedTo != "" {
 		return false
 	}
 	r.MigratedTo = newAddress

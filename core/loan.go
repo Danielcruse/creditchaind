@@ -3,10 +3,10 @@ package core
 type LoanStatus string
 
 const (
-	LoanPending  LoanStatus = "PENDING"
-	LoanFunded   LoanStatus = "FUNDED"
-	LoanRepaid   LoanStatus = "REPAID"
-	LoanDefault  LoanStatus = "DEFAULT"
+	LoanPending LoanStatus = "PENDING"
+	LoanFunded  LoanStatus = "FUNDED"
+	LoanRepaid  LoanStatus = "REPAID"
+	LoanDefault LoanStatus = "DEFAULT"
 )
 
 type Loan struct {
@@ -21,9 +21,11 @@ type Loan struct {
 	// carry their own creator/lender public key.
 	LenderPublicKey string
 	// Symbol is which token this loan is denominated in - CCT,
-	// ETHTEST, USDCTEST, REPT, or a developer-registered token.
-	// Self-funded loans (see api/apply.go's applyBorrow) are always
-	// USDCTEST; peer-funded loans (via a LoanOffer) use whatever
+	// ETHTEST, USDCTEST, YENE, REPT, or a developer-registered token.
+	// Self-funded loans (see api/apply.go's applyBorrow) default to
+	// YENE, the stable settlement currency (older loans drawn before
+	// this default changed keep whatever they were created with, e.g.
+	// USDCTEST); peer-funded loans (via a LoanOffer) use whatever
 	// symbol the lender's offer specified.
 	Symbol   string
 	Amount   uint64
@@ -51,4 +53,13 @@ type Loan struct {
 	// no duration set) - see api/apply.go's processLoanDefaults, which
 	// only ever sweeps loans with DueAt > 0.
 	DueAt int64
+
+	// CreatedAt/RepaidAt are the transaction timestamps of this loan's
+	// funding and (if applicable) repayment - added for age/duration
+	// display and future repayment-time analytics. Zero on either
+	// field means "predates this field" (loans created before this
+	// change) - never compute a duration/age from a zero timestamp,
+	// show "unknown" instead.
+	CreatedAt int64
+	RepaidAt  int64
 }

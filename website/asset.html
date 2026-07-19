@@ -101,10 +101,20 @@
             <span class="qa-icon">&#8595;</span>
             Receive
         </button>
-        <button disabled title="Coming soon" style="opacity:0.5;cursor:default;">
+        <button id="assetBridgeBtn" disabled title="Coming soon" style="opacity:0.5;cursor:default;">
             <span class="qa-icon">&#128279;</span>
             Bridge
         </button>
+    </div>
+
+    <div id="assetBridgePanel" style="display:none;text-align:center;margin-top:16px;">
+        <p style="font-size:13px;opacity:0.8;margin-bottom:8px;">
+            Deposits sent to this custodial Sepolia address are automatically credited to your ETHB balance -
+            there's no separate "bridge" step to click.
+        </p>
+        <canvas id="assetBridgeQrCanvas" style="max-width:70vw;height:auto;border-radius:8px;"></canvas>
+        <p id="assetBridgeAddress" style="word-break:break-all;font-family:monospace;font-size:12px;margin:10px 0;"></p>
+        <p id="assetBridgeStatus" style="font-size:12px;opacity:0.7;"></p>
     </div>
 
     <div id="assetReceivePanel" style="display:none;text-align:center;margin-top:16px;">
@@ -135,6 +145,10 @@
         <div class="explorer-row" style="display:flex;justify-content:space-between;padding:6px 0;">
             <span>Balance</span>
             <span id="ovBalance">-</span>
+        </div>
+        <div id="ovOtherNetworks" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08);">
+            <p style="opacity:0.7;font-size:12px;margin-bottom:6px;">Also available on:</p>
+            <div id="ovOtherNetworksList"></div>
         </div>
     </div>
 

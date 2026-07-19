@@ -50,12 +50,25 @@ type NegotiationMessage struct {
 type Negotiation struct {
 	ID string
 
-	OfferID  string
-	Lender   string
-	Borrower string
+	// Exactly one of OfferID/RequestID is set, never both - OfferID for
+	// the original lender-posts-offer/borrower-draws direction,
+	// RequestID for the newer borrower-posts-request/lender-funds
+	// direction (see core.LoanRequest's doc comment). Both directions
+	// share this same chat/confirm machinery; only who initiates and
+	// what gets executed on confirm differs (see api/negotiations.go).
+	OfferID   string
+	RequestID string
+	Lender    string
+	Borrower  string
 
 	Symbol string
 	Amount uint64
+
+	// RatePercent is only meaningful for a RequestID-backed negotiation
+	// (the rate the lender is proposing, must be <= the request's
+	// MaxInterestPercent) - a OfferID-backed negotiation's rate is
+	// already fixed by the offer itself and this field is unused/0.
+	RatePercent uint64
 
 	Messages []NegotiationMessage
 
@@ -66,7 +79,13 @@ type Negotiation struct {
 	// negotiation takes. Re-verifying it again at execution time only
 	// checks the signature itself (see core.VerifyTransactionAuth),
 	// never a freshness window - staleness only ever mattered at the
-	// moment it was first collected.
+	// moment it was first collected. Only populated for an OfferID-
+	// backed negotiation (borrower-initiated) - a RequestID-backed
+	// negotiation is lender-initiated, so the fund-moving signature is
+	// instead captured fresh at confirm time from the lender (see
+	// HandleConfirmNegotiation), since the borrower's own consent was
+	// already given, signed, and block-confirmed when they created the
+	// LoanRequest itself.
 	BorrowerAuth SignedEnvelope `json:"-"`
 
 	Status    NegotiationStatus

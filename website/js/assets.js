@@ -11,6 +11,28 @@ function tokenLabel(symbol) {
     return symbol === "ETHTEST" ? "ETH" : symbol === "USDCTEST" ? "USDC" : symbol;
 }
 
+// weiToEth mirrors asset.js/defi.js's helper of the same name - ETHB
+// balances come back from /ethb/balance in wei, same as the custodial
+// ETH corner, since ETHB tracks real bridged Sepolia ETH 1:1.
+function weiToEth(weiString) {
+    const wei = BigInt(weiString || "0");
+    const whole = wei / 1000000000000000000n;
+    const frac = (wei % 1000000000000000000n).toString().padStart(18, "0").replace(/0+$/, "") || "0";
+    return `${whole}.${frac}`;
+}
+
+// hdAccount reads the self-custodial Ethereum/Bitcoin accounts derived
+// at registration/migration time (see hdwallet.js) - null if this
+// wallet predates the Multi-Chain HD Wallet and hasn't migrated yet.
+function hdAccount(chain) {
+    try {
+        const accounts = JSON.parse(localStorage.getItem("cc_hd_accounts") || "null");
+        return accounts ? accounts[chain] : null;
+    } catch (e) {
+        return null;
+    }
+}
+
 async function priceLine(symbol) {
     try {
         const history = await apiGet(`/pool/price-history?symbol=${encodeURIComponent(symbol)}`);
@@ -49,15 +71,17 @@ async function loadAssets() {
     const listEl = document.getElementById("assetsList");
 
     try {
-        const [cctBalance, ethTestAddress, usdcTestAddress] = await Promise.all([
+        const [cctBalance, ethTestAddress, usdcTestAddress, ethbAddress] = await Promise.all([
             apiGet(`/token/balance?address=${assetsWallet.address}`),
             getEthTestAddress(assetsWallet),
             getUsdcTestAddress(assetsWallet),
+            getEthbAddress(assetsWallet),
         ]);
 
-        const [ethTestBalance, usdcTestBalance, ethPrice, usdcPrice] = await Promise.all([
+        const [ethTestBalance, usdcTestBalance, ethbBalance, ethPrice, usdcPrice] = await Promise.all([
             apiGet(`/ethtest/balance?address=${ethTestAddress}`),
             apiGet(`/usdctest/balance?address=${usdcTestAddress}`),
+            apiGet(`/ethb/balance?address=${ethbAddress}`),
             priceLine("ETHTEST"),
             priceLine("USDCTEST"),
         ]);
@@ -89,10 +113,50 @@ async function loadAssets() {
             console.error(e);
         }
 
+        // The ETH row groups CreditChain's own ETHTEST representation
+        // with the real, self-custodial Ethereum account derived from
+        // the same recovery phrase (see the Multi-Chain HD Wallet
+        // plan's §A.6) - one row, not two, even though two independent
+        // balances sit behind it. Its detail page (asset.html?symbol=
+        // ETHTEST) shows both networks' addresses/Receive actions; this
+        // list row itself only ever shows the CreditChain-side balance,
+        // since Phase A has no live Ethereum balance lookup yet.
+        const ethAccount = hdAccount("eth");
+        const ethSubtitle = ethAccount ? "CreditChain + Ethereum (self-custodial)" : "Imported token";
+        let btcRowHTML = "";
+        const btcAccount = hdAccount("btc");
+        if (btcAccount) {
+            btcRowHTML = assetRowHTML(
+                "BTC",
+                "BTC",
+                "Bitcoin (testnet), self-custodial - receive-only",
+                btcAccount.address,
+                "Phase A: receive-only",
+                ""
+            );
+        }
+
+        // ETHB is a distinct, fourth ETH-ish row - the auto-bridge
+        // feature's unified balance, anchored on the KMS-custodial
+        // Sepolia corner (defi.html), not the self-custodial HD
+        // Ethereum account the ETH row above already covers, and not
+        // ETHTEST's synthetic-faucet meaning either. See the auto-bridge
+        // plan's §5.
+        const ethbRowHTML = assetRowHTML(
+            "ETHB",
+            "ETHB",
+            "Bridged ETH (auto-credited from your custodial Sepolia deposit address)",
+            null,
+            `${weiToEth(ethbBalance.balance)} ETHB`,
+            ""
+        );
+
         listEl.innerHTML =
             assetRowHTML("CCT", "CCT", "CreditChain native token", null, `${cctBalance.balance} CCT`, "Hub currency") +
-            assetRowHTML("ETH", "ETHTEST", "Imported token", ethTestAddress, `${ethTestBalance.balance} ETHTEST`, ethPrice) +
+            assetRowHTML("ETH", "ETHTEST", ethSubtitle, ethTestAddress, `${ethTestBalance.balance} ETHTEST`, ethPrice) +
             assetRowHTML("USDC", "USDCTEST", "Imported token", usdcTestAddress, `${usdcTestBalance.balance} USDCTEST`, usdcPrice) +
+            ethbRowHTML +
+            btcRowHTML +
             customRowsHTML;
     } catch (e) {
         console.error(e);

@@ -549,6 +549,8 @@ func lookupCustomToken(symbol string) (*core.TokenStore, *core.LiquidityPool, er
 		return ethTestStore, cctEthTestPool, nil
 	case "USDCTEST":
 		return usdcTestStore, cctUsdcTestPool, nil
+	case "YENE":
+		return yenStore, cctYenPool, nil
 	}
 
 	store, ok := tokenRegistry.Tokens[symbol]

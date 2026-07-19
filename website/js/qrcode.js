@@ -114,19 +114,27 @@ const QR = (function () {
         return inTopLeft || inTopRight || inBottomLeft;
     }
 
-    // Version 5's single alignment pattern center (spec table: [6, 30]
-    // for version 5, excluding the corner already covered by a finder
-    // pattern).
-    const ALIGNMENT_CENTERS = [6, 30];
+    // Version 5's alignment pattern center coordinate list per the QR
+    // spec is [6, 30] - but a version 5 code has exactly ONE alignment
+    // pattern, not all 4 combinations of that list. The spec rule is
+    // "take every (row, col) pair from the list, then drop any pair
+    // that falls within a finder pattern's area": (6,6) collides with
+    // the top-left finder, (6,30) collides with the top-right finder
+    // (30 === SIZE-7, i.e. it's the finder's own corner), and (30,6)
+    // collides with the bottom-left finder the same way - only (30,30)
+    // survives. A previous version of this file only excluded (6,6)
+    // and drew alignment "patterns" at (6,30)/(30,6) too, which
+    // silently overwrote parts of the top-right/bottom-left finder
+    // patterns with alignment-pattern pixels - undetectable visually
+    // (still looked like a QR code) but corrupted the encoded data
+    // whenever the zigzag placement walk passed through the affected
+    // cells, and true corner-detection is what a scanner keys on
+    // first, so this is the sort of bug that just makes the code
+    // silently unreadable rather than throwing an error anywhere.
+    const ALIGNMENT_CENTER = { r: 30, c: 30 };
 
     function isAlignmentArea(r, c) {
-        for (const cr of ALIGNMENT_CENTERS) {
-            for (const cc of ALIGNMENT_CENTERS) {
-                if (cr === 6 && cc === 6) continue; // overlaps top-left finder
-                if (Math.abs(r - cr) <= 2 && Math.abs(c - cc) <= 2) return true;
-            }
-        }
-        return false;
+        return Math.abs(r - ALIGNMENT_CENTER.r) <= 2 && Math.abs(c - ALIGNMENT_CENTER.c) <= 2;
     }
 
     function isTimingArea(r, c) {
@@ -141,6 +149,21 @@ const QR = (function () {
 
     function isFunctionModule(r, c) {
         return isFinderArea(r, c) || isAlignmentArea(r, c) || isTimingArea(r, c) || isFormatArea(r, c);
+    }
+
+    // The right-edge column of each 2-column pair the zigzag data
+    // walk visits, right to left, with the vertical timing column (6)
+    // removed from the sequence entirely (not substituted in place -
+    // see the call site's comment for why that distinction matters).
+    function qrColumnPairs() {
+        const pairs = [];
+        let col = SIZE - 1;
+        while (col > 0) {
+            if (col === 6) col--;
+            pairs.push(col);
+            col -= 2;
+        }
+        return pairs;
     }
 
     function drawFinder(matrix, r0, c0) {
@@ -189,12 +212,7 @@ const QR = (function () {
         drawFinder(matrix, 0, SIZE - 7);
         drawFinder(matrix, SIZE - 7, 0);
 
-        for (const cr of ALIGNMENT_CENTERS) {
-            for (const cc of ALIGNMENT_CENTERS) {
-                if (cr === 6 && cc === 6) continue;
-                drawAlignment(matrix, cr, cc);
-            }
-        }
+        drawAlignment(matrix, ALIGNMENT_CENTER.r, ALIGNMENT_CENTER.c);
 
         for (let i = 0; i < SIZE; i++) {
             if (matrix[6][i] === null) matrix[6][i] = i % 2 === 0 ? 1 : 0;
@@ -203,35 +221,19 @@ const QR = (function () {
 
         matrix[SIZE - 8][8] = 1; // dark module (fixed, version-independent position rule)
 
-        // Convert codewords to a bit stream, MSB first.
-        const bits = [];
-        for (const byte of dataCodewords) {
-            for (let i = 7; i >= 0; i--) bits.push((byte >> i) & 1);
-        }
-
-        // Zigzag placement: column pairs from the right edge, skipping
-        // the vertical timing column, alternating scan direction.
-        const MASK = 0; // mask pattern 0: (row + col) % 2 === 0
-        let bitIndex = 0;
-        let upward = true;
-        for (let colPair = SIZE - 1; colPair > 0; colPair -= 2) {
-            const col = colPair === 6 ? colPair - 1 : colPair; // skip timing column
-            for (let i = 0; i < SIZE; i++) {
-                const row = upward ? SIZE - 1 - i : i;
-                for (const c of [col, col - 1]) {
-                    if (matrix[row][c] !== null) continue; // function module, skip
-                    let bit = bitIndex < bits.length ? bits[bitIndex] : 0;
-                    bitIndex++;
-                    const maskApply = (row + c) % 2 === 0;
-                    if (maskApply) bit ^= 1;
-                    matrix[row][c] = bit;
-                }
-            }
-            upward = !upward;
-        }
-
         // Format info (error correction level L = binary 01) in both
-        // reserved locations around the top-left finder.
+        // reserved locations around the top-left finder. This MUST be
+        // written before the data-placement loop below, not after -
+        // the loop's only way of knowing a cell is reserved is
+        // `matrix[row][c] !== null`, so writing format info afterward
+        // (as this used to do) left those cells looking "available"
+        // during placement: real data/EC bits got written into them
+        // and then silently clobbered by the format bits written
+        // after, corrupting the encoded bitstream and shifting every
+        // subsequent bit in the zigzag order by one. The result still
+        // rendered a QR-shaped image, but no correct decoder (this
+        // app's own QRDecode included) could ever read it back.
+        const MASK = 0; // mask pattern 0: (row + col) % 2 === 0
         const fBits = formatBits(0b01, MASK);
         const fmt = [];
         for (let i = 14; i >= 0; i--) fmt.push((fBits >> i) & 1);
@@ -245,6 +247,41 @@ const QR = (function () {
         for (let i = 0; i <= 7; i++) matrix[SIZE - 1 - i][8] = fmt[i];
         matrix[8][SIZE - 8] = fmt[7];
         for (let i = 8; i <= 14; i++) matrix[8][SIZE - 15 + i] = fmt[i];
+
+        // Convert codewords to a bit stream, MSB first.
+        const bits = [];
+        for (const byte of dataCodewords) {
+            for (let i = 7; i >= 0; i--) bits.push((byte >> i) & 1);
+        }
+
+        // Zigzag placement: column pairs from the right edge, skipping
+        // the vertical timing column, alternating scan direction.
+        //
+        // The column-pair sequence must be generated with a stateful
+        // walk, not `colPair -= 2` with a per-iteration substitution
+        // at colPair===6 - substituting col=5 for just that one
+        // iteration and then resuming -=2 from the ORIGINAL (pre-skip)
+        // value double-visits column 4 (once as the "col-1" partner of
+        // the substituted pair, once again as its own "col" pair) and
+        // never visits column 0 at all. qrColumnPairs() (above) skips 6
+        // by decrementing col once when it lands there, so every
+        // subsequent pair is correctly shifted left by one column.
+        let bitIndex = 0;
+        let upward = true;
+        for (const col of qrColumnPairs()) {
+            for (let i = 0; i < SIZE; i++) {
+                const row = upward ? SIZE - 1 - i : i;
+                for (const c of [col, col - 1]) {
+                    if (matrix[row][c] !== null) continue; // function module, skip
+                    let bit = bitIndex < bits.length ? bits[bitIndex] : 0;
+                    bitIndex++;
+                    const maskApply = (row + c) % 2 === 0;
+                    if (maskApply) bit ^= 1;
+                    matrix[row][c] = bit;
+                }
+            }
+            upward = !upward;
+        }
 
         for (let r = 0; r < SIZE; r++) {
             for (let c = 0; c < SIZE; c++) {
@@ -284,5 +321,12 @@ const QR = (function () {
         }
     }
 
-    return { encode, renderToCanvas, SIZE };
+    // computeECCodewords and the size/codeword-count constants are also
+    // exported for website/js/qr-decode.js, which decodes exactly the
+    // fixed Version 5 / EC level L / mask 0 / byte-mode codes this
+    // encoder produces (see that file's header comment) - decoding
+    // needs the same GF(256) Reed-Solomon math to verify a scanned
+    // code's data against its EC codewords, so it's exported here
+    // rather than duplicated.
+    return { encode, renderToCanvas, computeECCodewords, qrColumnPairs, SIZE, VERSION, DATA_CODEWORDS, EC_CODEWORDS };
 })();

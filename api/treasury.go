@@ -1,10 +1,223 @@
 package api
 
-import "net/http"
+import (
+	"encoding/json"
+	"net/http"
 
-func HandleTreasury(
-	w http.ResponseWriter,
-	r *http.Request,
-) {
+	"github.com/creditchain/creditchaind/core"
+)
+
+var treasuryStore = core.NewTreasuryStore()
+
+type treasuryInfoResponse struct {
+	FoundationAddress    string `json:"foundationAddress"`
+	SalePriceCentsPerCCT uint64 `json:"salePriceCentsPerCCT"`
+	Paused               bool   `json:"paused"`
+	RemainingAllocation  uint64 `json:"remainingAllocation"`
+}
+
+// HandleTreasuryInfo is public sale-page info - no auth needed.
+// RemainingAllocation is computed live from tokenStore rather than
+// tracked separately in TreasuryStore, since the token store's
+// balance at FoundationAddress is the actual source of truth (see
+// core/treasury.go's doc comment).
+func HandleTreasuryInfo(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w)
+
+	t := treasuryStore.Treasury
+	json.NewEncoder(w).Encode(treasuryInfoResponse{
+		FoundationAddress:    t.FoundationAddress,
+		SalePriceCentsPerCCT: t.SalePriceCentsPerCCT,
+		Paused:               t.Paused,
+		RemainingAllocation:  tokenStore.BalanceOf(t.FoundationAddress),
+	})
+}
+
+type treasuryPurchaseRequestData struct {
+	CCTAmount uint64 `json:"cctAmount"`
+}
+
+// HandleCreatePurchaseRequest is the buyer-facing "Buy CCT" submit -
+// wallet-signed, validates then queues via recordTx (never mutates
+// inline), same convention every mutating handler in this codebase
+// follows.
+func HandleCreatePurchaseRequest(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req treasuryPurchaseRequestData
+	auth, address, err := requireSignedRequest(r, &req)
+	if err != nil {
+		writeUnauthorized(w, err)
+		return
+	}
+
+	if treasuryStore.Treasury.Paused {
+		http.Error(w, "the public sale is currently paused", http.StatusBadRequest)
+		return
+	}
+	if req.CCTAmount == 0 {
+		http.Error(w, "cctAmount must be positive", http.StatusBadRequest)
+		return
+	}
+	if tokenStore.BalanceOf(treasuryStore.Treasury.FoundationAddress) < req.CCTAmount {
+		http.Error(w, "requested amount exceeds remaining sale allocation", http.StatusBadRequest)
+		return
+	}
+
+	data, _ := json.Marshal(req)
+	tx := recordTx(auth, address, treasuryStore.Treasury.FoundationAddress, req.CCTAmount, core.TxTreasuryPurchaseRequest, string(data))
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "pending",
+		"txId":   tx.ID,
+	})
+}
+
+// HandleAdminListPurchases feeds the admin dashboard's pending queue.
+func HandleAdminListPurchases(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	if !requireAdmin(r) {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "admin token required"})
+		return
+	}
+
+	json.NewEncoder(w).Encode(treasuryStore.ListPurchases())
+}
+
+// HandleAdminConfirmPurchase is the admin attesting that a buyer's
+// off-app payment was received - see applyTreasuryPurchaseConfirm for
+// the actual CCT transfer, applied at block-confirmation time like
+// every other mutation in this codebase.
+func HandleAdminConfirmPurchase(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	if !requireAdmin(r) {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "admin token required"})
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req treasuryPurchaseConfirmData
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	purchase, ok := treasuryStore.GetPurchase(req.PurchaseID)
+	if !ok || purchase.Status != core.PurchaseAwaitingPayment {
+		http.Error(w, "purchase not found or not awaiting payment", http.StatusBadRequest)
+		return
+	}
+
+	data, _ := json.Marshal(req)
+	tx := recordTx(selfSignedEnvelope(data), reporterAddress(), "", 0, core.TxTreasuryPurchaseConfirm, string(data))
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "pending",
+		"txId":   tx.ID,
+	})
+}
+
+// HandleAdminSetSalePrice/HandleAdminSetPaused/HandleAdminSetTreasuryAddress
+// are the remaining Treasury/Sale admin controls - same self-signed
+// node-authored transaction pattern as HandleAdminConfirmPurchase /
+// HandleTokenMint.
+
+func HandleAdminSetSalePrice(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	if !requireAdmin(r) {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "admin token required"})
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req treasurySetSalePriceData
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	data, _ := json.Marshal(req)
+	tx := recordTx(selfSignedEnvelope(data), reporterAddress(), "", 0, core.TxTreasurySetSalePrice, string(data))
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "pending",
+		"txId":   tx.ID,
+	})
+}
+
+func HandleAdminSetPaused(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	if !requireAdmin(r) {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "admin token required"})
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req treasurySetPausedData
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	data, _ := json.Marshal(req)
+	tx := recordTx(selfSignedEnvelope(data), reporterAddress(), "", 0, core.TxTreasurySetPaused, string(data))
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "pending",
+		"txId":   tx.ID,
+	})
+}
+
+func HandleAdminSetTreasuryAddress(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	if !requireAdmin(r) {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": "admin token required"})
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req treasurySetAddressData
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	if req.FoundationAddress == "" {
+		http.Error(w, "foundationAddress is required", http.StatusBadRequest)
+		return
+	}
+
+	data, _ := json.Marshal(req)
+	tx := recordTx(selfSignedEnvelope(data), reporterAddress(), "", 0, core.TxTreasurySetAddress, string(data))
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "pending",
+		"txId":   tx.ID,
+	})
 }

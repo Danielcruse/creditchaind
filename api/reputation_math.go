@@ -73,11 +73,18 @@ func HandleReputationMath(w http.ResponseWriter, r *http.Request) {
 				Wired:       false,
 			},
 			{
-				Name:        "Loan default",
+				Name:        "Loan default / liquidation shortfall",
 				Delta:       -int64(core.ReputationDeltaLoanDefault),
 				Target:      "the borrower",
-				Description: "Defined in code as a reputation penalty for defaulting, but nothing currently detects or reports a default, so this path can never actually trigger.",
-				Wired:       false,
+				Description: fmt.Sprintf("Triggered by a peer-funded loan missing its due date, or (for OETH-collateralized loans) collateral value falling below %d%% of what's owed even before the due date. The penalty scales with how much of the debt liquidation failed to cover - 0 if collateral fully covered it (no penalty, loan marked repaid instead), up to this full amount if nothing was recovered. The lender receives the mirror-image gain.", core.LiquidationThresholdPercent),
+				Wired:       true,
+			},
+			{
+				Name:        "Loan default / liquidation shortfall (lender side)",
+				Delta:       int64(core.ReputationDeltaLoanDefaultLenderGain),
+				Target:      "the lender",
+				Description: "The mirror-image gain to the borrower-side default penalty above - scales with the same shortfall, capped at this amount. A lender who was made fully whole (0 shortfall) gains nothing here either.",
+				Wired:       true,
 			},
 			{
 				Name:        "Register as a moderator",

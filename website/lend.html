@@ -1,131 +1,59 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Lend</title>
+    <title>Lender Dashboard - OUTERNET</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/outernet.css">
     <style>
-        .explorer-search{
-            display:flex;
-            gap:10px;
-            margin-bottom:15px;
-            flex-wrap:wrap;
-        }
-        .explorer-search input{
-            flex:1;
-            min-width:160px;
-            padding:10px 14px;
-            border-radius:10px;
-            border:1px solid rgba(255,255,255,0.15);
-            background:rgba(255,255,255,0.05);
-            color:white;
-            box-sizing:border-box;
-        }
-        .explorer-row{
-            display:flex;
-            justify-content:space-between;
-            align-items:center;
-            gap:12px;
-            padding:10px 12px;
-            border-bottom:1px solid rgba(255,255,255,0.08);
-            font-family:monospace;
-            font-size:13px;
-            flex-wrap:wrap;
-        }
-        .explorer-row:last-child{
-            border-bottom:none;
-        }
-        .explorer-hash{
-            opacity:0.75;
-        }
-        .explorer-empty{
-            opacity:0.6;
-            padding:10px 0;
+        .explorer-search{ display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap; }
+        .explorer-search input, .explorer-search select{
+            flex:1; min-width:160px; padding:10px 14px; border-radius:10px;
+            border:1px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.05);
+            color:white; box-sizing:border-box;
         }
         .draw-amount{
-            width:100px;
-            padding:6px 8px;
-            border-radius:8px;
-            border:1px solid rgba(255,255,255,0.15);
-            background:rgba(255,255,255,0.05);
-            color:white;
-        }
-        .explorer-search select{
-            flex:1;
-            min-width:120px;
-            padding:10px 14px;
-            border-radius:10px;
-            border:1px solid rgba(255,255,255,0.15);
-            background:rgba(255,255,255,0.05);
-            color:white;
-            box-sizing:border-box;
-        }
-        .modal-overlay{
-            display:none;
-            position:fixed;
-            inset:0;
-            background:rgba(0,0,0,0.7);
-            align-items:center;
-            justify-content:center;
-            z-index:10000;
-        }
-        .modal-box{
-            background:#0b1026;
-            border-radius:16px;
-            padding:20px;
-            width:min(500px, 90vw);
-            max-height:80vh;
-            display:flex;
-            flex-direction:column;
-        }
-        .chat-messages{
-            flex:1;
-            overflow-y:auto;
-            max-height:300px;
-            border:1px solid rgba(255,255,255,0.1);
-            border-radius:10px;
-            padding:10px;
-            margin:10px 0;
-            font-size:13px;
-        }
-        .chat-message{
-            margin-bottom:8px;
-        }
-        .chat-message .sender{
-            opacity:0.6;
-            font-size:11px;
-        }
-        .kyc-field{
-            margin-bottom:10px;
-        }
-        .kyc-field label{
-            display:block;
-            font-size:12px;
-            opacity:0.7;
-            margin-bottom:4px;
-        }
-        .kyc-field input[type="text"], .kyc-field input[type="date"]{
-            width:100%;
-            padding:10px 14px;
-            border-radius:10px;
-            border:1px solid rgba(255,255,255,0.15);
-            background:rgba(255,255,255,0.05);
-            color:white;
-            box-sizing:border-box;
+            width:100px; padding:6px 8px; border-radius:8px;
+            border:1px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.05); color:white;
         }
     </style>
 </head>
-<body>
+<body class="outernet-light">
 
-<h1>Lend</h1>
+<div class="main" style="max-width:1000px;margin:0 auto;padding:24px 16px;">
 
-<p style="margin-top:-10px;">
-    Looking to borrow instead? <a href="borrow.html">Go to Borrow</a>.
+<p><a href="outernet.html" style="color:#0284c7;">&larr; OUTERNET</a></p>
+
+<h1>Lender Dashboard</h1>
+<p style="margin-top:-10px;opacity:.7;">
+    Looking to borrow instead? <a href="borrow.html">Go to the Borrow marketplace</a>.
 </p>
+
+<!-- Lender Portfolio -->
+<div class="stat-grid">
+    <div class="stat-tile"><div class="stat-tile-label">Available Capital</div><div class="stat-tile-value" id="pfCapital">-</div></div>
+    <div class="stat-tile"><div class="stat-tile-label">Average Yield</div><div class="stat-tile-value" id="pfYield">-</div></div>
+    <div class="stat-tile"><div class="stat-tile-label">Interest Earned</div><div class="stat-tile-value" id="pfEarned">-</div></div>
+    <div class="stat-tile"><div class="stat-tile-label">Active Loans</div><div class="stat-tile-value" id="pfActive">-</div></div>
+    <div class="stat-tile"><div class="stat-tile-label">Completed Loans</div><div class="stat-tile-value" id="pfCompleted">-</div></div>
+    <div class="stat-tile"><div class="stat-tile-label">Default Exposure</div><div class="stat-tile-value" id="pfExposure">-</div></div>
+    <div class="stat-tile"><div class="stat-tile-label">Diversification</div><div class="stat-tile-value" id="pfDiversification">-</div></div>
+</div>
+
+<!-- Protocol Rewards -->
+<div class="card">
+    <h2 style="margin-top:0;">Other Ways to Earn on Outernet</h2>
+    <p style="font-size:13px;opacity:.85;">
+        Beyond lending yield, three real reward mechanisms already run on this protocol:
+    </p>
+    <div class="bp-factor-row"><span>Validator Rewards</span><span>10 CCT + collected transfer fees per block produced (or your delegated share)</span></div>
+    <div class="bp-factor-row"><span>Staking Rewards</span><span>+10% of whatever you stake, minted in CCT</span></div>
+    <div class="bp-factor-row"><span>Reputation Tier Rewards</span><span>One-time REPT mint on reaching Silver/Gold/Diamond/Genesis</span></div>
+</div>
 
 <div class="card">
 
-    <h2>Lend</h2>
+    <h2>Post a Lend Offer</h2>
 
     <p style="opacity:0.8; font-size:13px;">
         Post a standing offer to lend any token at a rate you choose - any borrower can discover it
@@ -134,17 +62,13 @@
         only posting a lend offer requires the security pass + KYC below.
     </p>
 
-    <!-- ================= KYC notice (posting only) ================= -->
     <div id="lendKycNotice" style="display:none;">
         <p style="opacity:0.8; font-size:13px;">
             Posting a lend offer requires a security pass (a minimum on-chain reputation) plus
             basic KYC compliance - self-attested identity details, not a real document check
-            (this is a testnet demo, not audited). Both are re-checked against your CURRENT
-            standing every time you act here, not just cached from when you submitted.
+            (this is a testnet demo, not audited).
         </p>
-
         <div id="kycStatusLine" class="explorer-empty">Checking your access...</div>
-
         <div id="kycForm" style="display:none;margin-top:14px;">
             <div class="kyc-field">
                 <label for="kycFullName">Full name</label>
@@ -169,29 +93,21 @@
         </div>
     </div>
 
-    <!-- ================= Post offer form (KYC'd only) ================= -->
     <div id="lendPostForm" style="display:none;">
-        <p>
-            Balance in selected token:
-            <span id="lendBalance">0</span>
-        </p>
-
+        <p>Balance in selected token: <span id="lendBalance">0</span></p>
         <div class="explorer-search">
             <select id="offerSymbol">
                 <option value="CCT">CCT</option>
                 <option value="ETHTEST">ETHTEST</option>
-                <option value="USDCTEST" selected>USDCTEST</option>
+                <option value="YENE" selected>YENE</option>
+                <option value="USDCTEST">USDCTEST</option>
                 <option value="REPT">REPT</option>
             </select>
             <input type="number" id="offerRate" placeholder="Rate % (e.g. 5)" min="0">
             <input type="number" id="offerAmount" placeholder="Capital to lend" min="0">
-            <input type="number" id="offerDurationDays" placeholder="Repay within (days)" min="0" title="How many days a borrower has to repay before this loan defaults. Leave blank for no due date (never defaults).">
+            <input type="number" id="offerDurationDays" placeholder="Repay within (days)" min="0">
             <button onclick="createLoanOffer()">Post Offer</button>
         </div>
-        <p style="opacity:0.6;font-size:12px;">
-            If a borrower doesn't repay within the duration you set, they lose their locked collateral AND reputation to you - you're always made whole.
-        </p>
-
         <p id="lendStatus"></p>
     </div>
 
@@ -200,43 +116,47 @@
 
 </div>
 
-<br>
-
+<!-- Investment Marketplace / Borrower Comparison -->
 <div class="card">
-
-    <h2>Loan Marketplace</h2>
-
-    <p style="opacity:0.8; font-size:13px;">
-        Every open offer from every lender - pick one, enter the amount you want, and request it.
-        This opens a chat with the lender - nothing is recorded on chain until the lender agrees.
+    <h2 style="margin-top:0;">Investment Marketplace</h2>
+    <p style="opacity:.8;font-size:13px;">
+        Borrower-posted requests, ranked and comparable - sort by any column. Each row shows the
+        protocol-generated Risk Rating (collateral ratio, borrower reputation, loan size, duration).
     </p>
+    <div class="lend-table-wrap">
+        <table class="lend-table">
+            <thead id="requestsThead">
+                <tr>
+                    <th data-sort-key="borrowerReputation">Borrower Reputation</th>
+                    <th data-sort-key="CollateralSymbol">Collateral</th>
+                    <th data-sort-key="Amount">Loan</th>
+                    <th data-sort-key="DurationSeconds">Duration</th>
+                    <th data-sort-key="MaxInterestPercent">Max Interest</th>
+                    <th>Risk</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody id="requestsTbody"><tr class="no-rows"><td colspan="7">Loading...</td></tr></tbody>
+        </table>
+    </div>
+</div>
 
+<!-- Legacy lender-posted-offer marketplace (borrower browses/requests) -->
+<div class="card">
+    <h2 style="margin-top:0;">Live Loan Offers (yours and others')</h2>
+    <p style="opacity:0.8; font-size:13px;">
+        Every open offer from every lender, for reference - borrowers request against these from the
+        Borrow page.
+    </p>
     <div id="marketplaceList" class="explorer-empty">Loading...</div>
-
 </div>
-
-<br>
 
 <div class="card">
-
-    <h2>Your Negotiations</h2>
-
-    <p style="opacity:0.8; font-size:13px;">
-        Open requests and chats, whether you're the borrower or the lender. Messages here are
-        plain text, not private/encrypted - anyone can read a negotiation's thread, the same way
-        every other address-keyed lookup in this app works.
-    </p>
-
+    <h2 style="margin-top:0;">Your Negotiations</h2>
     <div id="negotiationList" class="explorer-empty">No negotiations yet.</div>
-
 </div>
 
-<br>
-
-<button
-    onclick="location.href='wallet.html'">
-    Back To Wallet
-</button>
+<button onclick="location.href='wallet.html'">Back To Wallet</button>
 
 <div class="modal-overlay" id="chatModalOverlay">
     <div class="modal-box">
@@ -255,8 +175,12 @@
     </div>
 </div>
 
+</div>
+
 <script src="js/api.js"></script>
 <script src="js/ai-assistant.js"></script>
+<script src="js/lending-shared.js"></script>
+<script src="js/negotiation-chat.js"></script>
 <script src="js/lend.js"></script>
 
 </body>

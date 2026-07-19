@@ -20,7 +20,9 @@ async function requestSettingsEmailCode() {
     }
     try {
         const result = await apiPostSigned("/recovery/request-email-code", { email });
-        statusEl.innerText = `Code: ${result.code} (${result.note})`;
+        statusEl.innerText = result.code
+            ? `Code: ${result.code} (${result.note})`
+            : `Code sent to ${email} - check your inbox.`;
     } catch (e) {
         statusEl.innerText = "Could not request code: " + e.message;
     }
