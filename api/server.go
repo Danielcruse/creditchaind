@@ -94,7 +94,19 @@ func StartServer(port string) {
 		)
 
 	if err != nil {
-		panic(err)
+		// Missing config.json is expected on a node that's never had
+		// one written yet - a fresh default (matching the zero value
+		// every field already effectively had, since this file has
+		// apparently never existed on this node) is the same
+		// graceful-fallback idiom LoadBlockchain already uses right
+		// below. Any OTHER load error (malformed JSON, permissions)
+		// still panics - that indicates real corruption, not just an
+		// unprovisioned file.
+		if os.IsNotExist(err) {
+			cfg = &core.Config{}
+		} else {
+			panic(err)
+		}
 	}
 
 	config = cfg
