@@ -240,12 +240,11 @@ function logout() {
 
     <div class="card dash-panel" data-title="Assets">
 
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-            <h2 style="margin:0;">Assets</h2>
-            <a href="assets.html" style="color:#0284c7;font-size:12px;">View All &rarr;</a>
-        </div>
+        <h2 style="margin:0 0 8px 0;">Assets</h2>
 
-        <p id="assetsSummaryLine" style="opacity:0.8;font-size:13px;margin:8px 0 0 0;">Loading your holdings...</p>
+        <div id="assetsList">
+            <p class="explorer-empty">Loading...</p>
+        </div>
 
     </div>
 
@@ -644,6 +643,7 @@ style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);align-ite
 <script src="js/ai-assistant.js"></script>
 <script src="js/qrcode.js"></script>
 <script src="js/outernet.js"></script>
+<script src="js/assets.js"></script>
 <script src="js/borrow.js"></script>
 <script src="js/lend.js"></script>
 <script src="js/settings.js"></script>

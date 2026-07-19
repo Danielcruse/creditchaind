@@ -31,49 +31,18 @@ async function loadNetworkStatus() {
 // blocking the others.
 // Node ID/voting power/reputation/credit tier/validator status used to
 // be duplicated here too - that detail now lives only on profile.html.
-// This dashboard keeps just the total balance (wallet-hero, an
-// actionable figure) and a one-line holdings summary (Assets card,
-// which links out to assets.html for the real per-token breakdown).
+// This dashboard keeps the total balance (wallet-hero, an actionable
+// figure). The Assets card itself is populated by assets.js's own
+// loadAssets() (same full per-token list as assets.html, not a
+// summary) - see the #assetsList container and script tag.
 async function loadWallet() {
     if (!wallet) return;
-
-    let cctBalance = 0;
-    let ethBalance = 0;
-    let usdcBalance = 0;
 
     try {
         const tokenBalance = await apiGet(`/token/balance?address=${wallet.address}`);
         document.getElementById("balance").innerText = `${tokenBalance.balance} CCT`;
-        cctBalance = tokenBalance.balance;
     } catch (e) {
         console.error(e);
-    }
-
-    try {
-        const ethTestAddress = await getEthTestAddress(wallet);
-        const ethTestBalance = await apiGet(`/ethtest/balance?address=${ethTestAddress}`);
-        ethBalance = ethTestBalance.balance;
-    } catch (e) {
-        console.error(e);
-    }
-
-    try {
-        const usdcTestAddress = await getUsdcTestAddress(wallet);
-        const usdcTestBalance = await apiGet(`/usdctest/balance?address=${usdcTestAddress}`);
-        usdcBalance = usdcTestBalance.balance;
-    } catch (e) {
-        console.error(e);
-    }
-
-    const summaryEl = document.getElementById("assetsSummaryLine");
-    if (summaryEl) {
-        const held = [cctBalance > 0 ? "CCT" : null, ethBalance > 0 ? "ETH" : null, usdcBalance > 0 ? "USDC" : null].filter(
-            Boolean
-        );
-        summaryEl.innerText =
-            held.length > 0
-                ? `You hold ${held.length} asset${held.length === 1 ? "" : "s"}: ${held.join(", ")}.`
-                : "No assets held yet - claim some from the faucet to get started.";
     }
 }
 
