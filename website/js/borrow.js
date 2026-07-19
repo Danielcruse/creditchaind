@@ -176,6 +176,55 @@ async function addCollateral(loanID) {
     }
 }
 
+async function redeemShortfall(loanID, shortfall, symbol) {
+    if (!confirm(`Repay the outstanding ${shortfall} ${symbol} shortfall now to keep your Mining Power?`)) {
+        return;
+    }
+
+    try {
+        const result = await apiPostSigned("/loans/redeem-shortfall", { loanId: loanID });
+        document.getElementById("pendingStatus").innerText =
+            `Redemption pending (tx ${result.txId}) - confirms in the next block.`;
+        setTimeout(render, 9000);
+    } catch (e) {
+        alert("Redeem failed: " + e.message);
+    }
+}
+
+// riskStageLabelHtml turns the extended /loans/health response's
+// RiskStage/RiskStageDeadline/LiquidatedShortfall fields (see the
+// Default Protection card above this list) into a short inline badge -
+// purely presentational, all values come straight from the backend
+// state machine (api/apply.go's advanceLoanLifecycle), nothing computed
+// client-side.
+function riskStageLabelHtml(health, loan) {
+    if (!health || !health.riskStage) return "";
+
+    const secondsLeft = health.riskStageDeadline ? health.riskStageDeadline - Math.floor(Date.now() / 1000) : 0;
+    const deadlineText = health.riskStageDeadline
+        ? secondsLeft > 0
+            ? ` (${Math.ceil(secondsLeft / 3600)}h left)`
+            : " (expired - next block resolves it)"
+        : "";
+
+    const labels = {
+        WARNING: "Warning",
+        MARGIN_CALL: "Margin Call",
+        GRACE_PERIOD: "Grace Period",
+        AWAITING_FINAL_REDEMPTION: "Final Redemption Window",
+        DEFAULTED: "Defaulted",
+    };
+    const label = labels[health.riskStage] || health.riskStage;
+    const badgeCls = health.riskStage === "DEFAULTED" ? "health-liquidation" : "health-warning";
+    const badge = ` <span class="badge-pill ${badgeCls}">${label}${deadlineText}</span>`;
+
+    if (health.riskStage === "AWAITING_FINAL_REDEMPTION" && health.liquidatedShortfall > 0) {
+        const symbol = loan.Symbol || "YENE";
+        return `${badge} <button onclick="redeemShortfall('${loan.ID}', ${health.liquidatedShortfall}, '${symbol}')">Repay ${health.liquidatedShortfall} ${symbol} to keep Mining Power</button>`;
+    }
+    return badge;
+}
+
 // loanTimelineHtml renders the small horizontal step strip - purely
 // derived from real fields already on the loan (Status/DueAt/CreatedAt).
 function loanTimelineHtml(loan) {
@@ -215,10 +264,17 @@ async function render() {
             return;
         }
 
+        // Any FUNDED peer-funded loan can be in the Default Protection
+        // ladder now, not just OETH-collateralized ones - a CCT-collateralized
+        // or self-funded... no, self-funded (Lender=="") never enters
+        // the ladder (see api/apply.go's processLoanDefaults), but an
+        // overdue CCT-collateralized peer-funded loan does, via the
+        // due-date path. /loans/health returns RiskStage regardless of
+        // whether a live price exists for the collateral symbol.
         const healthByLoan = {};
         await Promise.all(
             mine
-                .filter((loan) => loan.Status === "FUNDED" && loan.Lender && loan.CollateralSymbol === "OETH")
+                .filter((loan) => loan.Status === "FUNDED" && loan.Lender)
                 .map(async (loan) => {
                     try {
                         healthByLoan[loan.ID] = await apiGet(`/loans/health?loanId=${loan.ID}`);
@@ -254,10 +310,11 @@ async function render() {
             const healthBadge = health
                 ? ` <span class="badge-pill ${tier.cls}">${tier.label}${health.priceAvailable ? " (" + health.ratioPercent + "% of owed)" : ""}</span>`
                 : "";
+            const riskStageHtml = riskStageLabelHtml(health, loan);
 
             div.innerHTML += `
                 <p>
-                    Loan ${loan.ID}: ${loan.Amount} ${symbol} | ${loan.Status} | ${lenderLabel}${dueLabel}${defaultWarning}${healthBadge}
+                    Loan ${loan.ID}: ${loan.Amount} ${symbol} | ${loan.Status} | ${lenderLabel}${dueLabel}${defaultWarning}${healthBadge}${riskStageHtml}
                     ${loan.Status === "FUNDED" ? `| repay ${total} ${symbol} total` : ""}
                     ${loan.Status === "PENDING" || loan.Status === "FUNDED"
                         ? `<button onclick="repay('${loan.ID}', ${total}, '${symbol}')">Repay ${total} ${symbol}</button>`

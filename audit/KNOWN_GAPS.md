@@ -361,6 +361,59 @@ as a pointer to re-verify — line numbers drift as the code changes.
   request flipped to `FULFILLED`, and the resulting `Loan` carried the
   correct negotiated rate and the borrower's original collateral.
 
+## Reputation / Mining
+
+- **Continuous Reputation Credit (REPT) mining is an O(all wallets)
+  sweep, gated to a coarse epoch, not a scalable indexed design.**
+  `processReputationMining` (`api/reputation_mining.go`) iterates every
+  wallet in `walletStore.Wallets` once every `miningEpochBlocks`
+  (10,800 blocks, a judgment call approximating ~1 day at the existing
+  ~8s consensus tick) to compute each one's Mining Power score and mint
+  REPT proportionally. This is bounded to a small fraction of blocks
+  rather than running every block, but the per-epoch cost itself still
+  scales linearly with total wallet count with no paging/index
+  structure — acceptable at the current scale, a real limitation before
+  a much larger wallet base. `baseEpochMiningEmission=20` (REPT/epoch at
+  MiningPower==100) is also a judgment call sized only to make
+  continuous mining meaningfully outpace the reduced one-time tier
+  rewards (see below), not derived from any specified economic model.
+- **Mining Power's factor weights and two normalization caps are
+  judgment calls, not a locked economic model.** `api/mining_power.go`'s
+  `miningPowerScore` (Trust Score 30% / Repayment History 20% /
+  Staking 15% / Governance 10% / Validator Participation 10% /
+  Successful Lending 10% / Account Age 5%) reuses three factors
+  verbatim from `api/borrowing_power.go`'s existing Borrowing Power
+  Score (via shared helpers) but is otherwise a new, independently
+  weighted formula — worth revisiting with real usage data. The eighth
+  named factor from the Reputation Credit design, Network
+  Contributions, has no real backing data anywhere in this codebase and
+  is reported at an explicit weight of 0 with a "not yet active"
+  status — never a fabricated number, same convention Borrowing Power
+  already uses for Validator Endorsements.
+- **Warning/Margin Call dwell times in the Default Protection sequence
+  are judgment calls; only Grace Period and Final Redemption are
+  spec-locked.** `core/loan_risk.go`'s `LoanRiskWarningDwellSeconds`
+  (24h) and `LoanRiskMarginCallDwellSeconds` (48h) were not specified
+  by the product design and may need tuning; `LoanRiskGracePeriodSeconds`
+  (72h) and `LoanRiskFinalRedemptionWindowSeconds` (24h) are explicit,
+  locked values from that design and should not be casually changed.
+- **The one-time REPT tier-crossing reward was reduced ~10x
+  (`core/reputation_reward.go`: Silver 50→5, Gold 200→20, Diamond
+  750→75, Genesis 500→50), a judgment call on the exact scale-down
+  factor**, made because continuous mining (above) is now intended as
+  the dominant, ongoing REPT source — the tier reward is a secondary
+  bonus, not the primary earning path, as it was before this change.
+  Relative ordering (including the pre-existing, intentional quirk that
+  Genesis pays less than Diamond) is preserved unchanged.
+- **New notification types for the Default Protection sequence
+  (`LOAN_RISK_WARNING`, `LOAN_MARGIN_CALL`, `LOAN_GRACE_PERIOD_STARTED`,
+  `LOAN_LIQUIDATED`, `LOAN_FINAL_REDEMPTION_NOTICE`, `LOAN_REDEEMED`)
+  are in-app only.** No email/SMS/push delivery infrastructure exists
+  anywhere in this codebase beyond the one already-disclosed email
+  placeholder (`api/recovery.go`, entry above) — consistent with that
+  existing gap, not a new one, and the product spec itself named SMS as
+  explicitly optional.
+
 ## Data Integrity / Replication
 
 - **Real incident, since fixed: faucet-caused CCT supply drift.** An earlier

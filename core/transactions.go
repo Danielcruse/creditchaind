@@ -241,6 +241,15 @@ const (
 	// api/apply.go's reserveCollateralForLoan) into that specific
 	// loan's CollateralAmount - see api/loan_collateral.go.
 	TxLoanAddCollateral TransactionType = "LOAN_ADD_COLLATERAL"
+
+	// TxLoanRedeemShortfall lets a borrower pay off exactly
+	// Loan.LiquidatedShortfall during the Final Redemption window
+	// (RiskStage==AwaitingFinalRedemption) to keep their Mining Power -
+	// deliberately NOT TxRepay, which computes a full repayAmountFor(loan)
+	// assuming collateral is still intact; here collateral is already
+	// gone, only the frozen shortfall is still owed. See
+	// api/loan_redemption.go.
+	TxLoanRedeemShortfall TransactionType = "LOAN_REDEEM_SHORTFALL"
 )
 
 type Transaction struct {

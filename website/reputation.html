@@ -52,6 +52,24 @@ re-mint it.
 
 </div>
 
+<div class="card">
+
+<h2>Mining Power</h2>
+
+<p style="opacity:0.75;font-size:13px;">
+REPT is now also mined continuously, not just earned in one-time tier
+rewards above. Your Mining Power score determines how much REPT you
+earn each mining epoch - the higher your trust, repayment history,
+staking, governance participation, validator involvement, successful
+lending, and account age, the more you mine.
+</p>
+
+<h1 id="miningPowerScore">-</h1>
+
+<div id="miningPowerFactors">Loading...</div>
+
+</div>
+
 <div class="card" id="math">
 
 <details>
@@ -94,10 +112,25 @@ The first time a wallet's reputation ever climbs into a new tier, it
 mints a one-time REPT reward. Dropping out of a tier and climbing back
 into it later does not re-mint the reward. Jumping several tiers in a
 single move pays the full cumulative total, not just the destination
-tier's.
+tier's. These one-time amounts are intentionally small now - continuous
+mining (below) is the dominant, ongoing way REPT is earned.
 </p>
 
 <div id="tierRewards">Loading...</div>
+
+<h3>Continuous Reputation Credit Mining</h3>
+
+<p style="opacity:0.75;font-size:13px;">
+On top of the one-time tier rewards above, every wallet in good
+standing continuously mines REPT ("Reputation Credits") in proportion
+to its Mining Power score - a weighted blend of Trust Score, Loan
+Repayment History, Staking Activity, Governance Participation,
+Validator Participation, Successful Lending, and Account Age. A
+Network Contributions factor is named in the design but has no real
+data behind it yet, so it's shown at 0% weight rather than faked.
+Mining happens automatically in the background roughly once a day -
+there's nothing to claim or activate.
+</p>
 
 <h3>How Every Action Moves Reputation</h3>
 

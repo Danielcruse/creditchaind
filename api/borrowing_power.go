@@ -67,20 +67,11 @@ func HandleBorrowingPower(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wallet := walletStore.Get(address)
-	profile := creditEngine.Profiles.Get(address)
 
 	reputationFactor := wallet.Reputation // already 0-100
-
-	repaymentFactor := uint64(50) // neutral default - no history yet
-	if total := profile.LoansRepaid + profile.LoansDefault; total > 0 {
-		repaymentFactor = profile.LoansRepaid * 100 / total
-	}
-
-	staked := stakingStore.Stakes[address]["CCT"]
-	stakingFactor := staked * 100 / stakedCCTNormalizationCap
-	if stakingFactor > 100 {
-		stakingFactor = 100
-	}
+	repaymentFactor := repaymentFactorFor(address)
+	stakingFactor := stakingFactorFor(address)
+	governanceFactor := governanceFactorFor(address)
 
 	collateralFactor := uint64(0)
 	if oeth := collateralStore.LockedOf(address, "OETH"); oeth > 0 {
@@ -90,17 +81,6 @@ func HandleBorrowingPower(w http.ResponseWriter, r *http.Request) {
 				collateralFactor = 100
 			}
 		}
-	}
-
-	votedOn := 0
-	for _, voters := range proposalStore.Voted {
-		if voters[address] {
-			votedOn++
-		}
-	}
-	governanceFactor := uint64(votedOn) * 100 / governanceParticipationCap
-	if governanceFactor > 100 {
-		governanceFactor = 100
 	}
 
 	score := reputationFactor*40/100 +
@@ -143,4 +123,39 @@ func HandleBorrowingPower(w http.ResponseWriter, r *http.Request) {
 		ValidatorWeight:  0,
 		ValidatorStatus:  "not yet active",
 	})
+}
+
+// repaymentFactorFor/stakingFactorFor/governanceFactorFor are shared by
+// HandleBorrowingPower and HandleMiningPower (api/mining_power.go) -
+// extracted here so both composite scores compute these three factors
+// identically instead of maintaining two copies of the same formula.
+func repaymentFactorFor(address string) uint64 {
+	profile := creditEngine.Profiles.Get(address)
+	if total := profile.LoansRepaid + profile.LoansDefault; total > 0 {
+		return profile.LoansRepaid * 100 / total
+	}
+	return 50 // neutral default - no history yet
+}
+
+func stakingFactorFor(address string) uint64 {
+	staked := stakingStore.Stakes[address]["CCT"]
+	factor := staked * 100 / stakedCCTNormalizationCap
+	if factor > 100 {
+		factor = 100
+	}
+	return factor
+}
+
+func governanceFactorFor(address string) uint64 {
+	votedOn := 0
+	for _, voters := range proposalStore.Voted {
+		if voters[address] {
+			votedOn++
+		}
+	}
+	factor := uint64(votedOn) * 100 / governanceParticipationCap
+	if factor > 100 {
+		factor = 100
+	}
+	return factor
 }

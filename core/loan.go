@@ -62,4 +62,25 @@ type Loan struct {
 	// show "unknown" instead.
 	CreatedAt int64
 	RepaidAt  int64
+
+	// RiskStage/RiskStageEnteredAt/RiskStageDeadline track this loan's
+	// position in the Default Protection sequence (see loan_risk.go) -
+	// a second axis alongside Status, not a replacement for it. Status
+	// stays LoanFunded through Warning/MarginCall/GracePeriod (nothing
+	// about repayment/add-collateral eligibility changes at those
+	// stages). Zero value ("") for RiskStage means Healthy, matching
+	// every loan that predates this feature with no migration needed.
+	// RiskStageDeadline is meaningful only in GracePeriod (grace period
+	// end) and AwaitingFinalRedemption (final redemption window end) -
+	// zero in every other stage.
+	RiskStage          LoanRiskStage
+	RiskStageEnteredAt int64
+	RiskStageDeadline  int64
+
+	// LiquidatedShortfall/LiquidatedOwed snapshot liquidateLoan's result
+	// at the moment collateral was actually seized - frozen here since
+	// owed/collateral can no longer be recomputed once collateral is
+	// gone. Meaningful only while RiskStage==AwaitingFinalRedemption.
+	LiquidatedShortfall uint64
+	LiquidatedOwed      uint64
 }

@@ -93,6 +93,17 @@ type loanHealthResponse struct {
 	CollateralValue  uint64 `json:"collateralValue,omitempty"`
 	RatioPercent     uint64 `json:"ratioPercent,omitempty"`
 	AtRisk           bool   `json:"atRisk"`
+
+	// RiskStage/RiskStageEnteredAt/RiskStageDeadline surface this
+	// loan's Default Protection position (see core/loan_risk.go) -
+	// RiskStageDeadline is only meaningful in GRACE_PERIOD (grace
+	// period end) and AWAITING_FINAL_REDEMPTION (final redemption
+	// window end), so it's omitted otherwise. LiquidatedShortfall is
+	// only meaningful once AWAITING_FINAL_REDEMPTION.
+	RiskStage           string `json:"riskStage,omitempty"`
+	RiskStageEnteredAt  int64  `json:"riskStageEnteredAt,omitempty"`
+	RiskStageDeadline   int64  `json:"riskStageDeadline,omitempty"`
+	LiquidatedShortfall uint64 `json:"liquidatedShortfall,omitempty"`
 }
 
 // HandleLoanHealth reports a loan's current collateral health -
@@ -115,10 +126,14 @@ func HandleLoanHealth(
 	}
 
 	resp := loanHealthResponse{
-		LoanID:           loan.ID,
-		CollateralSymbol: loan.CollateralSymbol,
-		CollateralAmount: loan.CollateralAmount,
-		Owed:             repayAmountFor(loan),
+		LoanID:              loan.ID,
+		CollateralSymbol:    loan.CollateralSymbol,
+		CollateralAmount:    loan.CollateralAmount,
+		Owed:                repayAmountFor(loan),
+		RiskStage:           string(loan.RiskStage),
+		RiskStageEnteredAt:  loan.RiskStageEnteredAt,
+		RiskStageDeadline:   loan.RiskStageDeadline,
+		LiquidatedShortfall: loan.LiquidatedShortfall,
 	}
 
 	if collateralValue, ok := collateralValueInYen(loan.CollateralSymbol, loan.CollateralAmount); ok {

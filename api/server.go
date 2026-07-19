@@ -414,6 +414,10 @@ func StartServer(port string) {
 		HandleBorrowingPower,
 	)
 	http.HandleFunc(
+		"/mining-power",
+		HandleMiningPower,
+	)
+	http.HandleFunc(
 		"/lender/portfolio",
 		HandleLenderPortfolio,
 	)
@@ -719,6 +723,10 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/loans/add-collateral",
 		HandleLoanAddCollateral,
+	)
+	http.HandleFunc(
+		"/loans/redeem-shortfall",
+		HandleLoanRedeemShortfall,
 	)
 	http.HandleFunc(
 		"/loans/health",

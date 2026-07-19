@@ -5,11 +5,18 @@ package core
 // scale loosely mirrors BorrowLimit's tier escalation, so the token
 // that represents "reputation earned value" tracks the same
 // progression curve the borrowing perks already use.
+//
+// Reduced ~10x (was Silver:50, Gold:200, Diamond:750, Genesis:500) now
+// that continuous Reputation Credit mining (see api/reputation_mining.go)
+// is the dominant ongoing REPT source - this one-time reward is now a
+// secondary bonus, not the primary earning path. Judgment call on the
+// exact scale-down factor; relative ordering (including Genesis
+// intentionally paying less than Diamond) is preserved unchanged.
 var reputationTierReward = map[CreditTier]uint64{
-	TierSilver:  50,
-	TierGold:    200,
-	TierDiamond: 750,
-	TierGenesis: 500,
+	TierSilver:  5,
+	TierGold:    20,
+	TierDiamond: 75,
+	TierGenesis: 50,
 }
 
 // allTiersInRankOrder is a fixed order to iterate over when summing

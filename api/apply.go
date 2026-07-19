@@ -222,11 +222,23 @@ func ApplyBlock(block core.Block) {
 	// due-date sweep already flipped its status away from FUNDED).
 	processCollateralLiquidations(block.Timestamp)
 
+	// Same block-timestamp-driven determinism - Final Redemption
+	// windows (see advanceLoanLifecycle) that expired without full
+	// repayment transfer Mining Power identically on every node. Runs
+	// after the two sweeps above so a loan that just entered
+	// AwaitingFinalRedemption this same block never gets swept here
+	// too (its RiskStageDeadline is always in the future).
+	processFinalRedemptions(block.Timestamp)
+
 	// Same block-timestamp-driven determinism - P2P trade chats that
 	// have stalled (either party's payment window ran out, or one
 	// party acted and the other went silent for an hour) resolve
 	// identically on every node.
 	processStalledP2PSettlements(block.Timestamp)
+
+	// Continuous Reputation Credit mining - see its own doc comment
+	// (api/reputation_mining.go) for the epoch-gating rationale.
+	processReputationMining(block)
 }
 
 // processDormantWallets sweeps every wallet that's gone dormant (see
@@ -559,6 +571,19 @@ func verifyTxAuth(tx core.Transaction) bool {
 			return false
 		}
 		var signed, claimed loanAddCollateralData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed
+
+	case core.TxLoanRedeemShortfall:
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed, claimed loanRedeemShortfallData
 		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
 			return false
 		}
@@ -1350,6 +1375,9 @@ func ApplyTransaction(tx core.Transaction) {
 
 	case core.TxLoanAddCollateral:
 		applyLoanAddCollateral(tx)
+
+	case core.TxLoanRedeemShortfall:
+		applyLoanRedeemShortfall(tx)
 
 	case core.TxOrderPlace:
 		applyOrderPlace(tx)
@@ -2360,6 +2388,55 @@ func applyLoanAddCollateral(tx core.Transaction) {
 	loan.CollateralAmount += data.Amount
 }
 
+// applyLoanRedeemShortfall pays off exactly loan.LiquidatedShortfall
+// during the Final Redemption window, mirroring settleRepayment's
+// sub-address resolution but transferring the FIXED frozen shortfall,
+// never repayAmountFor(loan) (collateral is already gone by this
+// stage, so that would double-pay the lender - see
+// HandleLoanRedeemShortfall's doc comment).
+func applyLoanRedeemShortfall(tx core.Transaction) {
+	var data loanRedeemShortfallData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+
+	loan, ok := loanStore.Get(data.LoanID)
+	if !ok || loan.RiskStage != core.LoanRiskAwaitingFinalRedemption || tx.AuthAddress != loan.Borrower {
+		return
+	}
+
+	symbol := loanSymbol(loan)
+	store, err := resolveTokenStore(symbol)
+	if err != nil {
+		return
+	}
+	borrowerSide := resolveBalanceAddress(loan.Borrower, tx.AuthPublicKey, symbol)
+	lenderSide := resolveBalanceAddress(loan.Lender, loan.LenderPublicKey, symbol)
+	if !store.Transfer(borrowerSide, lenderSide, loan.LiquidatedShortfall) {
+		return
+	}
+
+	loan.Status = core.LoanRepaid
+	loan.RepaidAt = tx.Timestamp
+	loan.RiskStage = core.LoanRiskHealthy
+	loan.RiskStageEnteredAt = 0
+	loan.RiskStageDeadline = 0
+
+	// Deliberately NOT the usual +10 on-time-repayment reputation bonus
+	// creditEngine.RepayLoan grants - this loan already went through
+	// Warning/MarginCall/GracePeriod/Liquidation, so it isn't an
+	// on-time repayment, and awarding the same bonus a clean early
+	// repayment gets would be exploitable. "Mining Power stays
+	// unchanged" (per the Default Protection spec) means net-neutral,
+	// not rewarded - just record the repayment for history without the
+	// reputation increase.
+	creditEngine.Profiles.Get(loan.Borrower).RecordRepayment(loan.LiquidatedShortfall)
+
+	shortfall := loan.LiquidatedShortfall
+	notifyUser(loan.Borrower, "LOAN_REDEEMED", fmt.Sprintf("You repaid the outstanding %d %s shortfall in time - your Mining Power is unaffected.", shortfall, symbol), loan.ID)
+	notifyUser(loan.Lender, "LOAN_REDEEMED", fmt.Sprintf("A borrower repaid their %d %s shortfall within the final redemption window - no Mining Power changed hands.", shortfall, symbol), loan.ID)
+}
+
 func applyUnstake(tx core.Transaction) {
 	// Queues the unbond rather than instantly removing stake - see
 	// core/staking_logic.go's UnbondingEntry doc. Maturity is derived
@@ -3059,14 +3136,125 @@ func dueAtFor(durationSeconds uint64, fundedAt int64) int64 {
 	return fundedAt + int64(durationSeconds)
 }
 
+// advanceLoanLifecycle is the single place every Default Protection
+// stage transition happens (Healthy -> Warning -> MarginCall ->
+// GracePeriod -> liquidate -> AwaitingFinalRedemption) - called once
+// per candidate loan from BOTH processLoanDefaults and
+// processCollateralLiquidations below, each computing its own atRisk
+// signal from its own trigger (due date vs. collateral ratio).
+// Idempotent with respect to (loan.RiskStage, asOf): every branch
+// checks the CURRENT stage before acting, so a loan that's
+// simultaneously overdue AND under-collateralized - visited by both
+// sweeps in the same block - never gets double-advanced.
+//
+// liquidateLoan's seize/refund/shortfall math and
+// creditEngine.DefaultLoan/shortfallReputationDelta's penalty math are
+// NOT reimplemented here - only WHEN they fire moves. liquidateLoan
+// now fires only once the GracePeriod deadline expires (previously
+// fired the instant a sweep condition was true); DefaultLoan now fires
+// only from processFinalRedemptions once the Final Redemption window
+// also expires (previously fired atomically with liquidation) - see
+// that function's own doc comment.
+func advanceLoanLifecycle(loan *core.Loan, atRisk bool, asOf int64, reason string) {
+	switch loan.RiskStage {
+	case core.LoanRiskHealthy:
+		if !atRisk {
+			return
+		}
+		loan.RiskStage = core.LoanRiskWarning
+		loan.RiskStageEnteredAt = asOf
+		notifyUser(loan.Borrower, "LOAN_RISK_WARNING",
+			"Your collateral has entered the warning zone. Add collateral or repay before liquidation.", loan.ID)
+
+	case core.LoanRiskWarning:
+		if !atRisk {
+			loan.RiskStage = core.LoanRiskHealthy
+			loan.RiskStageEnteredAt = 0
+			return
+		}
+		if asOf-loan.RiskStageEnteredAt >= core.LoanRiskWarningDwellSeconds {
+			loan.RiskStage = core.LoanRiskMarginCall
+			loan.RiskStageEnteredAt = asOf
+			notifyUser(loan.Borrower, "LOAN_MARGIN_CALL",
+				"Margin call: add collateral, repay part or all of this loan, or close it voluntarily before a grace period begins.", loan.ID)
+		}
+
+	case core.LoanRiskMarginCall:
+		if !atRisk {
+			loan.RiskStage = core.LoanRiskHealthy
+			loan.RiskStageEnteredAt = 0
+			return
+		}
+		if asOf-loan.RiskStageEnteredAt >= core.LoanRiskMarginCallDwellSeconds {
+			loan.RiskStage = core.LoanRiskGracePeriod
+			loan.RiskStageEnteredAt = asOf
+			loan.RiskStageDeadline = asOf + core.LoanRiskGracePeriodSeconds
+			notifyUser(loan.Borrower, "LOAN_GRACE_PERIOD_STARTED",
+				fmt.Sprintf("Your grace period has begun - repay or add collateral within %d hours to avoid liquidation.",
+					core.LoanRiskGracePeriodSeconds/3600), loan.ID)
+		}
+
+	case core.LoanRiskGracePeriod:
+		if !atRisk {
+			loan.RiskStage = core.LoanRiskHealthy
+			loan.RiskStageEnteredAt = 0
+			loan.RiskStageDeadline = 0
+			return
+		}
+		if asOf < loan.RiskStageDeadline {
+			return
+		}
+
+		// Grace period expired and still at risk - liquidate now,
+		// reusing liquidateLoan completely unchanged.
+		owed := repayAmountFor(loan)
+		shortfall := liquidateLoan(loan, asOf, reason)
+
+		if shortfall == 0 {
+			// Same "collateral fully covered it, no penalty" outcome
+			// this codebase already had - just reached later now.
+			// liquidateLoan already flipped loan.Status to LoanRepaid.
+			loan.RiskStage = core.LoanRiskHealthy
+			loan.RiskStageEnteredAt = 0
+			loan.RiskStageDeadline = 0
+			creditHistory.Add(loan.Borrower, core.CreditEvent{Type: "LOAN_REPAID", Amount: loan.Amount})
+			notifyUser(loan.Borrower, "LOAN_REPAID", fmt.Sprintf("Your %d %s loan's grace period expired and it was liquidated, but your collateral fully covered what was owed - no Mining Power penalty, and any leftover collateral was returned to you", loan.Amount, loanSymbol(loan)), loan.ID)
+			notifyUser(loan.Lender, "LOAN_REPAID", fmt.Sprintf("A %d %s loan was liquidated after its grace period expired and you were made whole from the borrower's collateral", loan.Amount, loanSymbol(loan)), loan.ID)
+			return
+		}
+
+		loan.RiskStage = core.LoanRiskAwaitingFinalRedemption
+		loan.RiskStageEnteredAt = asOf
+		loan.RiskStageDeadline = asOf + core.LoanRiskFinalRedemptionWindowSeconds
+		loan.LiquidatedShortfall = shortfall
+		loan.LiquidatedOwed = owed
+		notifyUser(loan.Borrower, "LOAN_FINAL_REDEMPTION_NOTICE",
+			fmt.Sprintf("You still owe %d %s. Repay within %d hours to preserve your Mining Power.",
+				shortfall, loanSymbol(loan), core.LoanRiskFinalRedemptionWindowSeconds/3600), loan.ID)
+		notifyUser(loan.Lender, "LOAN_LIQUIDATED",
+			fmt.Sprintf("A %d %s loan's collateral was liquidated after its grace period expired - it covered %d of what was owed. A final redemption window is open before Mining Power transfers.",
+				loan.Amount, loanSymbol(loan), owed-shortfall), loan.ID)
+
+	case core.LoanRiskAwaitingFinalRedemption, core.LoanRiskDefaulted:
+		// Terminal for this function - resolved by processFinalRedemptions
+		// (deadline expiry) or applyLoanRedeemShortfall (borrower pays in
+		// time, api/loan_redemption.go). Nothing to do here.
+	}
+}
+
 // processLoanDefaults sweeps every peer-funded loan whose due date has
 // passed while still unpaid - block-timestamp-driven determinism, the
 // same pattern processDormantWallets already uses, so every node that
-// applies this same block reaches the identical set of defaults.
+// applies this same block reaches the identical set of at-risk loans.
 // Self-funded loans (Lender == "", see core.Loan's doc comment) are
 // never swept here - there's no real counterparty for "the lender is
 // always made whole" to protect, so default doesn't carry the
 // peer-funded marketplace's lender-protection meaning for those.
+//
+// A passed due date can't un-pass, so atRisk is always true for every
+// loan this sweep selects - the actual liquidation decision (and the
+// Warning/MarginCall/GracePeriod stages leading up to it) live in
+// advanceLoanLifecycle, called once per loan here.
 func processLoanDefaults(asOf int64) {
 	var overdueIDs []string
 	for id, loan := range loanStore.Loans {
@@ -3082,74 +3270,41 @@ func processLoanDefaults(asOf int64) {
 	sort.Strings(overdueIDs)
 
 	for _, id := range overdueIDs {
-		loan := loanStore.Loans[id]
-
-		owed := repayAmountFor(loan)
-		shortfall := liquidateLoan(loan, asOf, "overdue")
-
-		if shortfall == 0 {
-			// Collateral fully covered what was owed even though the
-			// loan went overdue - economically the lender was made
-			// whole exactly as on a normal repayment, so this isn't a
-			// default and carries no reputation penalty (see
-			// core.shortfallReputationDelta's doc comment).
-			// liquidateLoan already flipped loan.Status to LoanRepaid.
-			creditHistory.Add(loan.Borrower, core.CreditEvent{Type: "LOAN_REPAID", Amount: loan.Amount})
-			notifyUser(loan.Borrower, "LOAN_REPAID", fmt.Sprintf("Your overdue loan of %d %s was liquidated, but your collateral fully covered what was owed - no reputation penalty, and any leftover collateral was returned to you", loan.Amount, loanSymbol(loan)), loan.ID)
-			notifyUser(loan.Lender, "LOAN_REPAID", fmt.Sprintf("An overdue %d %s loan was liquidated and you were made whole from the borrower's collateral", loan.Amount, loanSymbol(loan)), loan.ID)
-			continue
-		}
-
-		// creditEngine.DefaultLoan does the borrower-side penalty
-		// (status -> DEFAULT, profile record, shortfall-scaled
-		// reputation decrease) - see core/credit_engine.go.
-		delta := creditEngine.DefaultLoan(loan, shortfall, owed)
-
-		if delta > 0 {
-			if reward := core.IncreaseWalletReputation(walletStore.Get(loan.Lender), delta); reward > 0 {
-				mintRept(loan.Lender, reward)
-			}
-
-			reputationEventStore.Record(&core.ReputationEvent{
-				TxID: "default-" + loan.ID, Target: loan.Borrower, Delta: -int64(delta),
-				Reason: "Defaulted on a peer-funded loan", Timestamp: asOf,
-			})
-			reputationEventStore.Record(&core.ReputationEvent{
-				TxID: "default-" + loan.ID + "-lender", Target: loan.Lender, Delta: int64(delta),
-				Reason: "Received a defaulting borrower's collateral and reputation", Timestamp: asOf,
-			})
-		}
-
-		creditHistory.Add(loan.Borrower, core.CreditEvent{Type: "LOAN_DEFAULT", Amount: loan.Amount})
-
-		notifyUser(loan.Borrower, "LOAN_DEFAULT", fmt.Sprintf("You defaulted on a loan of %d %s - your collateral was liquidated and your reputation was penalized for the %d shortfall left uncovered", loan.Amount, loanSymbol(loan), shortfall), loan.ID)
-		notifyUser(loan.Lender, "LOAN_DEFAULT", fmt.Sprintf("A borrower defaulted on their %d %s loan - their liquidated collateral covered %d of what was owed", loan.Amount, loanSymbol(loan), owed-shortfall), loan.ID)
+		advanceLoanLifecycle(loanStore.Loans[id], true, asOf, "overdue")
 	}
 }
 
 // processCollateralLiquidations sweeps every peer-funded, OETH-
-// collateralized loan whose collateral value has fallen below
-// core.LiquidationThresholdPercent of what's owed - regardless of due
-// date, since a price crash can put a lender at risk long before a
-// loan's due date ever arrives. Same block-timestamp-driven
+// collateralized loan - not just ones currently failing the threshold,
+// unlike before this feature: a loan whose collateral value recovers
+// needs to be re-visited so advanceLoanLifecycle can step it back down
+// to Healthy, which requires evaluating atRisk fresh on every pass, on
+// every such loan, every block. Same block-timestamp-driven
 // determinism as processLoanDefaults (sorted iteration - Go map order
-// is randomized, every node must reach the identical liquidation set).
+// is randomized, every node must reach the identical result).
 // CCT-collateralized loans are never scanned here - collateralValueInYen
 // always returns ok=false for CCT, so they'd never trigger anyway, but
 // skipping them explicitly documents that this phase's proactive
 // liquidation is OETH-only by design (see the approved Phase B plan).
 func processCollateralLiquidations(asOf int64) {
-	var atRiskIDs []string
+	var oethLoanIDs []string
 	for id, loan := range loanStore.Loans {
-		if loan.Status != core.LoanFunded || loan.Lender == "" || loan.CollateralSymbol != "OETH" {
-			continue
+		if loan.Status == core.LoanFunded && loan.Lender != "" && loan.CollateralSymbol == "OETH" {
+			oethLoanIDs = append(oethLoanIDs, id)
 		}
+	}
+	if len(oethLoanIDs) == 0 {
+		return
+	}
+	sort.Strings(oethLoanIDs)
+
+	for _, id := range oethLoanIDs {
+		loan := loanStore.Loans[id]
 
 		collateralValue, ok := collateralValueInYen(loan.CollateralSymbol, loan.CollateralAmount)
 		if !ok {
-			continue
+			continue // no live price - can't judge risk, leave this loan's stage untouched
 		}
-
 		owed := repayAmountFor(loan)
 		if owed == 0 {
 			continue
@@ -3157,29 +3312,39 @@ func processCollateralLiquidations(asOf int64) {
 
 		// collateralValue/owed < threshold/100, rearranged to avoid
 		// floating point: collateralValue*100 < threshold*owed.
-		if collateralValue*100 < core.LiquidationThresholdPercent*owed {
-			atRiskIDs = append(atRiskIDs, id)
+		atRisk := collateralValue*100 < core.LiquidationThresholdPercent*owed
+		advanceLoanLifecycle(loan, atRisk, asOf, "price-triggered")
+	}
+}
+
+// processFinalRedemptions is the ONLY place creditEngine.DefaultLoan /
+// shortfallReputationDelta actually fires now - moved here, unmodified
+// in what it does, from processLoanDefaults/processCollateralLiquidations,
+// so the Mining Power transfer happens only once every recovery
+// opportunity (repay, add collateral, grace period, final redemption)
+// has actually been exhausted, per the Default Protection philosophy
+// of never punishing immediately. Same block-timestamp-driven
+// determinism/sorted-iteration convention as every sweep above.
+func processFinalRedemptions(asOf int64) {
+	var ids []string
+	for id, loan := range loanStore.Loans {
+		if loan.RiskStage == core.LoanRiskAwaitingFinalRedemption &&
+			loan.RiskStageDeadline > 0 && loan.RiskStageDeadline < asOf {
+			ids = append(ids, id)
 		}
 	}
-	if len(atRiskIDs) == 0 {
+	if len(ids) == 0 {
 		return
 	}
-	sort.Strings(atRiskIDs)
+	sort.Strings(ids)
 
-	for _, id := range atRiskIDs {
+	for _, id := range ids {
 		loan := loanStore.Loans[id]
-
-		owed := repayAmountFor(loan)
-		shortfall := liquidateLoan(loan, asOf, "price-triggered")
-
-		if shortfall == 0 {
-			creditHistory.Add(loan.Borrower, core.CreditEvent{Type: "LOAN_REPAID", Amount: loan.Amount})
-			notifyUser(loan.Borrower, "LOAN_REPAID", fmt.Sprintf("Your %d %s loan's OETH collateral dropped below the safe threshold and was liquidated - it still fully covered what was owed, so there's no reputation penalty and any leftover collateral was returned to you", loan.Amount, loanSymbol(loan)), loan.ID)
-			notifyUser(loan.Lender, "LOAN_REPAID", fmt.Sprintf("A %d %s loan's collateral value dropped and was liquidated - you were made whole", loan.Amount, loanSymbol(loan)), loan.ID)
-			continue
-		}
+		shortfall, owed := loan.LiquidatedShortfall, loan.LiquidatedOwed
 
 		delta := creditEngine.DefaultLoan(loan, shortfall, owed)
+		loan.RiskStage = core.LoanRiskDefaulted
+		loan.RiskStageDeadline = 0
 
 		if delta > 0 {
 			if reward := core.IncreaseWalletReputation(walletStore.Get(loan.Lender), delta); reward > 0 {
@@ -3187,19 +3352,19 @@ func processCollateralLiquidations(asOf int64) {
 			}
 
 			reputationEventStore.Record(&core.ReputationEvent{
-				TxID: "liquidation-" + loan.ID, Target: loan.Borrower, Delta: -int64(delta),
-				Reason: "Loan collateral was liquidated below what was owed", Timestamp: asOf,
+				TxID: "final-redemption-default-" + loan.ID, Target: loan.Borrower, Delta: -int64(delta),
+				Reason: "Defaulted on a peer-funded loan after the final redemption window expired", Timestamp: asOf,
 			})
 			reputationEventStore.Record(&core.ReputationEvent{
-				TxID: "liquidation-" + loan.ID + "-lender", Target: loan.Lender, Delta: int64(delta),
-				Reason: "Received a liquidated borrower's collateral and reputation", Timestamp: asOf,
+				TxID: "final-redemption-default-" + loan.ID + "-lender", Target: loan.Lender, Delta: int64(delta),
+				Reason: "Received a defaulting borrower's collateral and Mining Power", Timestamp: asOf,
 			})
 		}
 
 		creditHistory.Add(loan.Borrower, core.CreditEvent{Type: "LOAN_DEFAULT", Amount: loan.Amount})
 
-		notifyUser(loan.Borrower, "LOAN_DEFAULT", fmt.Sprintf("Your %d %s loan's OETH collateral dropped below the safe threshold and was liquidated - it fell short of what was owed by %d, and your reputation was penalized proportionally", loan.Amount, loanSymbol(loan), shortfall), loan.ID)
-		notifyUser(loan.Lender, "LOAN_DEFAULT", fmt.Sprintf("A %d %s loan's collateral was liquidated after its value dropped - it covered %d of what was owed", loan.Amount, loanSymbol(loan), owed-shortfall), loan.ID)
+		notifyUser(loan.Borrower, "LOAN_DEFAULT", fmt.Sprintf("Your final redemption window expired - your Mining Power was reduced for the %d %s shortfall left uncovered", shortfall, loanSymbol(loan)), loan.ID)
+		notifyUser(loan.Lender, "LOAN_DEFAULT", fmt.Sprintf("A borrower's final redemption window expired on their %d %s loan - you received their Mining Power for the %d shortfall", loan.Amount, loanSymbol(loan), shortfall), loan.ID)
 	}
 }
 

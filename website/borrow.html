@@ -222,14 +222,17 @@
 <div class="card">
     <h2 style="margin-top:0;">Default Protection</h2>
     <p style="font-size:13px;opacity:.85;">
-        If your OETH-collateralized loan's collateral value falls, its health indicator moves from Healthy to Safe
-        to Warning. Once collateral value drops below 120% of what's owed, the next block's liquidation sweep seizes
-        only the proportional slice of your collateral needed to cover the debt (never more), refunding the rest -
-        a full grace period isn't modeled yet, so top up collateral early if you're at Warning. If liquidation still
-        can't fully cover the lender, the shortfall reduces your reputation proportionally to how much was missed
-        (never a flat penalty), and the lender's reputation gains the mirror amount. CCT-collateralized and
-        self-funded loans have no live price feed, so they're due-date-only - they default (and forfeit 100% of
-        collateral) only if not repaid by their due date, not on a price move.
+        We never punish immediately. If your OETH-collateralized loan's collateral value falls below 120% of what's
+        owed (or a due-date loan goes overdue), your loan moves through a graduated sequence, each step giving you a
+        real chance to fix it before anything is taken: <strong>Warning</strong> (an alert - add collateral or repay)
+        &rarr; <strong>Margin Call</strong> (add collateral, repay part or all, or close voluntarily - your Mining
+        Power is still untouched) &rarr; <strong>Grace Period</strong> (72 hours to act) &rarr;
+        <strong>Liquidation</strong> (only once the grace period actually expires - seizes only the proportional
+        slice of your collateral needed to cover the debt, never more, refunding the rest). If liquidation still
+        can't fully cover the lender, you get one more chance - a 24-hour <strong>Final Redemption</strong> window to
+        repay the exact shortfall and keep your Mining Power. Only if that window also expires does the shortfall
+        reduce your Mining Power (scaled to how much was actually missed, never a flat penalty), with the lender's
+        Mining Power gaining the mirror amount.
     </p>
 </div>
 

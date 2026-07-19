@@ -5,6 +5,14 @@ const NOTIFICATION_ICONS = {
     NEW_MESSAGE: "\u{1F4AC}",
     LOGIN: "\u{1F510}",
     REPT_MINTED: "\u{1F3C6}",
+    // Default Protection sequence (see borrow.html's explainer card) -
+    // one icon per stage, escalating urgency.
+    LOAN_RISK_WARNING: "\u{26A0}\u{FE0F}",
+    LOAN_MARGIN_CALL: "\u{1F4E2}",
+    LOAN_GRACE_PERIOD_STARTED: "\u{23F3}",
+    LOAN_LIQUIDATED: "\u{1F4C9}",
+    LOAN_FINAL_REDEMPTION_NOTICE: "\u{1F6A8}",
+    LOAN_REDEEMED: "\u{2705}",
 };
 
 function notificationIcon(type) {

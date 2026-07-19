@@ -185,7 +185,15 @@ func TestPhaseB_EndToEnd_HTTPAndConsensusIntegration(t *testing.T) {
 		t.Fatalf("expected atRisk true after crashing the OETH price, got %+v", health2)
 	}
 
-	// --- 4. Confirm the next block's consensus sweep actually liquidates it ---
+	// --- 4. Confirm the consensus sweep walks the loan through the full
+	// Default Protection ladder (Warning -> MarginCall -> GracePeriod ->
+	// liquidate -> AwaitingFinalRedemption -> processFinalRedemptions) -
+	// a single block no longer instantly liquidates/defaults, unlike
+	// before this feature; each stage needs its own dwell/deadline to
+	// actually pass (see core/loan_risk.go, advanceLoanLifecycle in
+	// api/apply.go). Blocks from here on use explicit, escalating
+	// Timestamps (not time.Now()) so the test can simulate days of
+	// elapsed time without actually waiting.
 	wantShortfall := uint64(0)
 	if collateralValue < owed {
 		wantShortfall = owed - collateralValue
@@ -198,23 +206,58 @@ func TestPhaseB_EndToEnd_HTTPAndConsensusIntegration(t *testing.T) {
 		wantDelta = core.ReputationDeltaLoanDefaultMinimum
 	}
 
-	block2 := core.Block{
-		Index:     2,
-		Hash:      "phaseb-e2e-block-2",
-		Timestamp: time.Now().Unix(),
+	asOf := time.Now().Unix()
+	ApplyBlock(core.Block{Index: 2, Hash: "phaseb-e2e-block-2", Timestamp: asOf})
+	if loan.RiskStage != core.LoanRiskWarning {
+		t.Fatalf("expected RiskStage WARNING on the first at-risk sweep, got %q", loan.RiskStage)
 	}
-	ApplyBlock(block2)
+
+	asOf += core.LoanRiskWarningDwellSeconds + 1
+	ApplyBlock(core.Block{Index: 3, Hash: "phaseb-e2e-block-3", Timestamp: asOf})
+	if loan.RiskStage != core.LoanRiskMarginCall {
+		t.Fatalf("expected RiskStage MARGIN_CALL after the warning dwell, got %q", loan.RiskStage)
+	}
+
+	asOf += core.LoanRiskMarginCallDwellSeconds + 1
+	ApplyBlock(core.Block{Index: 4, Hash: "phaseb-e2e-block-4", Timestamp: asOf})
+	if loan.RiskStage != core.LoanRiskGracePeriod {
+		t.Fatalf("expected RiskStage GRACE_PERIOD after the margin call dwell, got %q", loan.RiskStage)
+	}
+
+	asOf = loan.RiskStageDeadline + 1
+	ApplyBlock(core.Block{Index: 5, Hash: "phaseb-e2e-block-5", Timestamp: asOf})
 
 	if wantShortfall == 0 {
 		if loan.Status != core.LoanRepaid {
 			t.Fatalf("expected loan status REPAID (collateral still covered debt), got %s - check the test's price-crash math", loan.Status)
 		}
-	} else if loan.Status != core.LoanDefault {
-		t.Fatalf("expected loan status DEFAULT after liquidation with a shortfall, got %s", loan.Status)
+		if loan.CollateralAmount != 0 {
+			t.Fatalf("expected all collateral disposed of by the liquidation sweep, got %d left", loan.CollateralAmount)
+		}
+		return
 	}
 
+	if loan.RiskStage != core.LoanRiskAwaitingFinalRedemption {
+		t.Fatalf("expected RiskStage AWAITING_FINAL_REDEMPTION after grace period expiry with a shortfall, got %q", loan.RiskStage)
+	}
 	if loan.CollateralAmount != 0 {
 		t.Fatalf("expected all collateral disposed of by the liquidation sweep, got %d left", loan.CollateralAmount)
+	}
+	// Reputation/Mining Power hasn't moved yet - the Default Protection
+	// philosophy is to never punish immediately, only after the Final
+	// Redemption window (below) also expires.
+	if got := walletStore.Get(borrower).Reputation; got != 50 {
+		t.Fatalf("expected borrower reputation still 50 before the final redemption window expires, got %d", got)
+	}
+
+	asOf = loan.RiskStageDeadline + 1
+	ApplyBlock(core.Block{Index: 6, Hash: "phaseb-e2e-block-6", Timestamp: asOf})
+
+	if loan.Status != core.LoanDefault {
+		t.Fatalf("expected loan status DEFAULT after the final redemption window expired, got %s", loan.Status)
+	}
+	if loan.RiskStage != core.LoanRiskDefaulted {
+		t.Fatalf("expected RiskStage DEFAULTED, got %q", loan.RiskStage)
 	}
 	if got := walletStore.Get(borrower).Reputation; got != 50-wantDelta {
 		t.Fatalf("expected borrower reputation decreased by %d (from 50), got %d", wantDelta, got)

@@ -419,6 +419,14 @@ func TestApplyBlock_DuplicateBlockAppliedOnce(t *testing.T) {
 // reputation to the lender, who is left strictly better off - never
 // just made whole, per core.ReputationDeltaLoanDefaultLenderGain's
 // doc comment.
+// TestProcessLoanDefaults_OverdueLoanForfeitsCollateralAndReputationToLender
+// drives an overdue loan through the FULL Default Protection sequence
+// (Warning -> MarginCall -> GracePeriod -> liquidate -> AwaitingFinalRedemption
+// -> processFinalRedemptions) - a single processLoanDefaults call no
+// longer instantly liquidates/defaults, unlike before this feature;
+// each stage now requires its own dwell/deadline to actually pass (see
+// core/loan_risk.go's constants and advanceLoanLifecycle's doc
+// comment, api/apply.go).
 func TestProcessLoanDefaults_OverdueLoanForfeitsCollateralAndReputationToLender(t *testing.T) {
 	const borrower = "loan-default-test-borrower"
 	const lender = "loan-default-test-lender"
@@ -448,13 +456,50 @@ func TestProcessLoanDefaults_OverdueLoanForfeitsCollateralAndReputationToLender(
 	}
 	loanStore.Loans[loan.ID] = loan
 
-	processLoanDefaults(2000) // well past DueAt
+	asOf := int64(2000) // well past DueAt
+	processLoanDefaults(asOf)
+	if loan.RiskStage != core.LoanRiskWarning {
+		t.Fatalf("expected RiskStage WARNING on first overdue sweep, got %q", loan.RiskStage)
+	}
+	if loan.Status != core.LoanFunded {
+		t.Fatalf("expected loan to remain FUNDED through the Warning stage, got %s", loan.Status)
+	}
 
-	if loan.Status != core.LoanDefault {
-		t.Fatalf("expected loan status DEFAULT, got %s", loan.Status)
+	asOf += core.LoanRiskWarningDwellSeconds + 1
+	processLoanDefaults(asOf)
+	if loan.RiskStage != core.LoanRiskMarginCall {
+		t.Fatalf("expected RiskStage MARGIN_CALL after the warning dwell, got %q", loan.RiskStage)
+	}
+
+	asOf += core.LoanRiskMarginCallDwellSeconds + 1
+	processLoanDefaults(asOf)
+	if loan.RiskStage != core.LoanRiskGracePeriod {
+		t.Fatalf("expected RiskStage GRACE_PERIOD after the margin call dwell, got %q", loan.RiskStage)
+	}
+
+	asOf = loan.RiskStageDeadline + 1
+	processLoanDefaults(asOf)
+	if loan.RiskStage != core.LoanRiskAwaitingFinalRedemption {
+		t.Fatalf("expected RiskStage AWAITING_FINAL_REDEMPTION after the grace period expired, got %q", loan.RiskStage)
 	}
 	if got := stakingStore.Stakes[lender]["CCT"]; got != 20 {
 		t.Fatalf("expected lender to receive the borrower's 20 staked CCT collateral, got %d", got)
+	}
+	// CCT collateral has no live price (collateralValueInYen always
+	// returns ok=false for it), so liquidateLoan treats it as a full
+	// shortfall - matches the pre-lifecycle-feature behavior exactly,
+	// just reached later.
+	if loan.LiquidatedShortfall != 50 {
+		t.Fatalf("expected the full 50 shortfall (CCT has no live price), got %d", loan.LiquidatedShortfall)
+	}
+
+	asOf = loan.RiskStageDeadline + 1
+	processFinalRedemptions(asOf)
+	if loan.RiskStage != core.LoanRiskDefaulted {
+		t.Fatalf("expected RiskStage DEFAULTED after the final redemption window expired, got %q", loan.RiskStage)
+	}
+	if loan.Status != core.LoanDefault {
+		t.Fatalf("expected loan status DEFAULT, got %s", loan.Status)
 	}
 	if got := walletStore.Get(borrower).Reputation; got != 50-uint64(core.ReputationDeltaLoanDefault) {
 		t.Fatalf("expected borrower reputation decreased by %d (from 50), got %d", core.ReputationDeltaLoanDefault, got)
