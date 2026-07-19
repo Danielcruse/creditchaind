@@ -9,7 +9,7 @@ const ASSET_DESCRIPTIONS = {
     USDCTEST: "Imported test USDC token - lives at its own address derived from this wallet's key, separate from your CCT address.",
     ETH: "Real Ethereum (testnet), self-custodial - derived from the same recovery phrase as your CreditChain account, but an entirely separate blockchain with its own address and key.",
     BTC: "Real Bitcoin (testnet), self-custodial - derived from the same recovery phrase as your CreditChain account, but an entirely separate blockchain with its own address and key. Receive-only for now.",
-    ETHB: "Your bridged ETH - deposits to your CreditChain custodial Sepolia address are automatically credited here. Send via CCT network (flat CCT fee) or ERC network (real Sepolia address, bridge fee + gas). Separate from the self-custodial ETH account above and from ETHTEST's synthetic faucet balance.",
+    ETHB: "Real bridged Sepolia ETH. Deposits auto-credit here. Receive and Send both ask which network: CCT network (instant, inside CreditChain) or ERC network (real Sepolia address - a bridge action moves it between the two automatically, no separate step to click).",
 };
 
 // EXTERNAL_CHAIN_SYMBOLS are not CreditChain tokens at all - they live
@@ -67,9 +67,15 @@ function showAssetTab(tab) {
     document.getElementById("assetTabHistory").classList.toggle("active", tab === "history");
 }
 
+// displaySymbol is what's shown to the user - ETHB is real bridged
+// Sepolia ETH, so it's just labeled "ETH" everywhere on this page
+// (the internal symbol/API calls still use "ETHB", only the on-screen
+// text changes).
+const displaySymbol = symbol === "ETHB" ? "ETH" : symbol;
+
 async function loadHero() {
-    document.getElementById("assetSymbol").innerText = symbol;
-    document.getElementById("ovSymbol").innerText = symbol;
+    document.getElementById("assetSymbol").innerText = displaySymbol;
+    document.getElementById("ovSymbol").innerText = displaySymbol;
     document.getElementById("ovDescription").innerText = descriptionFor(symbol);
 
     if (symbol === "ETH") {
@@ -112,7 +118,7 @@ async function loadHero() {
 
         try {
             const info = await apiGet(`/ethb/balance?address=${address}`);
-            const ethStr = `${weiToEth(info.balance)} ETHB`;
+            const ethStr = `${weiToEth(info.balance)} ETH`;
             document.getElementById("assetBalance").innerText = ethStr;
             document.getElementById("ovBalance").innerText = ethStr;
         } catch (e) {
@@ -122,7 +128,7 @@ async function loadHero() {
         }
 
         document.getElementById("ovOtherNetworksList").innerHTML =
-            `<a href="send-bridged-eth.html" style="color:#8ef;">Sending? Pick CCT or ERC network on the send page - no separate bridge step.</a>`;
+            `<a href="send-bridged-eth.html" style="color:#8ef;">Sending picks CCT or ERC network on the send page - no separate bridge step.</a>`;
         document.getElementById("ovOtherNetworks").style.display = "block";
         return;
     }
@@ -281,29 +287,16 @@ async function toggleReceivePanel() {
         return;
     }
 
-    // ETHB is a special case: the address that actually receives
-    // deposits is the custodial Sepolia address (a different chain
-    // entirely), never this wallet's internal CreditChain sub-address
-    // (assetAddress()'s normal answer) - showing the wrong one here
-    // would mean anything sent to it is unrecoverable. /eth-custodial/create
-    // is idempotent (returns the existing address if one's already
-    // provisioned) and, unlike /eth-custodial/balance, doesn't require
-    // a live Sepolia RPC connection just to reveal an address that's
-    // already known.
+    // ETHB is a special case: deposits auto-credit from two different
+    // places depending on network, so Receive asks which one first
+    // instead of guessing - CCT network is this wallet's internal
+    // CreditChain sub-address, ERC network is the real custodial
+    // Sepolia address. Resolving the wrong one here as if it were the
+    // only option would mean funds sent to it could be unrecoverable.
     if (symbol === "ETHB") {
-        const statusEl = document.getElementById("assetCopyStatus");
-        statusEl.innerText = "Loading your deposit address...";
+        document.getElementById("assetReceiveNetworkPicker").style.display = "block";
+        document.getElementById("assetReceiveQrArea").style.display = "none";
         panel.style.display = "block";
-        try {
-            const info = await apiPostSigned("/eth-custodial/create", {});
-            document.getElementById("assetReceiveAddress").innerText = info.ethAddress;
-            QR.renderToCanvas(document.getElementById("assetQrCanvas"), info.ethAddress, 6);
-            statusEl.innerText = "Real Sepolia ETH sent here is auto-credited to your ETHB balance within a few minutes.";
-        } catch (e) {
-            console.error(e);
-            document.getElementById("assetReceiveAddress").innerText = "";
-            statusEl.innerText = "Couldn't load your deposit address: " + e.message;
-        }
         return;
     }
 
@@ -312,6 +305,42 @@ async function toggleReceivePanel() {
     document.getElementById("assetReceiveAddress").innerText = address;
     QR.renderToCanvas(document.getElementById("assetQrCanvas"), address, 6);
     panel.style.display = "block";
+}
+
+// loadReceiveForNetwork resolves the actual deposit address once the
+// user picks a network for ETHB's Receive flow. CCT network reuses
+// assetAddress()'s normal CreditChain sub-address (instant, internal
+// sends only). ERC network needs the real custodial Sepolia address -
+// real Sepolia ETH sent there is what auto-credits the ETH balance.
+// /eth-custodial/create is idempotent (returns the existing address if
+// one's already provisioned) and, unlike /eth-custodial/balance,
+// doesn't require a live Sepolia RPC connection just to reveal an
+// address that's already known.
+async function loadReceiveForNetwork(network) {
+    document.getElementById("assetReceiveNetworkPicker").style.display = "none";
+    document.getElementById("assetReceiveQrArea").style.display = "block";
+    const statusEl = document.getElementById("assetCopyStatus");
+    const addressEl = document.getElementById("assetReceiveAddress");
+
+    if (network === "CCT") {
+        const address = await assetAddress();
+        addressEl.innerText = address;
+        QR.renderToCanvas(document.getElementById("assetQrCanvas"), address, 6);
+        statusEl.innerText = "CCT network address - instant, for CreditChain-internal sends only.";
+        return;
+    }
+
+    statusEl.innerText = "Loading your deposit address...";
+    try {
+        const info = await apiPostSigned("/eth-custodial/create", {});
+        addressEl.innerText = info.ethAddress;
+        QR.renderToCanvas(document.getElementById("assetQrCanvas"), info.ethAddress, 6);
+        statusEl.innerText = "Real Sepolia ETH sent here is auto-credited to your ETH balance within a few minutes.";
+    } catch (e) {
+        console.error(e);
+        addressEl.innerText = "";
+        statusEl.innerText = "Couldn't load your deposit address: " + e.message;
+    }
 }
 
 function copyAssetAddress() {

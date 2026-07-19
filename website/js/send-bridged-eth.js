@@ -48,8 +48,8 @@ function setMode(newMode) {
     document.getElementById("toAddress").value = "";
     document.getElementById("modeNote").innerText =
         mode === "CCT"
-            ? `Instant internal move. Flat fee: ${ETHBBridgeCCTNetworkFee} CCT (paid from your CCT balance, not your ETHB balance).`
-            : `Real Sepolia broadcast to any 0x address. Flat bridge fee: ~${weiToEth(ETHBridgeFeeWei.toString())} ETHB (covers CreditChain's real gas cost).`;
+            ? `Instant internal move. Flat fee: ${ETHBBridgeCCTNetworkFee} CCT (paid from your CCT balance, not your ETH balance).`
+            : `Real Sepolia broadcast to any 0x address. Flat bridge fee: ~${weiToEth(ETHBridgeFeeWei.toString())} ETH (covers CreditChain's real gas cost).`;
     document.getElementById("formStatus").innerText = "";
 }
 
@@ -61,7 +61,7 @@ async function refreshBalance() {
     try {
         const info = await apiGet(`/ethb/balance?address=${ethbAddress}`);
         latestEthbBalanceWei = BigInt(info.balance || "0");
-        document.getElementById("ethbBalance").innerText = `${weiToEth(info.balance)} ETHB`;
+        document.getElementById("ethbBalance").innerText = `${weiToEth(info.balance)} ETH`;
     } catch (e) {
         console.error(e);
         document.getElementById("ethbBalance").innerText = "Couldn't load balance";
@@ -107,7 +107,7 @@ function review() {
 
     document.getElementById("reviewNetwork").innerText = mode === "CCT" ? "CCT network" : "ERC network (Sepolia)";
     document.getElementById("reviewTo").innerText = to;
-    document.getElementById("reviewAmount").innerText = `${weiToEth(valueWei.toString())} ETHB`;
+    document.getElementById("reviewAmount").innerText = `${weiToEth(valueWei.toString())} ETH`;
 
     const confirmBtn = document.getElementById("confirmSendBtn");
     const gasRow = document.getElementById("reviewGasRow");
@@ -116,21 +116,21 @@ function review() {
     if (mode === "CCT") {
         document.getElementById("reviewFee").innerText = `${ETHBBridgeCCTNetworkFee} CCT`;
         gasRow.style.display = "none";
-        warningEl.innerText = "This moves ETHB instantly within CreditChain to the recipient's CreditChain address.";
+        warningEl.innerText = "This moves ETH instantly within CreditChain to the recipient's CreditChain address.";
         confirmBtn.disabled = valueWei > latestEthbBalanceWei;
         document.getElementById("reviewStatus").innerText = confirmBtn.disabled
-            ? "Amount exceeds your ETHB balance (the CCT fee is checked separately at send time)."
+            ? "Amount exceeds your ETH balance (the CCT fee is checked separately at send time)."
             : "";
     } else {
         const totalWei = valueWei + ETHBridgeFeeWei;
-        document.getElementById("reviewFee").innerText = `${weiToEth(ETHBridgeFeeWei.toString())} ETHB`;
+        document.getElementById("reviewFee").innerText = `${weiToEth(ETHBridgeFeeWei.toString())} ETH`;
         gasRow.style.display = "flex";
         document.getElementById("reviewGas").innerText = "gas cost is absorbed by CreditChain, not deducted further";
         warningEl.innerText =
             "This broadcasts a real Sepolia testnet transaction. This action is irreversible and cannot be undone or refunded by CreditChain.";
         confirmBtn.disabled = totalWei > latestEthbBalanceWei;
         document.getElementById("reviewStatus").innerText = confirmBtn.disabled
-            ? "Amount plus bridge fee exceeds your ETHB balance."
+            ? "Amount plus bridge fee exceeds your ETH balance."
             : "";
     }
 
