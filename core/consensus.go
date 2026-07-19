@@ -88,6 +88,37 @@ func isEligibleRelaxed(v *Validator) bool {
 		v.Uptime >= MinValidatorUptime
 }
 
+// isEligibleBootstrap is isEligibleRelaxed without the stake floor too
+// (and, deliberately, without the uptime floor either - see below) -
+// the last-resort tier SelectValidator reaches for only when NEITHER
+// the strict NOR the relaxed pool has a single eligible validator.
+// Same deadlock reasoning isEligibleRelaxed's doc comment already
+// gives for reputation applies symmetrically to stake: if every
+// registered validator's CCT stake sits below MinValidatorStake (e.g.
+// every validator predates a stake-source migration and nobody has
+// re-staked yet), block production stops entirely, which means no
+// transaction of any kind - including a stake transaction - can ever
+// confirm again. That's the same closed loop with no honest way out,
+// just triggered by stake instead of reputation.
+//
+// Uptime is deliberately dropped too, not just stake/reputation - a
+// version of this tier that still required v.Uptime >=
+// MinValidatorUptime would itself fail to break a deadlock where
+// every validator's uptime has also drifted below the floor (uptime
+// only recovers by producing blocks, the same circular dependency as
+// reputation/stake), silently defeating the one guarantee this tier
+// exists to provide. As the tier of absolute last resort - reached
+// only when both stricter tiers are completely empty - "genuinely
+// registered and active" is the only condition that can never itself
+// become permanently false through the chain's own operation.
+// Selection weight (validatorWeight) still scores stake/reputation/
+// uptime normally in this pool - this only stops any of them from
+// being an absolute veto in the one situation where enforcing them
+// strictly would be self-defeating.
+func isEligibleBootstrap(v *Validator) bool {
+	return v.Active
+}
+
 // selectFrom runs the actual deterministic weighted-random draw over
 // whichever pool (strict or relaxed) SelectValidator decided to use.
 func selectFrom(pool []*Validator, previousBlockHash string) *Validator {
@@ -141,8 +172,10 @@ func AnyStrictlyEligible(validators []*Validator) bool {
 // consensus determinism) without falling back to round-robin
 // (predictable/gameable) or highest-stake-wins (centralizing) -
 // both explicitly rejected in favor of this approach. Falls back to
-// isEligibleRelaxed only if the strict pool is completely empty - see
-// its doc comment for why that fallback exists at all.
+// isEligibleRelaxed if the strict pool is empty, then to
+// isEligibleBootstrap if the relaxed pool is ALSO empty - see each
+// tier's own doc comment for why it exists. Only returns nil if
+// literally no registered validator is Active at all.
 func SelectValidator(validators []*Validator, previousBlockHash string) *Validator {
 	strict := make([]*Validator, 0, len(validators))
 	for _, v := range validators {
@@ -160,9 +193,19 @@ func SelectValidator(validators []*Validator, previousBlockHash string) *Validat
 			relaxed = append(relaxed, v)
 		}
 	}
-	if len(relaxed) == 0 {
+	if len(relaxed) > 0 {
+		return selectFrom(relaxed, previousBlockHash)
+	}
+
+	bootstrap := make([]*Validator, 0, len(validators))
+	for _, v := range validators {
+		if isEligibleBootstrap(v) {
+			bootstrap = append(bootstrap, v)
+		}
+	}
+	if len(bootstrap) == 0 {
 		return nil
 	}
-	return selectFrom(relaxed, previousBlockHash)
+	return selectFrom(bootstrap, previousBlockHash)
 }
 
