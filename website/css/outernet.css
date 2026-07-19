@@ -162,6 +162,18 @@ body{
 
     min-width:0;
 
+    /* Explicit width, not just flex:1 - below the 900px breakpoint,
+       body switches to flex-direction:column (see the @media block),
+       which makes width a cross-axis/stretch property instead of a
+       flex-grow/shrink one. align-items:normal (stretch) still lets a
+       block child grow past the container when its own descendants
+       contain non-wrapping content (e.g. .asset-row's balance/price
+       spans) - width:100% pins it to the actual available width
+       regardless of that content, which is what makes the shrinking
+       ellipsis/wrap rules on children (like .asset-address) actually
+       activate instead of silently pushing content off-screen. */
+    width:100%;
+
     padding:30px;
 
     box-sizing:border-box;
