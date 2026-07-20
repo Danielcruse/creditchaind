@@ -188,6 +188,87 @@ as a pointer to re-verify — line numbers drift as the code changes.
   simplification, not solved - matching this project's own precedent
   at `eth_custodial.go` for why a two-phase-commit/outbox pattern is
   judged disproportionate here.
+- **ETHB fee model overhaul: every ETH-denominated flat fee
+  (`ETHBCCTNetworkFeeWei`, `UsdcTestTransferFeeWei`,
+  `ethbWithdrawBridgeFeeBps`) is an illustrative testnet value, a
+  judgment call, not derived from a specified model.** (`api/apply.go`,
+  `api/eth_bridge_withdraw.go`) Deposits stay free; a CCT-network ETHB
+  send now pays a flat ETH fee (no longer CCT); an ERC-network
+  withdrawal pays live-tracked gas price (`ethNonceAndGasPrice`) plus a
+  locked 0.05% bridge fee; USDCTEST transfers now also pay a flat ETH
+  fee from the sender's ETHB balance. None of these percentages/flat
+  amounts were specified by the user beyond "0.05% for the ERC-network
+  bridge fee" (implemented exactly) - the rest follow this codebase's
+  existing precedent of small, clearly-labeled illustrative constants.
+- **ETHB address unification migration note.** (`api/subaddress.go`'s
+  `resolveBalanceAddress`) The ETHB ledger key changed from an always-
+  derived hash to "the real custodial Sepolia address once one exists,
+  falling back to the derived hash otherwise" - this makes the deposit
+  address, internal ledger key, and send-from address the same string,
+  closing a real gap between "same address in both networks" and what
+  the code actually did. Any ETHB balance that was already sitting at
+  the *old* derived-hash address before this change does not
+  automatically move to the new key - accepted as a testnet-scoped
+  limitation (same "no zero-downtime migration needed at this stage"
+  precedent as every other non-backward-compatible change this
+  session), not a data-loss risk in practice since this is pre-launch
+  testnet balance only.
+- **USDCTEST has no real bridge or second-network concept.** Its new
+  ETH-denominated transfer fee (see above) applies to the one send path
+  that exists today - there is no "ERC network" equivalent for
+  USDCTEST to extend a live-tracked fee to yet.
+- **BTC bridge (BTCB): self-custodial by design, deposit detection is
+  node-local/non-gossiped, same shape as the ETH bridge's own disclosed
+  gap above.** (`api/btc_bridge.go`'s `startBtcBridgeDepositLoop`/
+  `pollAndReportBtcDeposit`, `core/btc_address.go`) Unlike ETHB,
+  CreditChain never holds a BTC private key at all - `BtcWatchedAddress`
+  only tracks which address (the user's own self-custodial, BIP-84-
+  derived testnet address) to poll for a deposit. That polling only
+  ever runs on the node the address was registered through
+  (`POST /btc-bridge/register-address`), so a deposit is only detected
+  and reported by that one node - once a report *is* submitted, though,
+  it's an ordinary signed `TxBridgeBtcDeposit` (same self-signed-
+  report/gossip/dedup pattern as `TxSlashReport`/`TxBridgeDeposit`) that
+  every node applies identically once confirmed. Detection-side only,
+  not settlement-side - matches the ETH bridge's own disclosed
+  limitation exactly.
+- **BTC-network send only supports native segwit (bech32 `tb1...`)
+  recipient addresses.** (`website/js/vendor/btc-tx.js`'s
+  `signAndBuildTx`) A legacy base58 (`1.../3.../m.../n...`) recipient
+  address throws a clear "not supported right now" error rather than
+  constructing a legacy P2PKH scriptSig - a deliberate, disclosed scope
+  narrowing, not an oversight. `send-bridged-btc.js`'s address
+  validation only recognizes `tb1...` as a valid BTC-network address for
+  the same reason.
+- **BTC-network send uses naive greedy coin selection and an
+  approximated fee estimate, neither optimized for privacy or dust
+  avoidance.** (`website/js/vendor/btc-tx.js`'s `signAndBuildTx`,
+  `send-bridged-btc.js`'s `estimateBtcNetworkFee`) Coin selection
+  accumulates confirmed UTXOs largest-first until the amount+fee target
+  is covered - not private, not dust-minimizing, acceptable for a
+  testnet demo send flow. The fee shown before signing is a two-pass
+  estimate (live `satsPerVByte` from Blockstream's fee-estimates
+  endpoint x an assumed 2-output P2WPKH transaction's vsize for the
+  input count the coin-selection pass would use) - close enough for a
+  demo, not a precision fee engine; the transaction actually broadcasts
+  successfully or fails cleanly on `HandleBtcBroadcast`'s relay either
+  way, so an imprecise estimate only ever costs a slightly wrong-sized
+  fee, never a stuck or double-spent transaction.
+- **BTC bridge's signing math is hand-implemented (BIP143 segwit,
+  RFC6979 deterministic ECDSA, DER encoding), same disclosed exception
+  as the ETH bridge's `eth-tx.js`.** (`website/js/vendor/btc-tx.js`)
+  Verified byte-for-byte against BIP143's own officially-published
+  P2WPKH test vector (sighash preimage, sighash, DER-encoded signature,
+  and final signed-tx serialization all matched exactly) before any
+  real-network code path was written - the same blocking-gate discipline
+  `eth-tx.js` was held to against its own Go oracle. Reuses `eth-tx.js`'s
+  already-verified secp256k1/RFC6979 math directly (same curve, same k-
+  generation), differing only in hash algorithm (double-SHA256, not
+  Keccak256), no recovery-id (Bitcoin's witness carries the pubkey
+  directly), and DER instead of r/s/v signature encoding.
+- **BTCB fee/threshold constants (`BTCBCCTNetworkFeeSats`) are
+  illustrative testnet values, a judgment call, not derived from a
+  specified model** - same framing as ETHB's own fee constants above.
 
 ## Consensus / Validator Security
 
@@ -198,7 +279,28 @@ as a pointer to re-verify — line numbers drift as the code changes.
   Documented in code as "not fully BFT-robust." This is a real, live-tested
   gap: two genuine node1/node2 forks occurred during this project's testnet
   phase and both required manual operator intervention to resolve (see
-  `HARDENING_HISTORY.md`).
+  `HARDENING_HISTORY.md`). **Phase 1 stopgap added (2026-07-20):** a refused
+  reorg is no longer only a `fmt.Println` — `recordForkEvent`
+  (`api/fork_monitor.go`) is now the single chokepoint both
+  `syncChainFromPeer`'s refusal path and the periodic 60s fork monitor call
+  through, so a fork found mid-sync immediately flips `forkStatus` (visible
+  on `GET /health/sync`), appends a durable timestamped line to
+  `fork_events.log` in `DATA_DIR`, and optionally emails `FORK_ALERT_EMAIL`
+  (see `ops/NODE_OPERATOR.md`) — instead of waiting up to 60s for the next
+  monitor tick to notice, or relying on someone reading server stdout.
+  This does **not** attempt automated recovery or rollback — it only makes
+  an already-existing refusal visible/alertable faster, closing the "found
+  by accident during a deploy" failure mode the two prior incidents both
+  hit. A real fix (checkpoint state periodically, replay `ApplyBlock` from
+  the nearest checkpoint into an isolated copy of every store, atomically
+  swap in only after a full successful replay) was designed and explicitly
+  **deferred as Phase 2** — not attempted in this pass — because roughly 50
+  `apply*` functions in `api/apply.go` mutate package-level singleton
+  stores in-place with no delta/undo capability, and this codebase's own
+  `resetApplyTestState()` test helper (the only existing "reset everything"
+  routine) is itself first-party evidence that enumerating every store
+  correctly is already error-prone here. Phase 2 needs its own dedicated
+  review pass, not a rushed addition alongside this alerting stopgap.
 - **Recovery/fallback block production is a deadlock-breaker, not proper
   leader election.** `api/consensus_loop.go`'s fallback path (triggered
   after `missedRoundsBeforeFallback` rounds with no block) exists because an
@@ -206,25 +308,63 @@ as a pointer to re-verify — line numbers drift as the code changes.
   when it fired at the wrong time; the current mitigation (sync-before-
   fallback, raised threshold) is a best-effort fix for a documented past
   incident, not a formally-proven-correct recovery protocol.
-- **Missed-block slashing is single-reporter-trusted.** Double-sign slash
-  reports are independently re-verified from embedded cryptographic evidence
-  before being applied (see `ARCHITECTURE.md` §5). Missed-block reports have
-  no equivalent proof — absence can't be cryptographically demonstrated — so
-  once *any* node reports a miss and it's confirmed in a block, the penalty
-  applies network-wide on that one node's word. This is disclosed in code as
-  a deliberate, not-yet-solved simplification (M-of-N confirmation would be
-  the real fix).
+- **RESOLVED (2026-07-20): Missed-block slashing now requires M-of-N
+  corroboration, not a single node's word.** Double-sign slash reports are
+  independently re-verified from embedded cryptographic evidence before
+  being applied (see `ARCHITECTURE.md` §5). Missed-block reports have no
+  equivalent proof — absence can't be cryptographically demonstrated — so
+  previously, once *any* node reported a miss and it was confirmed in a
+  block, the penalty applied network-wide on that one node's word alone.
+  `api/missed_block_confirmation.go` closes this: every node that
+  independently detects the same missed round submits its own report (as
+  before), but `applySlashReport` (`api/apply.go`) now only applies the
+  actual penalty (reputation, slash count, stake seizure) once a *strict
+  majority* of currently known, independently-operated nodes have
+  corroborated the *same* event (`requiredMissedBlockConfirmations`,
+  `M = N/2 + 1`). `N` is deterministically derived from already-applied,
+  consensus-agreed state (the count of distinct `AuthorizedNodeID` values
+  among currently-active validators — every node computes the identical
+  value from the same transaction history, which matters since the
+  threshold check itself must never depend on any one node's own local,
+  non-replicated view). Floored at 1 so a genuinely single-node network
+  (nobody else exists to corroborate with) can still slash an unresponsive
+  validator rather than deadlocking entirely — a deliberate, disclosed
+  degradation for small/bootstrap networks, not a bypass.
+  **Disclosed limitation, not solved by this fix**: `N`'s derivation
+  (distinct `AuthorizedNodeID` among active validators) undercounts the
+  true node count — a node with no validator currently delegated to it is
+  invisible to this count even though it independently runs the consensus
+  loop and would also report a miss. This is the safer direction for a
+  threshold (harder to reach, not easier to game) but a real node registry
+  independent of validator delegation would be a more accurate fix, and is
+  named as future work, not attempted here.
 - **`/peer/*` gossip endpoints are gated by one static shared secret**
   (`NETWORK_SECRET`), not per-peer identity or authorization. If unset, the
   network fails closed (unreachable) rather than falling back to any
   weaker-but-functional state — a deliberate fail-safe choice, but it means
   there is currently no path to a self-serve/permissionless join flow or any
   Sybil-resistance mechanism (see `ops/NODE_OPERATOR.md`).
-- **`TxTokenMint` trusts the reporting node's own `ADMIN_TOKEN` check.**
-  Other nodes accept a mint transaction on the originating node's word
-  alone when applying it from a gossiped block — the same single-attestor
-  trust model used for slash reports, not a separate cross-node consensus
-  threshold.
+- **RESOLVED (2026-07-20): `TxTokenMint` and every other admin-only
+  transaction type now carry a real, independently-reverifiable
+  signature, not just a self-attesting node identity.** `api/admin.go`'s
+  `requireAdminAuthed`/`verifyAdminTxAuth` add a network-wide-configured
+  admin wallet (`ADMIN_WALLET_ADDRESS`, an ordinary CreditChain wallet
+  address, not a special key type) — once set, every node applying an
+  admin transaction independently checks its signature against that
+  exact address (`core.VerifyTransactionAuth` + an address-pinning
+  check), closing the single-attestor gap this entry used to describe.
+  `ADMIN_TOKEN` (the old shared-bearer-secret model) is kept only as a
+  fallback for networks that haven't set `ADMIN_WALLET_ADDRESS` yet —
+  once one is configured, the token path stops working entirely (by
+  design, not an oversight — see `requireAdminAuthed`'s doc comment),
+  so there's no live parallel-bypass. Verified end-to-end in this
+  session: a real signed admin action (posting an announcement) landed
+  on-chain and was independently re-verifiable via the public API. See
+  `ops/NODE_OPERATOR.md`'s env-var table for setup. The remaining gap
+  is key custody itself (how the admin wallet's own private key is
+  stored/managed) — real hardware/multisig/KMS-backed custody for that
+  key is still the user's/operator's responsibility, not something this
+  codebase can enforce.
 - **RESOLVED: validator min-stake mismatch.** `HandleRegisterValidator`
   (`api/validators.go`) now rejects registration below `core.MinValidatorStake`
   (1,000) with a clear error, matching the actual leader-selection threshold
@@ -299,18 +439,23 @@ reward, and a genesis token allocation.
   ~4B headroom for the block-reward schedule above to mint into over
   subsequent years. Guarded idempotent via
   `core.Treasury.GenesisPoolsAllocated` so it can only ever fire once.
-- **4 of the 5 genesis pools have no controlling keypair and are not
-  spendable via an ordinary wallet-signed transaction.** Validator
-  Reward Pool, Ecosystem Development, Governance Treasury, and Community
-  Incentives live at synthetic addresses (`"POOL:*"`, same convention as
-  `STAKE:*`/`FEE:*` escrow addresses elsewhere in this codebase) —
-  balances are transparently visible on-chain (explorer/balance
-  lookups) but have no real disbursement mechanism yet. Only Foundation
-  Treasury is immediately spendable, since it reuses the existing,
-  already-built Treasury feature's real operator-controlled address
-  rather than getting a second synthetic one. A governance-controlled
-  withdrawal mechanism for the other 4 is a natural follow-up, not
-  attempted here.
+- **PARTIALLY RESOLVED (2026-07-20): the 4 genesis pools with no
+  controlling keypair of their own (Validator Reward Pool, Ecosystem
+  Development, Governance Treasury, Community Incentives — synthetic
+  `"POOL:*"` addresses, same convention as `STAKE:*`/`FEE:*` escrow
+  addresses) now have a real, admin-wallet-signature-gated spend path:
+  `POST /admin/genesis-pools/withdraw` (`api/genesis_pool_withdraw.go`,
+  `core.TxGenesisPoolWithdraw`) moves funds from one of these 4 pools
+  to a real destination, verified the same way as every other admin
+  action (see the `TxTokenMint` entry above). `isKeylessGenesisPool`
+  explicitly whitelists only these 4 — Foundation Treasury is
+  deliberately excluded from this path (it already has its own real
+  address and its own admin controls) and covered by a dedicated test
+  (`TestApplyGenesisPoolWithdraw_RejectsFoundationTreasuryAndUnknownPools`).
+  This is still single-admin-key-gated, not governance-vote-gated — a
+  real governance-controlled disbursement mechanism (e.g. requiring a
+  passed proposal before a withdrawal takes effect) remains a natural,
+  larger follow-up, not attempted here.
 - **`TxAdminTransfer` (`api/admin_transfer.go`) is a deliberate, narrow
   emergency-recovery capability, not a general admin override.** Added
   specifically for this deploy: two production validators (node-001,
@@ -326,6 +471,48 @@ reward, and a genesis token allocation.
   general-purpose fund-movement endpoint - each use is visible on-chain
   as an ordinary transaction with `tx.From` empty (node-authored, per
   `verifyTxAuth`'s `TxAdminTransfer` case).
+
+## Governance
+
+Makes votes actually worth something (weighted by stake + reputation,
+not a flat 1-per-wallet count), gives real incentives for proposals
+that reach quorum and pass, and requires a real passed vote before a
+`PARAM_CHANGE`/`VERSION_ACTIVATION` proposal takes effect. See
+`api/governance_weight.go`, `api/apply.go`'s
+`processProposalFinalization`, and `core/governance_params.go`.
+
+- **`DefaultProposalQuorum` (500), `ProposalVotingWindowSeconds` (7
+  days), and `votingWeight`'s 60%-reputation/40%-stake split are all
+  judgment calls, not derived from a specified model.** Calibrated for
+  this network's current small scale and for philosophical consistency
+  with PoSR's own reputation-dominant weighting
+  (`core/consensus.go`'s 55% reputation), not independently validated.
+  A future tuning pass may want to revisit all three once real
+  participation data exists.
+- **The governance-params registry (`core/governance_params.go`)
+  deliberately starts with only two low-blast-radius fee constants**
+  (`ValidatorRegisterFeeCCT`, `CCTTransferFee`) — migrating PoSR's own
+  freshly-hardened consensus/slashing constants into this same registry
+  the same night they were stabilized would repeat the exact scope-creep
+  pattern that caused a real production incident earlier in this
+  session. That migration is named as deliberate future work, not
+  attempted here.
+- **`VERSION_ACTIVATION` proposals cannot prevent an operator from
+  deploying unapproved code — this is architecturally impossible for
+  an off-chain binary swap, and the mechanism doesn't pretend
+  otherwise.** `core.ActivatedProtocolVersion` is a feature-flag a
+  future consensus-critical change can check before turning itself on
+  (`if core.ActivatedProtocolVersion >= "vX" { ... }`) — it gates
+  *behavior a future deploy chooses to gate*, not the deploy itself.
+  Nothing currently shipped is retroactively gated by it.
+- **Retrofitting admin actions (token mint, genesis pool allocation/
+  withdrawal, `TxAdminTransfer`) to require a passed governance vote
+  first was explicitly left out of scope** — a much bigger change to
+  operational/incident-response tooling that deserves its own dedicated
+  conversation with the user, not a unilateral bundling decision made
+  while building the voting mechanism itself. This is now a
+  single-admin-key gate (see the `TxTokenMint` entry above), not a
+  shared-secret one, but it's still a single key, not a quorum.
 
 ## Economic / Game-Theoretic
 
@@ -452,20 +639,37 @@ reward, and a genesis token allocation.
 
 ## Reputation / Mining
 
-- **Continuous Reputation Credit (REPT) mining is an O(all wallets)
-  sweep, gated to a coarse epoch, not a scalable indexed design.**
-  `processReputationMining` (`api/reputation_mining.go`) iterates every
-  wallet in `walletStore.Wallets` once every `miningEpochBlocks`
-  (10,800 blocks, a judgment call approximating ~1 day at the existing
-  ~8s consensus tick) to compute each one's Mining Power score and mint
-  REPT proportionally. This is bounded to a small fraction of blocks
-  rather than running every block, but the per-epoch cost itself still
-  scales linearly with total wallet count with no paging/index
-  structure — acceptable at the current scale, a real limitation before
-  a much larger wallet base. `baseEpochMiningEmission=20` (REPT/epoch at
-  MiningPower==100) is also a judgment call sized only to make
-  continuous mining meaningfully outpace the reduced one-time tier
-  rewards (see below), not derived from any specified economic model.
+- **RESOLVED (2026-07-20): Continuous Reputation Credit (REPT) mining no
+  longer does all wallets in a single block.** `processReputationMining`
+  (`api/reputation_mining.go`) still runs on the same coarse
+  `miningEpochBlocks` cadence (10,800 blocks, ~1 day at the existing ~8s
+  consensus tick) and the sweep is still O(all wallets) in *aggregate*
+  cost per epoch — that part is unchanged and not the problem being
+  solved. What changed: the first block of a new epoch used to mint to
+  *every* eligible wallet synchronously, in that one block — an unbounded
+  per-block cost that would only grow as the wallet count grows over the
+  network's lifetime. Now the epoch's eligible-wallet list is snapshotted
+  once (sorted, for the same cross-node determinism every other sweep in
+  this codebase already relies on) and drained in bounded batches
+  (`miningBatchSize=250`, a judgment call) across as many subsequent
+  blocks as it takes — one block's added cost is now capped regardless of
+  total wallet count. The in-progress batch cursor is persisted
+  (`reputationMiningSweepSnapshot` in `api/persistence.go`) — this is
+  required for correctness, not just durability: without it, a restart
+  mid-epoch would re-snapshot the full wallet list and double-mint
+  whichever wallets were already processed earlier that epoch. New tests
+  in `api/reputation_mining_batching_test.go` cover: a wallet set larger
+  than one batch spreads correctly across multiple blocks with no
+  double-mint once drained; a new epoch boundary correctly starts a fresh
+  sweep; and a simulated restart mid-epoch (snapshot → reset → restore)
+  resumes the cursor instead of re-processing the first batch. All 4
+  pre-existing tests in `api/reputation_mining_test.go` still pass
+  unchanged, since at today's wallet count the whole epoch still finishes
+  within the very first post-boundary block, same as before this fix.
+  `baseEpochMiningEmission=20` (REPT/epoch at MiningPower==100) remains a
+  judgment call sized only to make continuous mining meaningfully
+  outpace the reduced one-time tier rewards (see below), not derived
+  from any specified economic model — unaffected by this fix.
 - **Mining Power's factor weights and two normalization caps are
   judgment calls, not a locked economic model.** `api/mining_power.go`'s
   `miningPowerScore` (Trust Score 30% / Repayment History 20% /
@@ -562,16 +766,20 @@ reward, and a genesis token allocation.
   creation year" security question plus a verified email address. The code's
   own doc comment states this security model is "deliberately weaker than a
   signature" and must be treated as a testnet convenience only.
-- **Real SMTP is wired in code but not configured in production.**
+- **Real SMTP is now configured and live on node1 (as of 2026-07-20).**
   `api/email.go` implements a real SMTP sender (STARTTLS + AUTH PLAIN,
   stdlib only), and both `api/recovery.go` (recovery-code emails) and
-  `api/hub_rate.go` (hub-attention notifications) already call it when
-  `smtpConfigured()` is true. Neither node currently has `SMTP_HOST`/
-  `SMTP_USERNAME`/`SMTP_PASSWORD`/`SMTP_FROM` set, so both fall back to
-  their testnet-placeholder behavior live (recovery code returned directly
-  in the HTTP response with an explicit "TESTNET MODE" label; hub
-  notifications silently skipped) — see `ops/EMAIL_SETUP.md` for the setup
-  steps once an operator is ready to supply real SMTP credentials.
+  `api/hub_rate.go` (hub-attention notifications) call it when
+  `smtpConfigured()` is true. Node1 has `SMTP_HOST`/`SMTP_USERNAME`/
+  `SMTP_PASSWORD`/`SMTP_FROM` set via a systemd drop-in
+  (`/etc/systemd/system/creditchain.service.d/smtp.conf`, `mail.privateemail.com`) —
+  confirmed live: recovery-code requests now genuinely email the code and the
+  API response omits it entirely (`HandleRequestEmailCode`/
+  `HandleRequestRecoveryCode` in `api/recovery.go` only return the code in the
+  disclosed testnet-fallback branch, never once SMTP is configured). Node2 has
+  no drop-in and is currently out of service/excluded from the network — this
+  remains a node2-only gap, not a code gap, once/if node2 is restored. See
+  `ops/EMAIL_SETUP.md` for the setup steps.
 - **The recovery verification code itself is not part of the consensus/
   security boundary** — it's described in code as playing the same role as
   a CAPTCHA (bot-deterrence), not as cryptographic authentication.
@@ -733,7 +941,7 @@ comments)
   session. Until either is set up, a failure is only visible via
   `journalctl` — nothing pages a human automatically, and there's no
   CDN/WAF layer in front of the public domain.
-- **Node2 (13.40.131.231) has a real history of instability and is
+- **Node2 has a real history of instability and is
   currently unreachable/out of scope again as of this session.** Prior
   incidents on this same box, in order: (1) a total blackout (SSH/HTTPS/
   ping all timing out) traced to the instance itself hanging, resolved by

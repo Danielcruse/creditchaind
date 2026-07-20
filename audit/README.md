@@ -78,7 +78,7 @@ should also be run as a baseline before any review.
   Infrastructure section — worth resolving before an infra-focused review
   specifically, separate from the application-code audit this package is
   mainly prepared for.
-- **Node2 (13.40.131.231)** is currently unreachable and, per explicit
+- **Node2** is currently unreachable and, per explicit
   instruction, is not being investigated as part of ordinary session
   work — its chain state has drifted from node1's (missing the order
   book and CCT fee changes entirely as of this writing). Any review

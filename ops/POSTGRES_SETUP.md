@@ -30,7 +30,9 @@ instance:
 5. **Connectivity**: place it in the same VPC as your Lightsail
    instances if possible; otherwise you'll need "Publicly accessible: Yes"
    plus a security group rule allowing inbound port 5432 **only from your
-   node IPs** (18.130.100.236/32 and 13.40.131.231/32), never 0.0.0.0/0.
+   node IPs** (look these up in your Lightsail console or via
+   `dig +short creditchain.site` — don't hardcode them in any doc that
+   might end up in a public repo), never 0.0.0.0/0.
 6. Note the endpoint hostname RDS gives you once created (looks like
    `creditchain-state.xxxxxxxxxx.eu-west-1.rds.amazonaws.com`).
 
