@@ -34,6 +34,11 @@ const (
 	// bridged-balance token backed by a live custodial Sepolia deposit
 	// address, not the purely synthetic faucet token ETHTEST is.
 	ETHBAddressTag = "ETHB-SUBADDRESS"
+	// BTCBAddressTag namespaces the bridged-BTC balance (BTCB) - same
+	// reasoning as ETHBAddressTag: a real bridged balance backed by
+	// deposits detected against the wallet's self-custodial BTC testnet
+	// address (see api/btc_bridge.go), not a synthetic faucet token.
+	BTCBAddressTag = "BTCB-SUBADDRESS"
 )
 
 // DeriveTokenAddress computes a distinct address for a specific

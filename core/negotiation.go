@@ -35,6 +35,14 @@ type NegotiationMessage struct {
 	Sender    string
 	Text      string
 	Timestamp int64
+	// FromAutomation marks a message posted by a hub's authorized
+	// automation worker rather than a human at the keyboard - see
+	// api/hub_automation.go's doc comment. Always false for every
+	// message posted before this field existed and for every ordinary
+	// human-sent message; the frontend uses it only to show a small
+	// "Automated response" badge, never to change what the message
+	// actually does.
+	FromAutomation bool
 }
 
 // Negotiation is the chat-first negotiation a borrower opens against a

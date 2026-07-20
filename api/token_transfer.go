@@ -52,11 +52,18 @@ func HandleTokenTransfer(
 	}
 
 	// A CCT send also needs to cover CCTTransferFee on top of the
-	// amount itself - re-checked authoritatively in applyTransfer at
-	// confirmation time, this is just the fast-fail preview.
+	// amount itself; an ETHB send similarly needs to cover
+	// ETHBCCTNetworkFeeWei on top - both fees now come from the SAME
+	// balance as the amount being sent (see applyTransfer, which
+	// re-checks this authoritatively). USDCTEST's fee is charged in ETH
+	// from a separate ETHB balance, checked below.
 	required := req.Amount
 	if req.Symbol == "CCT" {
-		required += CCTTransferFee
+		required += governanceParam("CCTTransferFee", CCTTransferFee)
+	} else if req.Symbol == "ETHB" {
+		required += ETHBCCTNetworkFeeWei
+	} else if req.Symbol == "BTCB" {
+		required += BTCBCCTNetworkFeeSats
 	}
 
 	fromSide := resolveBalanceAddress(from, auth.PublicKey, req.Symbol)
@@ -69,12 +76,12 @@ func HandleTokenTransfer(
 		return
 	}
 
-	// ETHB's "CCT network" send charges its flat fee in CCT, not in
-	// ETHB - a second, separate balance from the one being sent (see
-	// applyTransfer's ETHB branch, which re-checks this authoritatively).
-	if req.Symbol == "ETHB" {
-		cctSide := resolveBalanceAddress(from, auth.PublicKey, "CCT")
-		if tokenStore.BalanceOf(cctSide) < ETHBBridgeCCTNetworkFee {
+	// USDCTEST pays its fee in ETH, from a separate ETHB balance - see
+	// applyTransfer's USDCTEST branch, which re-checks this
+	// authoritatively.
+	if req.Symbol == "USDCTEST" {
+		ethbSide := resolveBalanceAddress(from, auth.PublicKey, "ETHB")
+		if bridgedEthStore.BalanceOf(ethbSide) < UsdcTestTransferFeeWei {
 			json.NewEncoder(w).Encode(
 				map[string]bool{
 					"success": false,
@@ -92,10 +99,16 @@ func HandleTokenTransfer(
 		"txId":   tx.ID,
 	}
 	if req.Symbol == "CCT" {
-		resp["fee"] = CCTTransferFee
+		resp["fee"] = governanceParam("CCTTransferFee", CCTTransferFee)
 	}
 	if req.Symbol == "ETHB" {
-		resp["feeCCT"] = ETHBBridgeCCTNetworkFee
+		resp["feeWei"] = ETHBCCTNetworkFeeWei
+	}
+	if req.Symbol == "USDCTEST" {
+		resp["feeWei"] = UsdcTestTransferFeeWei
+	}
+	if req.Symbol == "BTCB" {
+		resp["feeSats"] = BTCBCCTNetworkFeeSats
 	}
 	json.NewEncoder(w).Encode(resp)
 }

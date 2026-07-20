@@ -31,6 +31,9 @@ func resetApplyTestState() {
 	recoveryStore = core.NewRecoveryStore()
 	bridgedEthStore = core.NewTokenStore()
 	ethCustodialStore = core.NewEthCustodialStore()
+	bridgedBtcStore = core.NewTokenStore()
+	btcAddressStore = core.NewBtcAddressStore()
+	validatorApplicationStore = core.NewValidatorApplicationStore()
 	// selfSignedEnvelope/reporterAddress (used by node-authored
 	// transactions like TxBridgeDeposit) sign against the package-level
 	// nodeIdentity - zero-value by default in tests, which produces an
@@ -44,6 +47,8 @@ func resetApplyTestState() {
 	slashDedup.mu.Lock()
 	slashDedup.seen = make(map[string]bool)
 	slashDedup.mu.Unlock()
+	resetMissedBlockReportersForTest()
+	resetReputationMiningSweepForTest()
 	bridgeWithdrawReserved.mu.Lock()
 	bridgeWithdrawReserved.wei = make(map[string]uint64)
 	bridgeWithdrawReserved.mu.Unlock()

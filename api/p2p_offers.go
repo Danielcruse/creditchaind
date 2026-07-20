@@ -29,6 +29,10 @@ func resolveTokenStore(symbol string) (*core.TokenStore, error) {
 		// at a synthetic swap-pool rate. Still fully usable for
 		// ordinary transfers/P2P offers via this path.
 		return bridgedEthStore, nil
+	case "BTCB":
+		// Same reasoning as ETHB - real bridged testnet BTC 1:1, never
+		// floated against CCT via an AMM pool.
+		return bridgedBtcStore, nil
 	}
 	store, _, err := lookupCustomToken(symbol)
 	return store, err

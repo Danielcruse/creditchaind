@@ -39,6 +39,10 @@ const (
 	TxBridgeDeposit  TransactionType = "BRIDGE_DEPOSIT"
 	TxBridgeWithdraw TransactionType = "BRIDGE_WITHDRAW"
 
+	// TxBridgeBtcDeposit is BTCB's deposit-report counterpart to
+	// TxBridgeDeposit - see api/btc_bridge.go's pollAndReportBtcDeposit.
+	TxBridgeBtcDeposit TransactionType = "BRIDGE_BTC_DEPOSIT"
+
 	TxTokenRegister       TransactionType = "TOKEN_REGISTER"
 	TxPoolAddLiquidity    TransactionType = "POOL_ADD_LIQUIDITY"
 	TxPoolRemoveLiquidity TransactionType = "POOL_REMOVE_LIQUIDITY"
@@ -230,6 +234,34 @@ const (
 	TxTreasurySetPaused    TransactionType = "TREASURY_SET_PAUSED"
 	TxTreasurySetAddress   TransactionType = "TREASURY_SET_ADDRESS"
 
+	// TxAnnouncementCreate is an admin-only site-wide announcement post
+	// - same node-authored, self-signed trust model as
+	// TxTreasurySetSalePrice (ADMIN_TOKEN already checked at the HTTP
+	// layer - see api/announcements.go).
+	TxAnnouncementCreate TransactionType = "ANNOUNCEMENT_CREATE"
+
+	// TxRatingSubmit is a normal wallet-signed site rating (see
+	// api/rating.go) - ordinary auth (tx.AuthAddress == tx.From), not
+	// node-authored, since this is a real user opinion, not a system
+	// fact.
+	TxRatingSubmit TransactionType = "RATING_SUBMIT"
+
+	// TxHubAutomationSubscribe/TxHubWorkerSetAutomation are the scoped
+	// hub-automation feature (see api/hub_automation.go's doc comment)
+	// - both hub-only, ordinary wallet-signed auth just like
+	// TxHubWorkerAdd/TxHubRulesSet.
+	TxHubAutomationSubscribe TransactionType = "HUB_AUTOMATION_SUBSCRIBE"
+	TxHubWorkerSetAutomation TransactionType = "HUB_WORKER_SET_AUTOMATION"
+
+	// TxValidatorApplicationCreate/Support/Confirm are the staged
+	// validator-onboarding pipeline (see
+	// api/validator_application.go's doc comment) - all ordinary
+	// wallet-signed transactions like every other user-originated
+	// action, so every node converges on identical application state.
+	TxValidatorApplicationCreate  TransactionType = "VALIDATOR_APPLICATION_CREATE"
+	TxValidatorApplicationSupport TransactionType = "VALIDATOR_APPLICATION_SUPPORT"
+	TxValidatorApplicationConfirm TransactionType = "VALIDATOR_APPLICATION_CONFIRM"
+
 	// TxGenesisPoolAllocation is PoSR's one-time admin-triggered mint
 	// into the 5 named genesis pools (Foundation Treasury, Validator
 	// Reward Pool, Ecosystem Development, Governance Treasury,
@@ -240,6 +272,18 @@ const (
 	// fire once, since this chain has been running for a long time
 	// already and has no true "genesis" moment to hook into.
 	TxGenesisPoolAllocation TransactionType = "GENESIS_POOL_ALLOCATION"
+
+	// TxGenesisPoolWithdraw moves funds out of one of the 4 genesis
+	// pools that have no controlling keypair of their own (Validator
+	// Reward, Ecosystem Development, Governance Treasury, Community
+	// Incentives - NOT Foundation Treasury, which already has its own
+	// real address and its own admin controls) - see
+	// api/genesis_pool_withdraw.go. Admin-key-gated for now (verified
+	// via verifyAdminTxAuth, same as every other admin-only
+	// transaction type in api/apply.go); a real governance-vote-gated
+	// disbursement mechanism for these pools is disclosed future work
+	// in audit/KNOWN_GAPS.md, not attempted here.
+	TxGenesisPoolWithdraw TransactionType = "GENESIS_POOL_WITHDRAW"
 
 	// TxKYCSubmit is a self-attested KYC submission gating access to
 	// the peer-lending marketplace (Lend/Marketplace/Your Negotiations)

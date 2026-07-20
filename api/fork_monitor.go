@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -31,6 +32,45 @@ func setForkStatus(healthy bool, details string) {
 	forkStatus.healthy = healthy
 	forkStatus.lastChecked = time.Now()
 	forkStatus.details = details
+}
+
+// recordForkEvent is the single chokepoint for "this node just found a
+// real fork" - whether noticed by the periodic monitor above or by
+// syncChainFromPeer refusing a diverging chain in the moment (see
+// api/peer.go). Both call sites used to just fmt.Println and, in
+// syncChainFromPeer's case, not even update forkStatus - meaning a
+// fork discovered mid-sync stayed invisible on /health/sync until the
+// monitor's own next 60s tick happened to also notice it. This
+// closes that gap (immediate, not eventually-consistent) and adds a
+// durable audit trail + optional email alert - deliberately NOT an
+// attempt at automated recovery (see core/replace_chain.go's own
+// disclosed reasoning for why this codebase refuses to guess at that)
+// - this is purely "make sure a human finds out fast," the same
+// stopgap role /health/sync already plays, just wired to fire the
+// instant a fork is found rather than only on the next poll.
+func recordForkEvent(details string) {
+	setForkStatus(false, details)
+	fmt.Println("⚠", details)
+
+	line := fmt.Sprintf("%s\t%s\n", time.Now().UTC().Format(time.RFC3339), details)
+	f, err := os.OpenFile(dataPath("fork_events.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println("fork event: could not open fork_events.log:", err)
+	} else {
+		if _, err := f.WriteString(line); err != nil {
+			fmt.Println("fork event: could not write fork_events.log:", err)
+		}
+		f.Close()
+	}
+
+	to := os.Getenv("FORK_ALERT_EMAIL")
+	if to != "" && smtpConfigured() {
+		go func() {
+			if err := sendEmail(to, "CreditChain: fork detected", details+"\n\nThis will not self-resolve; needs manual intervention (see ops/NODE_OPERATOR.md and audit/HARDENING_HISTORY.md for the resolution process used for prior forks)."); err != nil {
+				fmt.Println("fork event: failed to send alert email:", err)
+			}
+		}()
+	}
 }
 
 // startForkMonitor periodically compares this node's chain against
@@ -94,8 +134,7 @@ func checkForFork() {
 					"This will not self-resolve; needs manual intervention.",
 				p.ID, p.Address, prefix, localBlocks[prefix].Hash, peerBlocks[prefix].Hash,
 			)
-			fmt.Println("⚠", details)
-			setForkStatus(false, details)
+			recordForkEvent(details)
 			return
 		}
 	}

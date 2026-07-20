@@ -23,6 +23,7 @@ func TestApplyValidatorRegister_RequiresCCTStakeNotETHTEST(t *testing.T) {
 	const addr = "posr-test-ethtest-only"
 	w := walletStore.Get(addr)
 	w.Reputation = 50
+	validatorApplicationStore.Apps[addr] = &core.ValidatorApplication{Address: addr, Status: core.ValidatorApplicationApproved}
 	stakingStore.Stakes[addr] = map[string]uint64{"ETHTEST": 5000}
 	tokenStore.Mint(addr, ValidatorRegisterFeeCCT)
 
@@ -41,6 +42,7 @@ func TestApplyValidatorRegister_RequiresCCTStakeNotETHTEST(t *testing.T) {
 	const addr2 = "posr-test-cct-staked"
 	w2 := walletStore.Get(addr2)
 	w2.Reputation = 50
+	validatorApplicationStore.Apps[addr2] = &core.ValidatorApplication{Address: addr2, Status: core.ValidatorApplicationApproved}
 	stakingStore.Stakes[addr2] = map[string]uint64{"CCT": core.MinValidatorStake}
 	tokenStore.Mint(addr2, ValidatorRegisterFeeCCT)
 

@@ -61,6 +61,12 @@ const ENDPOINT_GROUPS = [
             ["POST /pool/swap", "(signed) Swap through the CCT-hub AMM"],
             ["POST /pool/add-liquidity", "(signed) Add liquidity to a pool"],
             ["POST /pool/remove-liquidity", "(signed) Remove liquidity"],
+            ["/orders?symbol=", "Open bid/ask order book depth for one token"],
+            ["/orders/mine?address=", "One wallet's open + historical orders"],
+            ["/trades?symbol=", "Recent completed trades for one token"],
+            ["POST /orders/place", "(signed) Place a limit order (BUY or SELL)"],
+            ["POST /orders/cancel", "(signed) Cancel an open order"],
+            ["/price/external", "Cached external ETH/BTC/USDC spot prices (informational only)"],
         ],
     },
     {

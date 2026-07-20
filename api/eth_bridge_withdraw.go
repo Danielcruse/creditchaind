@@ -12,25 +12,54 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-// ETHBridgeFeeWei is the flat wei fee charged on an "ERC network" ETHB
-// withdrawal, on top of the amount actually sent - testnet/illustrative
-// value, not derived from anything. Deliberately sized (as a business/
-// pricing decision, not a technical one) to cover CreditChain's
-// expected real Sepolia gas cost plus margin: the user is quoted
-// "amount you send" and "bridge fee," full stop - gas-price variance
-// is CreditChain's own operating cost, never silently deducted from
-// the user's payout (see applyBridgeWithdraw's doc comment for the
-// full reasoning).
-const ETHBridgeFeeWei = 21_000_000_000_000 // 0.000021 ETH-equivalent, illustrative
+// ethbWithdrawGasLimitEstimate is the plain-transfer gas limit used to
+// turn a live-tracked wei-per-gas price into a wei fee estimate - same
+// value buildAndBroadcastWithdrawal itself uses for the real broadcast
+// (a plain ETH transfer, no contract call), so the fee quoted here
+// matches what CreditChain actually expects to pay.
+const ethbWithdrawGasLimitEstimate = 21_000
+
+// ethbWithdrawBridgeFeeBps is the bridge's own cut on top of the live
+// gas cost - 0.05% (5 basis points) of the amount being withdrawn,
+// charged only on the "leaving Outernet entirely" ERC-network path (a
+// CCT-network move never leaves CreditChain at all, so it has no
+// bridge-fee component - see ETHBCCTNetworkFeeWei).
+const ethbWithdrawBridgeFeeBps = 5
+
+// ethbWithdrawFeeWei computes the total ERC-network withdrawal fee -
+// live gas price (from ethNonceAndGasPrice, the same RPC call this
+// handler already needs for the real broadcast) times a fixed gas-
+// limit estimate, plus 0.05% of the amount - both components in wei.
+// Computed once, at request time, by the trusted Go server (never
+// client-supplied) and then snapshotted into the transaction's Data so
+// every node that later applies the confirmed block debits the
+// identical amount regardless of what live gas price looks like by
+// then - same "server computes it once, apply-time trusts the
+// snapshot" trust boundary the old compile-time ETHBridgeFeeWei
+// constant already had, just no longer a compile-time constant.
+func ethbWithdrawFeeWei(fromAddr string, amountWei uint64) (uint64, error) {
+	_, gasPrice, err := ethNonceAndGasPrice(fromAddr)
+	if err != nil {
+		return 0, err
+	}
+	liveGasFeeWei := gasPrice.Uint64() * ethbWithdrawGasLimitEstimate
+	bridgeFeeWei := amountWei * ethbWithdrawBridgeFeeBps / 10000
+	return liveGasFeeWei + bridgeFeeWei, nil
+}
 
 // bridgeWithdrawData is both the signed request body and the
 // transaction Data for a TxBridgeWithdraw - the recipient's real
-// Sepolia address and the amount (excluding the bridge fee) to send
-// them, in wei as a decimal string (same convention as
-// ethCustodialWithdrawData.AmountWei).
+// Sepolia address and the amount (excluding the fee) to send them, in
+// wei as a decimal string (same convention as
+// ethCustodialWithdrawData.AmountWei). FeeWei is never sent by the
+// client (their signed envelope only ever carries To/AmountWei) - the
+// handler computes it live via ethbWithdrawFeeWei and sets it on this
+// same struct before re-marshaling for tx.Data, so apply-time reads a
+// trustworthy, already-decided number.
 type bridgeWithdrawData struct {
 	To        string `json:"to"`
 	AmountWei string `json:"amountWei"`
+	FeeWei    uint64 `json:"feeWei,omitempty"`
 }
 
 // bridgeWithdrawReserved tracks ETHB wei this node has already
@@ -134,7 +163,12 @@ func HandleBridgedEthWithdraw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	total := amountWei.Uint64() + ETHBridgeFeeWei // both operands already bounded above tokenStore's uint64 cap
+	feeWei, err := ethbWithdrawFeeWei(account.EthAddress, amountWei.Uint64())
+	if err != nil {
+		http.Error(w, "could not fetch live gas price to compute the withdrawal fee: "+err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	total := amountWei.Uint64() + feeWei // both operands already bounded above tokenStore's uint64 cap
 
 	ethbSide := resolveBalanceAddress(from, auth.PublicKey, "ETHB")
 
@@ -146,10 +180,16 @@ func HandleBridgedEthWithdraw(w http.ResponseWriter, r *http.Request) {
 		// this same address) - release what this request just reserved
 		// and fail before doing anything irreversible.
 		releaseBridgeWithdrawal(ethbSide, total)
-		http.Error(w, "insufficient ETHB balance for amount + bridge fee", http.StatusBadRequest)
+		http.Error(w, "insufficient ETHB balance for amount + live gas fee + bridge fee", http.StatusBadRequest)
 		return
 	}
 
+	// Snapshot the live-computed fee onto the SAME struct the client
+	// signed (req) before re-marshaling - the signature only ever
+	// covered To/AmountWei, so adding a server-computed field here
+	// doesn't invalidate anything already verified; see FeeWei's doc
+	// comment.
+	req.FeeWei = feeWei
 	data, _ := json.Marshal(req)
 	tx := recordTx(auth, from, req.To, amountWei.Uint64(), core.TxBridgeWithdraw, string(data))
 
@@ -175,6 +215,45 @@ func HandleBridgedEthWithdraw(w http.ResponseWriter, r *http.Request) {
 		"status":    "broadcast",
 		"txId":      tx.ID,
 		"ethTxHash": txHash,
-		"feeWei":    ETHBridgeFeeWei,
+		"feeWei":    feeWei,
 	})
+}
+
+// HandleBridgedEthWithdrawQuote is a read-only preview of A.3's live
+// ERC-network withdrawal fee - lets the frontend show a real,
+// currently-accurate fee estimate on the review screen before the user
+// commits, without spending a reservation slot or moving anything.
+// Re-derives the exact same number HandleBridgedEthWithdraw itself
+// would compute a moment later (small unavoidable staleness window,
+// same as any live-price quote).
+func HandleBridgedEthWithdrawQuote(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	if ethRPCClient == nil {
+		http.Error(w, "ETH bridge not enabled (no Sepolia RPC configured)", http.StatusServiceUnavailable)
+		return
+	}
+
+	address := r.URL.Query().Get("address")
+	amountWeiStr := r.URL.Query().Get("amountWei")
+
+	account, ok := ethCustodialStore.Get(address)
+	if !ok {
+		http.Error(w, "no custodial ETH account for this wallet", http.StatusBadRequest)
+		return
+	}
+
+	amountWei, ok := new(big.Int).SetString(amountWeiStr, 10)
+	if !ok || amountWei.Sign() < 0 || !amountWei.IsUint64() {
+		http.Error(w, "amountWei must be a non-negative decimal integer string", http.StatusBadRequest)
+		return
+	}
+
+	feeWei, err := ethbWithdrawFeeWei(account.EthAddress, amountWei.Uint64())
+	if err != nil {
+		http.Error(w, "could not fetch live gas price: "+err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]any{"feeWei": feeWei})
 }

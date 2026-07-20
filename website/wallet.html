@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Wallet - OUTERNET</title>
+<link rel="stylesheet" href="css/theme.css">
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="css/outernet.css">
 </head>
@@ -11,7 +12,7 @@
 
 <div class="main" style="max-width:640px;margin:0 auto;padding:24px 16px;">
 
-    <p><a href="outernet.html" style="color:#8ef;">&larr; OUTERNET</a></p>
+    <p><a href="outernet.html" style="color:var(--cc-accent-gold, #c9a227);">&larr; OUTERNET</a></p>
 
     <section class="wallet-hero dash-panel">
 
@@ -70,11 +71,23 @@
     <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;">
             <h2 style="margin:0;">Assets</h2>
-            <a href="assets.html" style="color:#8ef;font-size:12px;">View All &rarr;</a>
+            <a href="assets.html" style="color:var(--cc-accent-gold, #c9a227);font-size:12px;">View All &rarr;</a>
         </div>
         <div id="assetsList">
             <p class="explorer-empty" style="opacity:0.6;">Loading...</p>
         </div>
+    </div>
+
+    <div class="card">
+        <h2 style="margin:0 0 8px;">Your Referral Link</h2>
+        <p style="opacity:0.75;font-size:12px;margin:0 0 10px;">
+            Share this link - people who register through it count toward your referral total,
+            which boosts your <a href="governance.html" style="color:var(--cc-accent-gold, #c9a227);">governance voting weight</a>
+            and <a href="borrow.html" style="color:var(--cc-accent-gold, #c9a227);">borrowing power</a>.
+        </p>
+        <p style="word-break:break-all;font-family:monospace;font-size:12px;background:rgba(15,157,88,0.08);border-radius:8px;padding:10px;" id="referralLink">-</p>
+        <button type="button" class="copy-icon" id="referralCopyIcon" title="Copy link" onclick="copyReferralLink()">&#128203; Copy</button>
+        <p style="margin-top:10px;font-size:13px;">Referred so far: <strong id="referralCount">-</strong></p>
     </div>
 
     <p style="margin-top:20px;">
@@ -89,7 +102,7 @@
 <div
 id="qrModalOverlay"
 style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;z-index:10000;">
-    <div style="background:#0b1026;border-radius:16px;padding:25px;max-width:90vw;text-align:center;">
+    <div style="background:var(--cc-bg-2, #082616);border-radius:16px;padding:25px;max-width:90vw;text-align:center;">
         <h3 style="margin-top:0;">Your Receive Address</h3>
         <canvas id="qrCanvas" style="max-width:80vw;height:auto;border-radius:8px;"></canvas>
         <p id="qrAddressText" style="word-break:break-all;font-family:monospace;font-size:13px;margin:15px 0;"></p>

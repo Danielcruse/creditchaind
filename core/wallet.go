@@ -61,6 +61,15 @@ type Wallet struct {
 	// swept as dormant - a wallet that's already been reclaimed never
 	// becomes dormant again (there's nothing left to reclaim).
 	ReclaimedAt int64
+
+	// ReferredBy is the address that referred this wallet at
+	// registration time (see api/wallet_create.go) - empty if none.
+	// Set once, never changed afterward. Referral "codes" are just the
+	// referrer's own CreditChain address (shared as a link,
+	// register.html?ref=<address>) - no separate code-issuing system,
+	// matching this project's precedent of reusing an existing
+	// identifier rather than minting a new one where possible.
+	ReferredBy string
 }
 
 func NewWallet() Wallet {

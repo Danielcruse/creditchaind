@@ -3,6 +3,7 @@
 <head>
     <title>Admin - Treasury</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
     <link rel="stylesheet" href="css/style.css">
     <style>
         .explorer-search{
@@ -46,13 +47,29 @@
 <h1>Admin - Treasury</h1>
 
 <p style="opacity:0.75;font-size:13px;">
-    Every action here still requires the admin token on every request (checked server-side) - this page carries
-    no authority of its own, it's purely an operator convenience. The token is kept in memory only for this tab
-    (never localStorage/sessionStorage/cookies) and is lost on reload.
+    Admin actions are authorized by a real signature from the network's configured admin wallet - the same
+    Ed25519 signing every ordinary wallet action already uses, not a shared secret. Log in with the CreditChain
+    wallet that's been configured as the admin wallet (via <code>ADMIN_WALLET_ADDRESS</code>) and every action
+    below signs with that wallet's own key. This page carries no authority of its own - every check happens
+    server-side, independently, on every node.
 </p>
 
+<div class="card" id="walletCard">
+    <h2>Admin Wallet</h2>
+    <p>Logged in as: <span id="myWalletAddressDisplay" style="font-family:monospace;">-</span></p>
+    <p>Configured admin wallet: <span id="configuredAdminAddressDisplay" style="font-family:monospace;">-</span></p>
+    <p id="adminWalletMatchStatus"></p>
+</div>
+
+<br>
+
 <div class="card" id="tokenCard">
-    <h2>Admin Token</h2>
+    <h2>Admin Token (legacy)</h2>
+    <p style="opacity:0.7;font-size:12px;">
+        Only used on networks where no admin wallet has been configured yet - has no effect once
+        <code>ADMIN_WALLET_ADDRESS</code> is set (see the Admin Wallet card above). Kept in memory only for this
+        tab, never localStorage/sessionStorage/cookies, lost on reload.
+    </p>
     <div class="explorer-search">
         <input type="password" id="adminTokenInput" placeholder="ADMIN_TOKEN">
         <button onclick="setAdminToken()">Unlock</button>
@@ -109,9 +126,48 @@
 
 <br>
 
+<div class="card">
+    <h2>Announcements</h2>
+    <p style="opacity:0.75;font-size:13px;">
+        Posted announcements appear on the Governance page for every user.
+    </p>
+    <input type="text" id="announcementTitleInput" placeholder="Title" style="width:100%;box-sizing:border-box;margin-bottom:8px;">
+    <textarea id="announcementTextInput" placeholder="Announcement text" rows="3" style="width:100%;box-sizing:border-box;"></textarea>
+    <br><br>
+    <button onclick="postAnnouncement()">Post Announcement</button>
+    <p id="announcementPostStatus"></p>
+    <div id="announcementList" class="explorer-empty">Loading...</div>
+</div>
+
+<br>
+
+<div class="card" id="genesisPoolsCard">
+    <h2>Genesis Pools</h2>
+    <p style="opacity:0.75;font-size:13px;">
+        Withdraw from one of the 4 genesis pools with no controlling keypair of their own (Validator Reward,
+        Ecosystem Development, Governance Treasury, Community Incentives) - gated by the admin wallet's
+        signature, same as everything else on this page. Foundation Treasury is not one of these - it's managed
+        above, via its own real address.
+    </p>
+    <div class="explorer-search">
+        <select id="genesisPoolSelect">
+            <option value="VALIDATOR_REWARD">Validator Reward</option>
+            <option value="ECOSYSTEM_DEV">Ecosystem Development</option>
+            <option value="GOVERNANCE_TREASURY">Governance Treasury</option>
+            <option value="COMMUNITY_INCENTIVES">Community Incentives</option>
+        </select>
+        <input type="text" id="genesisPoolToInput" placeholder="Destination address">
+        <input type="number" id="genesisPoolAmountInput" placeholder="Amount (CCT)" min="1">
+        <button onclick="withdrawGenesisPool()">Withdraw</button>
+    </div>
+    <p id="genesisPoolWithdrawStatus"></p>
+</div>
+
+<br>
+
 <p style="opacity:0.6;font-size:12px;">
     More admin sections (validators, governance, website, system) are coming in a later phase - this page is
-    intentionally scoped to Treasury/Sale controls only for now.
+    intentionally scoped to Treasury/Sale/Genesis-Pool controls only for now.
 </p>
 
 <p style="margin-top:20px;">

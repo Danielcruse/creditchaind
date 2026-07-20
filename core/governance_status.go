@@ -46,6 +46,25 @@ func (s *GovernanceStatusStore) Recent(n int) []*GovernanceStatus {
 	return out
 }
 
+// ForAddress returns every status ever posted by one address, oldest
+// first - the "social media manner" per-user log (see
+// api/governance_social.go's HandleGovernanceStatusForUser). Unlike
+// Recent, this is unbounded by design - it's a specific user's full
+// history, not a live feed that needs capping.
+func (s *GovernanceStatusStore) ForAddress(address string) []*GovernanceStatus {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var out []*GovernanceStatus
+	for _, id := range s.order {
+		gs := s.byID[id]
+		if gs.Address == address {
+			out = append(out, gs)
+		}
+	}
+	return out
+}
+
 // Snapshot/Restore support persistence.go saving/loading every status
 // across a restart, in original post order.
 func (s *GovernanceStatusStore) Snapshot() []*GovernanceStatus {

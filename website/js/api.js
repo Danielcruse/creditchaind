@@ -12,9 +12,21 @@ const API_BASE = `${window.location.protocol}//${window.location.hostname}:8080`
 // audit.
 (function showDemoBanner() {
     const banner = document.createElement("div");
-    banner.innerText = "⚠ Testnet demo, not audited — tokens have no real value.";
+    banner.appendChild(document.createTextNode("⚠ Testnet demo, not audited — tokens have no real value. "));
     banner.title =
         "\"ETHTEST\", \"CCT\" and \"USDCTEST\" are test/participation tokens only, with no real monetary value.";
+
+    // Original CreditChain whitepaper - linked from the banner so it's
+    // reachable from every page, not just one. Opens the Office web
+    // viewer against the raw .docx on GitHub (no local copy hosted).
+    const whitepaperLink = document.createElement("a");
+    whitepaperLink.href =
+        "https://view.officeapps.live.com/op/view.aspx?src=https%3A%2F%2Fraw.githubusercontent.com%2FDanielcruse%2Fcreditchaind%2Frefs%2Fheads%2Fmain%2Fdocs%2FCreditChain_Whitepaper_v0.9.docx&wdOrigin=BROWSELINK";
+    whitepaperLink.target = "_blank";
+    whitepaperLink.rel = "noopener";
+    whitepaperLink.innerText = "Read the original whitepaper";
+    whitepaperLink.style.cssText = "color:#ffd166;text-decoration:underline;font-weight:bold;";
+    banner.appendChild(whitepaperLink);
     // position:fixed (not sticky) is deliberate - some pages (e.g.
     // outernet.html) set body{display:flex} for their own sidebar/main
     // layout. A sticky (or any in-flow) banner inserted as body's
@@ -203,6 +215,7 @@ const ETHTEST_ADDRESS_TAG = "ETHTEST-SUBADDRESS";
 const USDCTEST_ADDRESS_TAG = "USDCTEST-SUBADDRESS";
 const YENE_ADDRESS_TAG = "YENE-SUBADDRESS";
 const ETHB_ADDRESS_TAG = "ETHB-SUBADDRESS";
+const BTCB_ADDRESS_TAG = "BTCB-SUBADDRESS";
 
 const subAddressCache = new Map();
 
@@ -237,8 +250,33 @@ function getYenAddress(wallet) {
     return deriveTokenAddress(wallet.publicKey, YENE_ADDRESS_TAG);
 }
 
-function getEthbAddress(wallet) {
-    return deriveTokenAddress(wallet.publicKey, ETHB_ADDRESS_TAG);
+// getEthbAddress resolves the SAME address api/subaddress.go's
+// resolveBalanceAddress does server-side: the real custodial Sepolia
+// address once one exists (fetched via the RPC-free
+// /eth-custodial/address lookup), falling back to the old derived-hash
+// sub-address only if it doesn't (can't happen for a wallet that
+// already holds ETHB - a custodial account is a deposit prerequisite -
+// kept purely so a brand-new wallet with no custodial account yet
+// still gets a stable, correct-shaped placeholder address). Cached per
+// wallet address for the lifetime of the page, same spirit as
+// deriveTokenAddress's own cache.
+const ethbAddressCache = new Map();
+
+async function getEthbAddress(wallet) {
+    if (ethbAddressCache.has(wallet.address)) {
+        return ethbAddressCache.get(wallet.address);
+    }
+
+    let resolved;
+    try {
+        const info = await apiGet(`/eth-custodial/address?address=${wallet.address}`);
+        resolved = info.ethAddress;
+    } catch (e) {
+        resolved = await deriveTokenAddress(wallet.publicKey, ETHB_ADDRESS_TAG);
+    }
+
+    ethbAddressCache.set(wallet.address, resolved);
+    return resolved;
 }
 
 // balanceAddressForSymbol mirrors api/subaddress.go's
@@ -250,6 +288,7 @@ async function balanceAddressForSymbol(wallet, symbol) {
     if (symbol === "USDCTEST") return getUsdcTestAddress(wallet);
     if (symbol === "YENE") return getYenAddress(wallet);
     if (symbol === "ETHB") return getEthbAddress(wallet);
+    if (symbol === "BTCB") return deriveTokenAddress(wallet.publicKey, BTCB_ADDRESS_TAG);
     return wallet.address;
 }
 
@@ -267,6 +306,7 @@ async function fetchTokenBalance(wallet, symbol) {
     if (symbol === "USDCTEST") return apiGet(`/usdctest/balance?address=${address}`);
     if (symbol === "YENE") return apiGet(`/yene/balance?address=${address}`);
     if (symbol === "ETHB") return apiGet(`/ethb/balance?address=${address}`);
+    if (symbol === "BTCB") return apiGet(`/btcb/balance?address=${address}`);
     return apiGet(`/tokens/balance?symbol=${encodeURIComponent(symbol)}&address=${address}`);
 }
 

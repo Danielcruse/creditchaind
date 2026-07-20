@@ -10,6 +10,7 @@ content="width=device-width, initial-scale=1">
 
 <link
 rel="stylesheet"
+<link rel="stylesheet" href="css/theme.css">
 href="css/style.css">
 
 <link
@@ -483,7 +484,7 @@ Loading...
 
         <p style="opacity:0.75;font-size:13px;">
             Testnet placeholder - links a verified email to this wallet so it can later be migrated
-            (see <a href="login.html" style="color:#8ef;">Login</a>) if you lose this browser.
+            (see <a href="login.html" style="color:var(--cc-accent-gold, #c9a227);">Login</a>) if you lose this browser.
         </p>
 
         <p id="recoveryEmailStatus"></p>
@@ -513,7 +514,7 @@ Loading...
         <div id="tokensNotStaked" style="display:none;">
             <p class="explorer-empty">
                 You need some test ETH staked before you can register a token -
-                <a href="staking.html" style="color:#8ef;">stake some here</a> first.
+                <a href="staking.html" style="color:var(--cc-accent-gold, #c9a227);">stake some here</a> first.
             </p>
         </div>
 
@@ -603,7 +604,7 @@ style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);align-item
 <div
 id="hdMigrateOverlay"
 style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);align-items:center;justify-content:center;z-index:10001;">
-    <div style="background:#0b1026;color:#fff;border-radius:16px;padding:25px;max-width:600px;width:92vw;max-height:85vh;overflow-y:auto;">
+    <div style="background:var(--cc-bg-2, #082616);color:#fff;border-radius:16px;padding:25px;max-width:600px;width:92vw;max-height:85vh;overflow-y:auto;">
         <div id="hdMigrateIntro">
             <h2 style="margin-top:0;color:#ffd166;">Wallet Upgrade Available</h2>
             <p>

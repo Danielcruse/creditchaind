@@ -91,6 +91,32 @@ func slashAlreadyApplied(key string) bool {
 	return false
 }
 
+// slashApplied/markSlashApplied split slashAlreadyApplied's combined
+// test-and-set into separate peek and set steps - needed by the
+// missed-block M-of-N corroboration path (missed_block_confirmation.go),
+// which must check "already fully applied" repeatedly while
+// accumulating reporters WITHOUT marking it applied until the real
+// threshold is actually crossed. double_sign keeps using
+// slashAlreadyApplied unchanged, since it applies on the first
+// (independently cryptographically verified) report and never needs
+// this two-step split.
+func slashApplied(key string) bool {
+	slashDedup.mu.Lock()
+	defer slashDedup.mu.Unlock()
+	return slashDedup.seen[key]
+}
+
+func markSlashApplied(key string) bool {
+	slashDedup.mu.Lock()
+	defer slashDedup.mu.Unlock()
+
+	if slashDedup.seen[key] {
+		return false
+	}
+	slashDedup.seen[key] = true
+	return true
+}
+
 // snapshotAppliedTxIDs/restoreAppliedTxIDs (and the Block/Slash
 // equivalents below) persist the dedup guards above across restarts.
 // See persistence.go's persistedState doc comment for why this
@@ -239,6 +265,17 @@ func ApplyBlock(block core.Block) {
 	// Continuous Reputation Credit mining - see its own doc comment
 	// (api/reputation_mining.go) for the epoch-gating rationale.
 	processReputationMining(block)
+
+	// Same block-timestamp-driven determinism as every sweep above -
+	// proposals whose 7-day voting window has passed close identically
+	// on every node, with identical PASSED/FAILED outcomes and (on
+	// PASSED) identical REPT payouts/protocol-parameter effects.
+	processProposalFinalization(block.Timestamp)
+
+	// Keeps the governance feed "constantly active" even when no real
+	// user has proposed anything lately - see processAutoProposal's
+	// own doc comment.
+	processAutoProposal(block)
 }
 
 // processDormantWallets sweeps every wallet that's gone dormant (see
@@ -697,14 +734,16 @@ func verifyTxAuth(tx core.Transaction) bool {
 		}
 		return payload.Amount == tx.Amount
 
-	case core.TxLend, core.TxRepay, core.TxGovernance, core.TxFaucetClaim:
+	case core.TxLend, core.TxRepay, core.TxGovernance, core.TxFaucetClaim, core.TxRatingSubmit,
+		core.TxValidatorApplicationCreate, core.TxValidatorApplicationConfirm:
 		// No Amount is trusted directly from these transactions - the
 		// apply* functions for these either re-derive the amount from
 		// existing trusted state (the loan record itself for
-		// Lend/Repay), carry none at all (Governance), or mint a fixed
+		// Lend/Repay), carry none at all (Governance), mint a fixed
 		// server-side constant regardless of anything the client sent
-		// (FaucetClaim) - so only the actor's identity needs binding
-		// here.
+		// (FaucetClaim), or mint a fixed 1 CCT gated on a first-ever
+		// good rating (RatingSubmit) - so only the actor's identity
+		// needs binding here.
 		return tx.AuthAddress == tx.From
 
 	case core.TxValidatorRegister:
@@ -1251,6 +1290,40 @@ func verifyTxAuth(tx core.Transaction) bool {
 		}
 		return signed == claimed
 
+	case core.TxHubAutomationSubscribe:
+		return tx.AuthAddress == tx.From
+
+	case core.TxHubWorkerSetAutomation:
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed, claimed hubWorkerSetAutomationData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed
+
+	case core.TxValidatorApplicationSupport:
+		// Unlike Create/Confirm above, this payload's Address field
+		// picks WHICH application receives the supporter's real
+		// governance weight - worth binding so a tampering relay
+		// can't redirect a legitimate supporter's weight to a
+		// different application than they actually signed for.
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed, claimed validatorApplicationSupportData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed
+
 	case core.TxHubStorefrontSet:
 		if tx.AuthAddress != tx.From {
 			return false
@@ -1302,15 +1375,11 @@ func verifyTxAuth(tx core.Transaction) bool {
 		return tx.Data == string(tx.AuthPayload)
 
 	case core.TxTokenMint:
-		// Node-authored, not wallet-authored - same reasoning as
-		// TxSlashReport above. The actual authorization (ADMIN_TOKEN
-		// check) already happened at the HTTP layer before this was
-		// ever recorded (see HandleTokenMint) - other nodes applying
-		// this transaction trust that the submitting node did that
-		// check correctly, the same disclosed trust model already used
-		// for slash reports (one node's attestation, not a separate
-		// consensus threshold).
-		return tx.Data == string(tx.AuthPayload)
+		// See verifyAdminTxAuth's doc comment: accepts either a real
+		// signature from the configured admin wallet (independently
+		// reverifiable by every node) or the legacy node-authored
+		// shape kept only for the migration window.
+		return verifyAdminTxAuth(tx)
 
 	case core.TxBridgeDeposit:
 		// Node-authored, not wallet-authored - same reasoning as
@@ -1318,25 +1387,26 @@ func verifyTxAuth(tx core.Transaction) bool {
 		// pollAndReportBridgeDeposit is this report's only submitter).
 		return tx.Data == string(tx.AuthPayload)
 
-	case core.TxTreasuryPurchaseConfirm, core.TxTreasurySetSalePrice, core.TxTreasurySetPaused, core.TxTreasurySetAddress:
-		// Node-authored, admin-only - same trust model as TxTokenMint:
-		// ADMIN_TOKEN was already checked at the HTTP layer (see
-		// api/treasury.go) before this was ever recorded.
+	case core.TxBridgeBtcDeposit:
+		// Node-authored, not wallet-authored - same reasoning as
+		// TxBridgeDeposit above (api/btc_bridge.go's
+		// pollAndReportBtcDeposit is this report's only submitter).
 		return tx.Data == string(tx.AuthPayload)
 
-	case core.TxGenesisPoolAllocation:
-		// Node-authored, admin-only - same trust model as TxTokenMint/
-		// TxTreasuryPurchaseConfirm above (ADMIN_TOKEN already checked
-		// at the HTTP layer - see api/genesis_pools.go).
-		return tx.Data == string(tx.AuthPayload)
+	case core.TxTreasuryPurchaseConfirm, core.TxTreasurySetSalePrice, core.TxTreasurySetPaused, core.TxTreasurySetAddress, core.TxAnnouncementCreate:
+		// Admin-only - see verifyAdminTxAuth.
+		return verifyAdminTxAuth(tx)
+
+	case core.TxGenesisPoolAllocation, core.TxGenesisPoolWithdraw:
+		// Admin-only - see verifyAdminTxAuth.
+		return verifyAdminTxAuth(tx)
 
 	case core.TxAdminTransfer:
-		// Node-authored, admin-only - same trust model as TxTokenMint
-		// above (ADMIN_TOKEN already checked at the HTTP layer - see
-		// api/admin_transfer.go). Deliberately does NOT check tx.From
-		// against any signature, since the entire point is moving
-		// value out of an address whose own key is unreachable.
-		return tx.Data == string(tx.AuthPayload)
+		// Admin-only - see verifyAdminTxAuth. Deliberately does NOT
+		// additionally check tx.From against any signature, since the
+		// entire point of this transaction type is moving value out of
+		// an address whose own key is unreachable.
+		return verifyAdminTxAuth(tx)
 
 	case core.TxTreasuryPurchaseRequest:
 		if tx.AuthAddress != tx.From {
@@ -1379,6 +1449,9 @@ func ApplyTransaction(tx core.Transaction) {
 	case core.TxGovernance:
 		applyGovernance(tx)
 
+	case core.TxRatingSubmit:
+		applyRatingSubmit(tx)
+
 	case core.TxExchange:
 		applyTransfer(tx)
 
@@ -1414,6 +1487,9 @@ func ApplyTransaction(tx core.Transaction) {
 
 	case core.TxBridgeDeposit:
 		applyBridgeDeposit(tx)
+
+	case core.TxBridgeBtcDeposit:
+		applyBridgeBtcDeposit(tx)
 
 	case core.TxBridgeWithdraw:
 		applyBridgeWithdraw(tx)
@@ -1538,6 +1614,21 @@ func ApplyTransaction(tx core.Transaction) {
 	case core.TxHubWorkerRemove:
 		applyHubWorkerRemove(tx)
 
+	case core.TxHubAutomationSubscribe:
+		applyHubAutomationSubscribe(tx)
+
+	case core.TxHubWorkerSetAutomation:
+		applyHubWorkerSetAutomation(tx)
+
+	case core.TxValidatorApplicationCreate:
+		applyValidatorApplicationCreate(tx)
+
+	case core.TxValidatorApplicationSupport:
+		applyValidatorApplicationSupport(tx)
+
+	case core.TxValidatorApplicationConfirm:
+		applyValidatorApplicationConfirm(tx)
+
 	case core.TxHubStorefrontSet:
 		applyHubStorefrontSet(tx)
 
@@ -1562,8 +1653,14 @@ func ApplyTransaction(tx core.Transaction) {
 	case core.TxGenesisPoolAllocation:
 		applyGenesisPoolAllocation(tx)
 
+	case core.TxGenesisPoolWithdraw:
+		applyGenesisPoolWithdraw(tx)
+
 	case core.TxAdminTransfer:
 		applyAdminTransfer(tx)
+
+	case core.TxAnnouncementCreate:
+		applyAnnouncementCreate(tx)
 	}
 }
 
@@ -2175,17 +2272,34 @@ func applyP2PSellerConfirmPaid(tx core.Transaction) {
 		return
 	}
 
-	if !p2pOfferStore.ConfirmSellerPaid(data.OfferID, tx.From, tx.Timestamp) {
+	offer, ok := p2pOfferStore.Get(data.OfferID)
+	if !ok {
+		return
+	}
+
+	// Re-verified here, not trusted from submission time: tx.From is
+	// either the seller's own address, or an authorized automation
+	// worker acting within its hub-set cap (see
+	// api/hub_automation.go's doc comment) - core.P2POfferStore's
+	// ConfirmSellerPaid always expects the real Creator address, so a
+	// worker's confirmation is recorded as the hub's own action, with
+	// tx.From (the worker's real signing identity) preserved only in
+	// the transaction record itself for audit purposes.
+	actingAsHub := tx.From
+	if tx.From != offer.Creator {
+		if !hubWorkerStore.CanAutoConfirm(offer.Creator, tx.From, offer.OfferAmount) {
+			return
+		}
+		actingAsHub = offer.Creator
+	}
+
+	if !p2pOfferStore.ConfirmSellerPaid(data.OfferID, actingAsHub, tx.Timestamp) {
 		return
 	}
 
 	// ConfirmSellerPaid now closes the trade itself (see its doc
 	// comment) - release escrow to the buyer immediately, same fund
 	// movement the buyer's own agree-confirmation used to trigger.
-	offer, ok := p2pOfferStore.Get(data.OfferID)
-	if !ok {
-		return
-	}
 	releaseEscrowToBuyer(offer, offer.AcceptedBy, offer.AcceptedByPublicKey)
 }
 
@@ -2622,9 +2736,25 @@ func applySlashReport(tx core.Transaction) {
 
 	case "missed_block":
 		dedupKey := "missed|" + data.ValidatorAddress + "|" + data.RoundHash
-		if slashAlreadyApplied(dedupKey) {
-			return
+		if slashApplied(dedupKey) {
+			return // already fully resolved - extra corroborating reports are no-ops
 		}
+
+		// A missed block is an absence - unlike double-sign above, no
+		// cryptographic proof is possible, so a single node's report
+		// alone isn't enough to trust. Require real corroboration from
+		// multiple independently-running nodes before the penalty
+		// itself ever applies - see missed_block_confirmation.go.
+		count := recordMissedBlockReporter(dedupKey, tx.AuthAddress)
+		required := requiredMissedBlockConfirmations(distinctActiveValidatorNodeCount())
+		if count < required {
+			return // waiting for more independent corroboration
+		}
+
+		if !markSlashApplied(dedupKey) {
+			return // another report already crossed the threshold and applied this
+		}
+		clearMissedBlockReporters(dedupKey)
 
 		wallet := walletStore.Get(data.ValidatorAddress)
 		v := hydrateValidator(status)
@@ -2733,19 +2863,67 @@ func applyBridgeDeposit(tx core.Transaction) {
 	account.LastCreditedWei = data.NewBalanceWei
 }
 
+// applyBridgeBtcDeposit credits BTCB (satoshi-denominated) once a
+// TxBridgeBtcDeposit report - see api/btc_bridge.go's
+// pollAndReportBtcDeposit - confirms. Same convergence property as
+// applyBridgeDeposit: only the node a given address was registered on
+// will ever detect and submit reports for it, but this apply function
+// runs identically on every node once the report IS confirmed.
+func applyBridgeBtcDeposit(tx core.Transaction) {
+	var data btcBridgeDepositReportData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+
+	watched, ok := btcAddressStore.Get(data.CreditChainAddress)
+	if !ok {
+		return
+	}
+
+	// Dedup key includes the reported balance itself, not just the
+	// address - same reasoning as applyBridgeDeposit's dedupKey.
+	dedupKey := "btcbridgedeposit|" + data.CreditChainAddress + "|" + fmt.Sprintf("%d", data.NewBalanceSats)
+	if slashAlreadyApplied(dedupKey) {
+		return
+	}
+
+	if data.NewBalanceSats <= watched.LastCreditedSats {
+		return // stale/non-increasing report - nothing to credit
+	}
+
+	delta := data.NewBalanceSats - watched.LastCreditedSats
+
+	// Uses the DEPOSITOR's public key (captured at registration time,
+	// see core.BtcWatchedAddress's doc comment) - NOT tx.AuthPublicKey,
+	// which on this transaction type is the REPORTING NODE's own key
+	// (see verifyTxAuth's TxBridgeBtcDeposit case), not the wallet's.
+	pub, err := hex.DecodeString(watched.CreditChainPublicKey)
+	if err != nil {
+		return
+	}
+	btcbAddress := core.DeriveTokenAddress(pub, core.BTCBAddressTag)
+	bridgedBtcStore.Mint(btcbAddress, delta)
+	watched.LastCreditedSats = data.NewBalanceSats
+}
+
 // applyBridgeWithdraw debits ETHB for an "ERC network" withdrawal
 // (see api/eth_bridge_withdraw.go's HandleBridgedEthWithdraw, which
 // already triggered the real Sepolia broadcast synchronously before
 // this confirms - see that file's doc comment for the full ordering/
-// atomicity discussion). Debits amount+ETHBridgeFeeWei from the
-// sender's ETHB sub-address; the fee portion is swept to a synthetic
-// sink address, same pattern as cctTransferFeePoolAddress. Silently
-// no-ops on insufficient balance (TokenStore.Transfer's standard
-// convention) - the real broadcast already happened by the time this
-// runs, so a no-op here would only occur if the fast-fail/reservation
-// checks in the handler were somehow bypassed, which releases the
-// node-local reservation on this node once this transaction is seen
-// (it originated here, so it's the same node either way).
+// atomicity discussion). Debits amount+data.FeeWei from the sender's
+// ETHB sub-address - FeeWei is the live-gas-price+0.05%-bridge-fee
+// figure the handler computed and snapshotted at request time (see
+// ethbWithdrawFeeWei's doc comment for why this is trusted here rather
+// than recomputed - determinism requires every node to debit the
+// identical, already-decided amount). The fee portion is swept to a
+// synthetic sink address, same pattern as cctTransferFeePoolAddress.
+// Silently no-ops on insufficient balance (TokenStore.Transfer's
+// standard convention) - the real broadcast already happened by the
+// time this runs, so a no-op here would only occur if the fast-fail/
+// reservation checks in the handler were somehow bypassed, which
+// releases the node-local reservation on this node once this
+// transaction is seen (it originated here, so it's the same node
+// either way).
 func applyBridgeWithdraw(tx core.Transaction) {
 	var data bridgeWithdrawData
 	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
@@ -2753,10 +2931,10 @@ func applyBridgeWithdraw(tx core.Transaction) {
 	}
 
 	ethbSide := resolveBalanceAddress(tx.From, tx.AuthPublicKey, "ETHB")
-	total := tx.Amount + ETHBridgeFeeWei
+	total := tx.Amount + data.FeeWei
 
 	if bridgedEthStore.BalanceOf(ethbSide) >= total {
-		bridgedEthStore.Transfer(ethbSide, ethbBridgeFeeAddress(), ETHBridgeFeeWei)
+		bridgedEthStore.Transfer(ethbSide, ethbBridgeFeeAddress(), data.FeeWei)
 		bridgedEthStore.Burn(ethbSide, tx.Amount) // the real ETH already left the custodial reserve, not routed to any CCT-side address
 	}
 
@@ -2771,6 +2949,10 @@ func applyBridgeWithdraw(tx core.Transaction) {
 // decision on what to do with it is out of scope for this feature.
 func ethbBridgeFeeAddress() string {
 	return "FEE:ETHB_BRIDGE"
+}
+
+func btcbBridgeFeeAddress() string {
+	return "FEE:BTCB_BRIDGE"
 }
 
 // verifyDoubleSignEvidence independently re-derives the fraud proof
@@ -2818,8 +3000,18 @@ type validatorRegisterData struct {
 // this validator" apart from "the node actually authorized to
 // produce for it."
 func applyValidatorRegister(tx core.Transaction) {
+	// Staged-onboarding gate (see api/validator_application.go): must
+	// be at least as strict as HandleRegisterValidator's HTTP pre-
+	// check, never weaker - a transaction crafted directly, bypassing
+	// the HTTP handler, gets no free pass.
+	if !validatorApplicationStore.IsApproved(tx.From) {
+		return
+	}
+
 	wallet := walletStore.Get(tx.From)
 	stakingStore.SyncWallet(wallet, tx.From)
+
+	validatorCount := len(validatorStore.Validators)
 
 	// PoSR requirement: "Stake the minimum required amount of CCT" -
 	// gated on StakedCCT specifically, not StakedETH (a legacy holdover
@@ -2828,8 +3020,10 @@ func applyValidatorRegister(tx core.Transaction) {
 	// consensus-applied check, so it must be at least as strict as
 	// HandleRegisterValidator's HTTP pre-check (api/validators.go),
 	// never weaker - a transaction crafted directly, bypassing the
-	// HTTP handler, gets no free pass.
-	if wallet.StakedCCT < core.MinValidatorStake || wallet.Reputation < MinValidatorReputation {
+	// HTTP handler, gets no free pass. minValidatorStakeForCount is the
+	// stepped per-validator-count requirement (stage 3 of the staged
+	// pipeline).
+	if wallet.StakedCCT < minValidatorStakeForCount(validatorCount) || wallet.Reputation < MinValidatorReputation {
 		return
 	}
 
@@ -2844,8 +3038,11 @@ func applyValidatorRegister(tx core.Transaction) {
 	// The fee may have moved between submission and confirmation -
 	// re-checked and only actually deducted here, never trusted from
 	// submission time alone (same pattern as applyTokenRegister's
-	// ETHTEST creation fee).
-	if !tokenStore.Transfer(tx.From, registrationFeeAddress(), ValidatorRegisterFeeCCT) {
+	// ETHTEST creation fee). validatorRegisterFeeForCount already reads
+	// through governanceParam, so a passed PARAM_CHANGE proposal
+	// changing "ValidatorRegisterFeeCCT" still takes effect here
+	// without a code change - see api/governance_params.go.
+	if !tokenStore.Transfer(tx.From, registrationFeeAddress(), validatorRegisterFeeForCount(validatorCount)) {
 		return
 	}
 
@@ -4113,7 +4310,7 @@ func applyHubRulesSet(tx core.Transaction) {
 		return
 	}
 
-	hubRulesStore.Set(tx.From, data.Text, data.PaymentWindowMinutes, data.MinReputationToApply, tx.Timestamp)
+	hubRulesStore.Set(tx.From, data.Text, data.PaymentWindowMinutes, data.MinReputationToApply, data.CannedReplies, tx.Timestamp)
 }
 
 // applyHubWorkerAdd delegates day-to-day pricing to another wallet -
@@ -4215,7 +4412,7 @@ func settleHubTradeOnChain(tx core.Transaction, data hubTradeRequestData, rate *
 		if rate.SellRate == 0 {
 			return
 		}
-		counterAmount = data.Amount * rate.SellRate
+		counterAmount = data.Amount * rate.SellRate / core.HubRateScale
 		if symbolStore.BalanceOf(hubSymbolSide) < data.Amount {
 			return
 		}
@@ -4249,7 +4446,7 @@ func settleHubTradeOnChain(tx core.Transaction, data hubTradeRequestData, rate *
 		if rate.BuyRate == 0 {
 			return
 		}
-		counterAmount = data.Amount * rate.BuyRate
+		counterAmount = data.Amount * rate.BuyRate / core.HubRateScale
 		if symbolStore.BalanceOf(userSymbolSide) < data.Amount {
 			return
 		}
@@ -4350,7 +4547,7 @@ func applyHubTradeRequest(tx core.Transaction) {
 		if rate.SellRate == 0 {
 			return
 		}
-		fiatAmount := data.Amount * rate.SellRate
+		fiatAmount := data.Amount * rate.SellRate / core.HubRateScale
 		hubSide := resolveBalanceAddress(rate.InventoryAddress(), rate.HubPublicKey, data.Symbol)
 		// The LIVE balance (hub's own, or the operator's own for an
 		// operator listing) is the range - re-checked here, not trusted
@@ -4390,7 +4587,7 @@ func applyHubTradeRequest(tx core.Transaction) {
 		if rate.BuyRate == 0 {
 			return
 		}
-		fiatAmount := data.Amount * rate.BuyRate
+		fiatAmount := data.Amount * rate.BuyRate / core.HubRateScale
 		userSide := resolveBalanceAddress(tx.From, tx.AuthPublicKey, data.Symbol)
 		if store.BalanceOf(userSide) < data.Amount {
 			return
@@ -4701,6 +4898,23 @@ type governanceData struct {
 	Description string `json:"description"`
 	ProposalID  string `json:"proposalId"`
 	Support     bool   `json:"support"`
+
+	// Kind/ParamKey/ParamValue/TargetVersion are only read by the
+	// "create" action, and only meaningful when Kind is non-empty -
+	// see core.ProposalKind's doc comment and
+	// processProposalFinalization for what a PASSED outcome of each
+	// kind actually does.
+	Kind          string `json:"kind,omitempty"`
+	ParamKey      string `json:"paramKey,omitempty"`
+	ParamValue    uint64 `json:"paramValue,omitempty"`
+	TargetVersion string `json:"targetVersion,omitempty"`
+
+	// SystemGenerated is only ever set true by processAutoProposal's
+	// own self-signed "create" transaction - never trusted from a
+	// real user-submitted request (HandleCreateProposal never sets
+	// it), so a wallet can't fake a system-generated badge on its own
+	// proposal.
+	SystemGenerated bool `json:"systemGenerated,omitempty"`
 }
 
 func applyGovernance(tx core.Transaction) {
@@ -4711,23 +4925,35 @@ func applyGovernance(tx core.Transaction) {
 	case "create":
 		id := "prop-" + tx.ID[:min(8, len(tx.ID))]
 		proposalStore.Create(&core.Proposal{
-			ID:          id,
-			Title:       data.Title,
-			Description: data.Description,
-			CreatedBy:   tx.From,
-			Open:        true,
+			ID:              id,
+			Title:           data.Title,
+			Description:     data.Description,
+			CreatedBy:       tx.From,
+			Open:            true,
+			Quorum:          core.DefaultProposalQuorum,
+			Deadline:        tx.Timestamp + core.ProposalVotingWindowSeconds,
+			Kind:            core.ProposalKind(data.Kind),
+			ParamKey:        data.ParamKey,
+			ParamValue:      data.ParamValue,
+			TargetVersion:   data.TargetVersion,
+			SystemGenerated: data.SystemGenerated,
 		})
 
 	case "vote":
 		// Voting power is read fresh at confirmation time, not at
 		// submission time - your vote's weight reflects your
-		// reputation/stake when it actually lands in a block.
-		power := walletStore.Get(tx.From).VotingPower
+		// reputation/stake when it actually lands in a block. Zero
+		// means the wallet never activated governance at all (see
+		// votingWeight's doc comment) - HandleVoteProposal already
+		// pre-checks this, but the apply-side check is what's actually
+		// enforced, same as every other consensus-applied guard in
+		// this file.
+		power := votingWeight(tx.From)
 		if power == 0 {
-			power = 1
+			return
 		}
 
-		_, _ = proposalStore.Vote(data.ProposalID, tx.From, data.Support, power)
+		_, _ = proposalStore.Vote(data.ProposalID, tx.From, data.Support, power, tx.Timestamp)
 
 	case "activate":
 		// "Activated governance" is defined as VotingPower > 0 - this
@@ -4743,6 +4969,149 @@ func applyGovernance(tx core.Transaction) {
 	}
 }
 
+// ProposalPassedProposerReward/ProposalPassedVoterReward are the real
+// incentives for a proposal that reaches quorum and passes - see
+// processProposalFinalization. Matches the existing Gold-tier REPT
+// reward's order of magnitude (core/reputation_reward.go) rather than
+// a value invented from nothing. Nothing mints on a FAILED outcome -
+// only a proposal that actually mobilized enough real weight and
+// passed pays out, so this doesn't incentivize bandwagon-voting or
+// spamming proposals that never clear quorum.
+const (
+	ProposalPassedProposerReward = 50
+	ProposalPassedVoterReward    = 5
+)
+
+// processProposalFinalization sweeps every still-open proposal whose
+// deadline has passed and closes it - same block-timestamp-driven
+// determinism as processLoanDefaults/processDormantWallets, so every
+// node reaches the identical PASSED/FAILED outcome for the same
+// proposal at the same block. This is the first place
+// Proposal.Passed()-equivalent logic actually has a consequence - see
+// the governance plan's §2 for why nothing closed proposals or acted
+// on the outcome before this existed.
+func processProposalFinalization(asOf int64) {
+	var ids []string
+	for id, p := range proposalStore.Proposals {
+		if p.Open && asOf >= p.Deadline {
+			ids = append(ids, id)
+		}
+	}
+	// Map iteration order is randomized in Go - sorting here means
+	// every node processes the exact same sequence, same convention as
+	// processDormantWallets.
+	sort.Strings(ids)
+
+	for _, id := range ids {
+		finalizeProposal(proposalStore.Proposals[id], asOf)
+	}
+}
+
+func finalizeProposal(p *core.Proposal, asOf int64) {
+	p.Open = false
+
+	totalWeight := p.YesVotes + p.NoVotes
+	if totalWeight < p.Quorum || p.YesVotes <= p.NoVotes {
+		p.Status = core.ProposalStatusFailed
+		return
+	}
+
+	p.Status = core.ProposalStatusPassed
+
+	// Real incentives, only on a genuine PASSED outcome - see the
+	// constants' doc comment above.
+	mintRept(p.CreatedBy, ProposalPassedProposerReward)
+
+	var voters []string
+	for addr := range proposalStore.Voted[p.ID] {
+		voters = append(voters, addr)
+	}
+	sort.Strings(voters)
+	for _, addr := range voters {
+		mintRept(addr, ProposalPassedVoterReward)
+	}
+
+	// A PARAM_CHANGE/VERSION_ACTIVATION proposal's real protocol
+	// consequence only ever happens here, gated behind exactly this
+	// PASSED outcome - see core.ProposalKind's doc comment and
+	// api/governance_params.go/core.ActivatedProtocolVersion for what
+	// each does. A plain proposal (Kind == "") has no further effect
+	// beyond the incentive payouts above.
+	switch p.Kind {
+	case core.ProposalKindParamChange:
+		if p.ParamKey != "" {
+			governanceParamsStore.Set(p.ParamKey, p.ParamValue)
+		}
+	case core.ProposalKindVersionActivation:
+		if p.TargetVersion != "" {
+			core.ActivatedProtocolVersion = p.TargetVersion
+		}
+	}
+}
+
+// autoProposalCheckIntervalBlocks is how often the network checks
+// whether governance has gone quiet - a judgment call (roughly
+// "check a few times a day" at this codebase's ~8s consensus tick),
+// not derived from any spec.
+const autoProposalCheckIntervalBlocks = 5400
+
+// autoProposalPrompts is the rotating pool processAutoProposal draws
+// from - plain civic-engagement questions only (never PARAM_CHANGE/
+// VERSION_ACTIVATION - see core.Proposal.SystemGenerated's doc
+// comment), so a quiet week never means the network silently changes
+// itself, only that the community gets asked something to keep the
+// conversation going.
+var autoProposalPrompts = []struct{ Title, Description string }{
+	{
+		"What should the community focus on next?",
+		"Open discussion - vote Yes to signal general support for continuing to prioritize new features and growth, No to signal a preference for consolidating and polishing what already exists.",
+	},
+	{
+		"Should CreditChain highlight more community-run Trading Hubs?",
+		"A system-generated prompt to keep governance active. Vote Yes if you'd like to see more hub spotlights/announcements, No if the current pace is fine.",
+	},
+	{
+		"Is the current reputation/lending balance working for you?",
+		"A system-generated check-in. Vote Yes if the reputation and borrowing system feels fair as-is, No if you think it needs a closer look.",
+	},
+	{
+		"Should the community prioritize onboarding new validators?",
+		"A system-generated prompt. Vote Yes to signal support for validator-growth initiatives, No if network size feels adequate right now.",
+	},
+}
+
+// processAutoProposal keeps the governance feed "constantly active" -
+// the community's own asked-for behavior: real, user-created
+// proposals always take priority and this never overrides or
+// competes with one (it only ever fires when NOTHING is currently
+// open), but a governance page that's gone quiet for a while
+// automatically gets a new civic-engagement prompt rather than
+// sitting empty. Self-signed and gossiped like any other node-
+// authored transaction (TxSlashReport/TxBridgeDeposit precedent) -
+// whichever node's report is confirmed first wins, every other node's
+// own attempt is a no-op once a proposal is already open.
+func processAutoProposal(block core.Block) {
+	if block.Index == 0 || block.Index%autoProposalCheckIntervalBlocks != 0 {
+		return
+	}
+
+	for _, p := range proposalStore.Proposals {
+		if p.Open {
+			return
+		}
+	}
+
+	prompt := autoProposalPrompts[(block.Index/autoProposalCheckIntervalBlocks)%uint64(len(autoProposalPrompts))]
+
+	data, _ := json.Marshal(governanceData{
+		Action:          "create",
+		Title:           prompt.Title,
+		Description:     prompt.Description,
+		SystemGenerated: true,
+	})
+	recordTx(selfSignedEnvelope(data), reporterAddress(), "", 0, core.TxGovernance, string(data))
+}
+
 // CCTTransferFee is charged on every plain CCT send (a TxExchange
 // resolving to symbol CCT) - requested as "half a CCT," but CCT
 // balances are plain whole-number uint64 everywhere in this codebase
@@ -4755,15 +5124,36 @@ func applyGovernance(tx core.Transaction) {
 // ETHTEST/USDCTEST/REPT/custom-token transfers are untouched.
 const CCTTransferFee = 1
 
-// ETHBBridgeCCTNetworkFee is the flat CCT fee charged on an ETHB
-// ("CCT network") send - the cheap/fast side of the auto-bridge
-// feature's network choice (see api/eth_bridge.go), as opposed to an
-// ERC-network withdrawal's bridge fee + real gas cost
-// (applyBridgeWithdraw). Deliberately charged in CCT, not in ETHB -
-// same value as CCTTransferFee purely by coincidence of both being
-// "the network's standard flat fee," not because the two are the same
-// fee conceptually.
-const ETHBBridgeCCTNetworkFee = 1
+// ETHBCCTNetworkFeeWei is the flat wei fee charged on an ETHB ("CCT
+// network") send - the cheap/fast side of the auto-bridge feature's
+// network choice (see api/eth_bridge.go), as opposed to an ERC-network
+// withdrawal's live-tracked gas fee + 0.05% bridge fee
+// (applyBridgeWithdraw). Charged in ETH (deducted from the sender's
+// ETHB balance, on top of the amount sent), never in CCT - "ETH is the
+// mother asset, so ETH-denominated fees are always paid in ETH" (this
+// replaces an earlier version of this fee that was mistakenly charged
+// in CCT). Illustrative testnet value, a judgment call like every
+// other flat fee in this codebase - there's no real per-transaction
+// gas cost for an internal ledger move (nothing broadcasts to Sepolia
+// for a CCT-network send), so this isn't gas-derived the way the
+// ERC-network fee now is.
+const ETHBCCTNetworkFeeWei = 100_000_000_000 // 0.0000001 ETH, illustrative
+
+// UsdcTestTransferFeeWei is the flat wei fee charged on every USDCTEST
+// send, deducted from the sender's ETHB balance - "ETH is the mother
+// network, so USDT[-equivalent] pays its fees in ETH" per the user's
+// framing. USDCTEST itself has no bridge/second-network concept today
+// (confirmed: pure synthetic faucet token, no external chain link) -
+// this implements the one send path that exists; "in either network"
+// has nothing further to apply to until USDCTEST gets a real bridge of
+// its own.
+const UsdcTestTransferFeeWei = 100_000_000_000 // 0.0000001 ETH, same illustrative order as ETHBCCTNetworkFeeWei
+
+// BTCBCCTNetworkFeeSats is BTCB's own-currency-pays-its-own-fee flat
+// fee on a "CCT network" (internal-ledger) send - same philosophy as
+// ETHBCCTNetworkFeeWei, charged in satoshis from the sender's own BTCB
+// balance, on top of the amount sent. Illustrative testnet value.
+const BTCBCCTNetworkFeeSats = 500 // 0.000005 BTC, illustrative
 
 // cctTransferFeePoolAddress is a synthetic, nobody-holds-the-private-
 // key holding address (same pattern as poolAddress/
@@ -4816,23 +5206,48 @@ func applyTransfer(tx core.Transaction) {
 		// neither moves - re-checked here (never trusted from
 		// submission time alone), same convention as every other fee in
 		// this codebase (see applyTokenRegister's ETHTEST creation fee).
-		if store.BalanceOf(fromSide) < tx.Amount+CCTTransferFee {
+		// Reads through governanceParam so a passed PARAM_CHANGE
+		// proposal changing "CCTTransferFee" takes effect here without
+		// a code change - see api/governance_params.go.
+		fee := governanceParam("CCTTransferFee", CCTTransferFee)
+		if store.BalanceOf(fromSide) < tx.Amount+fee {
 			return
 		}
-		if !store.Transfer(fromSide, cctTransferFeePoolAddress(), CCTTransferFee) {
+		if !store.Transfer(fromSide, cctTransferFeePoolAddress(), fee) {
 			return
 		}
 	} else if symbol == "ETHB" {
-		// "CCT network" send (see api/eth_bridge.go) - the fee is
-		// charged in CCT, a DIFFERENT balance from fromSide (which is
-		// this sender's ETHB sub-address), so both sides must be
-		// checked before either moves, same all-or-nothing convention
-		// as the CCT case above.
-		cctSide := resolveBalanceAddress(tx.From, tx.AuthPublicKey, "CCT")
-		if tokenStore.BalanceOf(cctSide) < ETHBBridgeCCTNetworkFee || store.BalanceOf(fromSide) < tx.Amount {
+		// "CCT network" send (see api/eth_bridge.go) - fee is now
+		// charged in ETH, from the SAME ETHB balance being sent, on top
+		// of the amount (own-currency-pays-its-own-fee, matching the
+		// ERC-network withdrawal's existing shape) - see
+		// ETHBCCTNetworkFeeWei's doc comment for why this moved off CCT.
+		total := tx.Amount + ETHBCCTNetworkFeeWei
+		if store.BalanceOf(fromSide) < total {
 			return
 		}
-		if !tokenStore.Transfer(cctSide, cctTransferFeePoolAddress(), ETHBBridgeCCTNetworkFee) {
+		if !store.Transfer(fromSide, ethbBridgeFeeAddress(), ETHBCCTNetworkFeeWei) {
+			return
+		}
+	} else if symbol == "USDCTEST" {
+		// USDCTEST pays its transfer fee in ETH (from the sender's ETHB
+		// balance), not in USDCTEST itself or CCT - see
+		// UsdcTestTransferFeeWei's doc comment.
+		ethbSide := resolveBalanceAddress(tx.From, tx.AuthPublicKey, "ETHB")
+		if bridgedEthStore.BalanceOf(ethbSide) < UsdcTestTransferFeeWei || store.BalanceOf(fromSide) < tx.Amount {
+			return
+		}
+		if !bridgedEthStore.Transfer(ethbSide, ethbBridgeFeeAddress(), UsdcTestTransferFeeWei) {
+			return
+		}
+	} else if symbol == "BTCB" {
+		// "CCT network" send (see api/btc_bridge.go) - own-currency-
+		// pays-its-own-fee, same shape as the ETHB branch above.
+		total := tx.Amount + BTCBCCTNetworkFeeSats
+		if store.BalanceOf(fromSide) < total {
+			return
+		}
+		if !store.Transfer(fromSide, btcbBridgeFeeAddress(), BTCBCCTNetworkFeeSats) {
 			return
 		}
 	}

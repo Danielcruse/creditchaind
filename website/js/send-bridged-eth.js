@@ -10,17 +10,37 @@
 
 const ethbWallet = requireWallet();
 
-// ETHBBridgeCCTNetworkFee mirrors api/apply.go's constant of the same
-// name (flat CCT fee for a CCT-network ETHB send). ETHBridgeFeeWei
-// mirrors api/eth_bridge_withdraw.go's ETHBridgeFeeWei - both are
-// display-only estimates here; the server re-checks authoritatively.
-const ETHBBridgeCCTNetworkFee = 1;
-const ETHBridgeFeeWei = 21000000000000n; // 0.000021 ETH-equivalent, illustrative
-const GAS_LIMIT_ESTIMATE = 21000n;
+// ETHBCCTNetworkFeeWei mirrors api/apply.go's constant of the same
+// name (flat ETH fee, taken from the ETHB balance itself, for a
+// CCT-network ETHB send - no longer charged in CCT, see that
+// constant's doc comment). The ERC-network fee is no longer a flat
+// mirrored constant either - it's live-tracked (gas price + 0.05%
+// bridge fee), fetched from /eth-bridge/withdraw-quote just before
+// review so the number shown is always current.
+const ETHBCCTNetworkFeeWei = 100000000000n; // 0.0000001 ETH, illustrative
 
 let mode = "CCT";
 let ethbAddress = null;
 let latestEthbBalanceWei = 0n;
+let latestErcFeeWei = null;
+
+// showFeeUsd is purely informational (see api/price_oracle.go's
+// GET /price/external) - never changes what's actually charged, which
+// stays denominated in ETH per the fee logic above.
+async function showFeeUsd(feeWei) {
+    const el = document.getElementById("reviewFeeUsd");
+    try {
+        const prices = await apiGet("/price/external");
+        if (!prices.ethUsd) {
+            el.innerText = "-";
+            return;
+        }
+        const feeEth = Number(weiToEth(feeWei.toString()));
+        el.innerText = `~$${(feeEth * prices.ethUsd).toFixed(2)}`;
+    } catch (e) {
+        el.innerText = "-";
+    }
+}
 
 function weiToEth(weiString) {
     const wei = BigInt(weiString || "0");
@@ -48,8 +68,8 @@ function setMode(newMode) {
     document.getElementById("toAddress").value = "";
     document.getElementById("modeNote").innerText =
         mode === "CCT"
-            ? `Instant internal move. Flat fee: ${ETHBBridgeCCTNetworkFee} CCT (paid from your CCT balance, not your ETH balance).`
-            : `Real Sepolia broadcast to any 0x address. Flat bridge fee: ~${weiToEth(ETHBridgeFeeWei.toString())} ETH (covers CreditChain's real gas cost).`;
+            ? `Instant internal move. Flat fee: ${weiToEth(ETHBCCTNetworkFeeWei.toString())} ETH (paid from your ETH balance - ETH pays its own fee, never CCT).`
+            : `Real Sepolia broadcast to any 0x address. Fee = live network gas price + 0.05% bridge fee, both in ETH - shown exactly on the review screen.`;
     document.getElementById("formStatus").innerText = "";
 }
 
@@ -76,7 +96,7 @@ function isValidEthAddress(text) {
     return /^0x[0-9a-fA-F]{40}$/.test(text);
 }
 
-function review() {
+async function review() {
     const statusEl = document.getElementById("formStatus");
 
     const rawTo = document.getElementById("toAddress").value.trim();
@@ -114,24 +134,41 @@ function review() {
     const warningEl = document.getElementById("reviewWarning");
 
     if (mode === "CCT") {
-        document.getElementById("reviewFee").innerText = `${ETHBBridgeCCTNetworkFee} CCT`;
+        document.getElementById("reviewFee").innerText = `${weiToEth(ETHBCCTNetworkFeeWei.toString())} ETH`;
         gasRow.style.display = "none";
-        warningEl.innerText = "This moves ETH instantly within CreditChain to the recipient's CreditChain address.";
-        confirmBtn.disabled = valueWei > latestEthbBalanceWei;
+        warningEl.innerText = "This moves ETH instantly within CreditChain to the recipient's CreditChain address. The fee is paid in ETH, not CCT.";
+        const totalWei = valueWei + ETHBCCTNetworkFeeWei;
+        confirmBtn.disabled = totalWei > latestEthbBalanceWei;
         document.getElementById("reviewStatus").innerText = confirmBtn.disabled
-            ? "Amount exceeds your ETH balance (the CCT fee is checked separately at send time)."
+            ? "Amount plus the ETH network fee exceeds your ETH balance."
             : "";
+        document.getElementById("reviewCard").dataset.feeWei = ETHBCCTNetworkFeeWei.toString();
+        showFeeUsd(ETHBCCTNetworkFeeWei);
     } else {
-        const totalWei = valueWei + ETHBridgeFeeWei;
-        document.getElementById("reviewFee").innerText = `${weiToEth(ETHBridgeFeeWei.toString())} ETH`;
+        statusEl.innerText = "Fetching live network fee...";
+        let feeWei;
+        try {
+            const quote = await apiGet(`/eth-bridge/withdraw-quote?address=${ethbWallet.address}&amountWei=${valueWei}`);
+            feeWei = BigInt(quote.feeWei);
+        } catch (e) {
+            statusEl.innerText = "Could not fetch the live fee quote: " + e.message;
+            return;
+        }
+        statusEl.innerText = "";
+        latestErcFeeWei = feeWei;
+
+        const totalWei = valueWei + feeWei;
+        document.getElementById("reviewFee").innerText = `${weiToEth(feeWei.toString())} ETH (live network gas + 0.05% bridge fee)`;
         gasRow.style.display = "flex";
-        document.getElementById("reviewGas").innerText = "gas cost is absorbed by CreditChain, not deducted further";
+        document.getElementById("reviewGas").innerText = "included in the fee above - reflects the current live Sepolia gas price";
         warningEl.innerText =
             "This broadcasts a real Sepolia testnet transaction. This action is irreversible and cannot be undone or refunded by CreditChain.";
         confirmBtn.disabled = totalWei > latestEthbBalanceWei;
         document.getElementById("reviewStatus").innerText = confirmBtn.disabled
-            ? "Amount plus bridge fee exceeds your ETH balance."
+            ? "Amount plus the live fee exceeds your ETH balance."
             : "";
+        document.getElementById("reviewCard").dataset.feeWei = feeWei.toString();
+        showFeeUsd(feeWei);
     }
 
     document.getElementById("reviewCard").dataset.mode = mode;
@@ -170,7 +207,7 @@ async function confirmSend() {
             const result = await apiPostSignedRaw("/token/transfer", payloadJSON);
 
             if (result.success === false) {
-                statusEl.innerText = `Insufficient balance - you need the amount plus the ${ETHBBridgeCCTNetworkFee} CCT network fee.`;
+                statusEl.innerText = `Insufficient balance - you need the amount plus the ${weiToEth(ETHBCCTNetworkFeeWei.toString())} ETH network fee.`;
                 confirmBtn.disabled = false;
                 return;
             }
@@ -186,7 +223,7 @@ async function confirmSend() {
                 return;
             }
 
-            statusEl.innerHTML = `Sent - <a href="https://sepolia.etherscan.io/tx/${result.ethTxHash}" target="_blank" rel="noopener" style="color:#8ef;">view on Sepolia Etherscan</a>`;
+            statusEl.innerHTML = `Sent - <a href="https://sepolia.etherscan.io/tx/${result.ethTxHash}" target="_blank" rel="noopener" style="color:var(--cc-accent-gold, #c9a227);">view on Sepolia Etherscan</a>`;
 
             let attempts = 0;
             const poll = setInterval(async () => {

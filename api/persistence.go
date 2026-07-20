@@ -103,6 +103,21 @@ type persistedState struct {
 	AppliedBlockHashes []string `json:"appliedBlockHashes"`
 	SlashDedupKeys     []string `json:"slashDedupKeys"`
 
+	// MissedBlockReporters persists in-flight (not-yet-resolved) M-of-N
+	// corroboration state for missed-block slash reports (see
+	// missed_block_confirmation.go) - without this, a node that
+	// restarts after already reporting a miss won't automatically
+	// re-report (its local consensus-loop cycle only reports once per
+	// detected miss), silently dropping its own corroboration vote.
+	MissedBlockReporters []missedBlockReporterSnapshot `json:"missedBlockReporters"`
+
+	// ReputationMiningSweep persists the in-progress batch cursor for
+	// the current epoch's REPT mining sweep (see reputation_mining.go)
+	// - required for correctness, not just durability: without this, a
+	// restart mid-epoch would re-mint wallets already processed
+	// earlier in the same epoch.
+	ReputationMiningSweep reputationMiningSweepSnapshot `json:"reputationMiningSweep"`
+
 	// Mempool persists pending (not-yet-confirmed) transactions. Without
 	// this, a crash loses anything submitted but not yet swept into a
 	// block, silently dropping the user's stake/borrow/vote/etc. with
@@ -131,11 +146,58 @@ type persistedState struct {
 	ETHBBalances map[string]uint64 `json:"ethbBalances"`
 	ETHBSupply   uint64            `json:"ethbSupply"`
 
+	// BTCBBalances/BTCBSupply are bridgedBtcStore's ledger - BTCB's own
+	// counterpart to ETHBBalances/ETHBSupply above. BtcWatchedAddresses
+	// is NOT gossiped either (same reasoning as EthCustodial above),
+	// persisted here only so this node's own restart doesn't lose the
+	// address-watch mapping/deposit-detection baseline.
+	BTCBBalances        map[string]uint64                  `json:"btcbBalances"`
+	BTCBSupply          uint64                             `json:"btcbSupply"`
+	BtcWatchedAddresses map[string]*core.BtcWatchedAddress `json:"btcWatchedAddresses"`
+
 	// Treasury/Purchases persist the Foundation Treasury Wallet's
 	// sale configuration and purchase-request history - see
 	// core/treasury.go's doc comment.
 	Treasury  core.Treasury                    `json:"treasury"`
 	Purchases map[string]*core.PurchaseRequest `json:"treasuryPurchases"`
+
+	// GovernanceParams persists any protocol parameter a passed
+	// PARAM_CHANGE proposal has overridden - see
+	// core.GovernanceParamsStore's doc comment. Without this, a
+	// restart would silently revert every governance-set fee back to
+	// its hardcoded default.
+	GovernanceParams map[string]uint64 `json:"governanceParams"`
+
+	// ActivatedProtocolVersion persists the governance-gated version
+	// flag - see core.ActivatedProtocolVersion's doc comment.
+	ActivatedProtocolVersion string `json:"activatedProtocolVersion"`
+
+	// ProposalVotesByAddress persists the per-address vote-history log
+	// (core.ProposalStore.VotesByAddress) - the "community remembers"
+	// permanent record. Voted/Proposals above already persist the
+	// tallying state; this is the separate, purely-additive history
+	// list.
+	ProposalVotesByAddress map[string][]core.VoteRecord `json:"proposalVotesByAddress"`
+
+	// Announcements persists admin-posted site-wide announcements -
+	// see core.AnnouncementStore's doc comment.
+	Announcements []*core.Announcement `json:"announcements"`
+
+	// Ratings persists every wallet's site rating - see
+	// core.RatingStore's doc comment.
+	Ratings []*core.Rating `json:"ratings"`
+
+	// HubAutomations persists each hub's Automation-tier subscription
+	// state - see core.HubAutomationStore's doc comment. HubWorkers
+	// (already persisted below via the existing HubWorker field) rides
+	// along with its own new IsAutomationAgent/AutoConfirmCapAmount
+	// fields for free, since that store is already saved wholesale.
+	HubAutomations map[string]*core.HubAutomation `json:"hubAutomations"`
+
+	// ValidatorApplications persists the staged validator-onboarding
+	// pipeline's state - see core.ValidatorApplicationStore's doc
+	// comment.
+	ValidatorApplications map[string]*core.ValidatorApplication `json:"validatorApplications"`
 }
 
 // SaveState writes a snapshot of every store to disk. Called after
@@ -150,64 +212,76 @@ func SaveState() error {
 		Unbonding: stakingStore.Unbonding,
 		// StakesLegacy is intentionally left unset - only ever read for
 		// migrating an old-format file, never written back.
-		TokenBalances:        tokenStore.Balances,
-		TokenSupply:          tokenStore.Token.TotalSupply,
-		USDCTestBalances:     usdcTestStore.Balances,
-		USDCTestSupply:       usdcTestStore.Token.TotalSupply,
-		REPTBalances:         reptStore.Balances,
-		REPTSupply:           reptStore.Token.TotalSupply,
-		CustomTokens:         tokenRegistry.Meta,
-		CustomTokenStores:    tokenRegistry.Tokens,
-		LiquidityPools:       tokenRegistry.Pools,
-		ETHTestBalances:      ethTestStore.Balances,
-		ETHTestSupply:        ethTestStore.Token.TotalSupply,
-		CCTEthTestPool:       cctEthTestPool,
-		CCTUsdcTestPool:      cctUsdcTestPool,
-		P2POffers:            p2pOfferStore.Offers,
-		LoanOffers:           loanOfferStore.Offers,
-		LoanRequests:         loanRequestStore.Requests,
-		Negotiations:         negotiationStore.Negotiations,
-		Loans:                loanStore.Loans,
-		CollateralLocked:     collateralStore.Locked,
-		CreditProfiles:       creditStore.Profiles,
-		ReputationProfiles:   creditEngine.Profiles.Profiles,
-		CreditHistory:        creditHistory.Events,
-		LenderStats:          lenderStore.Stats,
-		Proposals:            proposalStore.Proposals,
-		ProposalVotes:        proposalStore.Voted,
-		Validators:           validatorStore.Validators,
-		Delegations:          delegationStore.Delegations,
-		DelegationUnbonding:  delegationStore.Unbonding,
-		Moderators:           moderatorStore.Snapshot(),
-		Companies:            companyStore.Applications,
-		BuyRequests:          buyRequestStore.Requests,
-		Orders:               orderBookStore.Orders,
-		TradeHistory:         tradeHistoryStore.Trades,
-		Recovery:             recoveryStore.Records,
-		HubRates:             hubRateStore.Rates,
-		HubRules:             hubRulesStore.Snapshot(),
-		HubNotifications:     notificationStore.Snapshot(),
-		UserNotifications:    userNotificationStore.Snapshot(),
-		GovernanceStatuses:   governanceStatusStore.Snapshot(),
-		HubAgentApplications: hubAgentApplicationStore.Snapshot(),
-		HubWorkers:           hubWorkerStore.Snapshot(),
-		HubStorefronts:       hubStorefrontStore.Snapshot(),
-		ReputationEvents:     reputationEventStore.Snapshot(),
-		EthCustodial:         ethCustodialStore.Snapshot(),
-		KYC:                  kycStore.Records,
-		PriceHistory:         priceHistoryStore.History,
-		AppliedTxIDs:         snapshotAppliedTxIDs(),
-		AppliedBlockHashes:   snapshotAppliedBlockHashes(),
-		SlashDedupKeys:       snapshotSlashDedup(),
-		Mempool:              mempool.Transactions,
-		FaucetClaims:         snapshotFaucetClaims(),
-		YenBalances:          yenStore.Balances,
-		YenSupply:            yenStore.Token.TotalSupply,
-		CCTYenPool:           cctYenPool,
-		Treasury:             treasuryStore.Treasury,
-		Purchases:            treasuryStore.Purchases,
-		ETHBBalances:         bridgedEthStore.Balances,
-		ETHBSupply:           bridgedEthStore.Token.TotalSupply,
+		TokenBalances:            tokenStore.Balances,
+		TokenSupply:              tokenStore.Token.TotalSupply,
+		USDCTestBalances:         usdcTestStore.Balances,
+		USDCTestSupply:           usdcTestStore.Token.TotalSupply,
+		REPTBalances:             reptStore.Balances,
+		REPTSupply:               reptStore.Token.TotalSupply,
+		CustomTokens:             tokenRegistry.Meta,
+		CustomTokenStores:        tokenRegistry.Tokens,
+		LiquidityPools:           tokenRegistry.Pools,
+		ETHTestBalances:          ethTestStore.Balances,
+		ETHTestSupply:            ethTestStore.Token.TotalSupply,
+		CCTEthTestPool:           cctEthTestPool,
+		CCTUsdcTestPool:          cctUsdcTestPool,
+		P2POffers:                p2pOfferStore.Offers,
+		LoanOffers:               loanOfferStore.Offers,
+		LoanRequests:             loanRequestStore.Requests,
+		Negotiations:             negotiationStore.Negotiations,
+		Loans:                    loanStore.Loans,
+		CollateralLocked:         collateralStore.Locked,
+		CreditProfiles:           creditStore.Profiles,
+		ReputationProfiles:       creditEngine.Profiles.Profiles,
+		CreditHistory:            creditHistory.Events,
+		LenderStats:              lenderStore.Stats,
+		Proposals:                proposalStore.Proposals,
+		ProposalVotes:            proposalStore.Voted,
+		Validators:               validatorStore.Validators,
+		Delegations:              delegationStore.Delegations,
+		DelegationUnbonding:      delegationStore.Unbonding,
+		Moderators:               moderatorStore.Snapshot(),
+		Companies:                companyStore.Applications,
+		BuyRequests:              buyRequestStore.Requests,
+		Orders:                   orderBookStore.Orders,
+		TradeHistory:             tradeHistoryStore.Trades,
+		Recovery:                 recoveryStore.Records,
+		HubRates:                 hubRateStore.Rates,
+		HubRules:                 hubRulesStore.Snapshot(),
+		HubNotifications:         notificationStore.Snapshot(),
+		UserNotifications:        userNotificationStore.Snapshot(),
+		GovernanceStatuses:       governanceStatusStore.Snapshot(),
+		HubAgentApplications:     hubAgentApplicationStore.Snapshot(),
+		HubWorkers:               hubWorkerStore.Snapshot(),
+		HubAutomations:           hubAutomationStore.Snapshot(),
+		ValidatorApplications:    validatorApplicationStore.Snapshot(),
+		HubStorefronts:           hubStorefrontStore.Snapshot(),
+		ReputationEvents:         reputationEventStore.Snapshot(),
+		EthCustodial:             ethCustodialStore.Snapshot(),
+		KYC:                      kycStore.Records,
+		PriceHistory:             priceHistoryStore.History,
+		AppliedTxIDs:             snapshotAppliedTxIDs(),
+		AppliedBlockHashes:       snapshotAppliedBlockHashes(),
+		SlashDedupKeys:           snapshotSlashDedup(),
+		MissedBlockReporters:     snapshotMissedBlockReporters(),
+		ReputationMiningSweep:    snapshotReputationMiningSweep(),
+		Mempool:                  mempool.Transactions,
+		FaucetClaims:             snapshotFaucetClaims(),
+		YenBalances:              yenStore.Balances,
+		YenSupply:                yenStore.Token.TotalSupply,
+		CCTYenPool:               cctYenPool,
+		Treasury:                 treasuryStore.Treasury,
+		Purchases:                treasuryStore.Purchases,
+		ETHBBalances:             bridgedEthStore.Balances,
+		ETHBSupply:               bridgedEthStore.Token.TotalSupply,
+		BTCBBalances:             bridgedBtcStore.Balances,
+		BTCBSupply:               bridgedBtcStore.Token.TotalSupply,
+		BtcWatchedAddresses:      btcAddressStore.Snapshot(),
+		GovernanceParams:         governanceParamsStore.Snapshot(),
+		ActivatedProtocolVersion: core.ActivatedProtocolVersion,
+		ProposalVotesByAddress:   proposalStore.VotesByAddress,
+		Announcements:            announcementStore.Snapshot(),
+		Ratings:                  ratingStore.Snapshot(),
 	}
 
 	data, err := json.MarshalIndent(snapshot, "", "  ")
@@ -433,6 +507,12 @@ func LoadState() {
 	if snapshot.HubWorkers != nil {
 		hubWorkerStore.Restore(snapshot.HubWorkers)
 	}
+	if snapshot.HubAutomations != nil {
+		hubAutomationStore.Restore(snapshot.HubAutomations)
+	}
+	if snapshot.ValidatorApplications != nil {
+		validatorApplicationStore.Restore(snapshot.ValidatorApplications)
+	}
 	if snapshot.HubStorefronts != nil {
 		hubStorefrontStore.Restore(snapshot.HubStorefronts)
 	}
@@ -452,6 +532,8 @@ func LoadState() {
 	restoreAppliedTxIDs(snapshot.AppliedTxIDs)
 	restoreAppliedBlockHashes(snapshot.AppliedBlockHashes)
 	restoreSlashDedup(snapshot.SlashDedupKeys)
+	restoreMissedBlockReporters(snapshot.MissedBlockReporters)
+	restoreReputationMiningSweep(snapshot.ReputationMiningSweep)
 
 	if snapshot.Mempool != nil {
 		mempool.Transactions = snapshot.Mempool
@@ -475,4 +557,27 @@ func LoadState() {
 		bridgedEthStore.Balances = snapshot.ETHBBalances
 	}
 	bridgedEthStore.Token.TotalSupply = snapshot.ETHBSupply
+
+	if snapshot.BTCBBalances != nil {
+		bridgedBtcStore.Balances = snapshot.BTCBBalances
+	}
+	bridgedBtcStore.Token.TotalSupply = snapshot.BTCBSupply
+	if snapshot.BtcWatchedAddresses != nil {
+		btcAddressStore.Restore(snapshot.BtcWatchedAddresses)
+	}
+
+	if snapshot.GovernanceParams != nil {
+		governanceParamsStore.Restore(snapshot.GovernanceParams)
+	}
+	core.ActivatedProtocolVersion = snapshot.ActivatedProtocolVersion
+
+	if snapshot.ProposalVotesByAddress != nil {
+		proposalStore.VotesByAddress = snapshot.ProposalVotesByAddress
+	}
+	if snapshot.Announcements != nil {
+		announcementStore.Restore(snapshot.Announcements)
+	}
+	if snapshot.Ratings != nil {
+		ratingStore.Restore(snapshot.Ratings)
+	}
 }

@@ -97,8 +97,8 @@ func HandleP2PSellerConfirmPaid(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "offer not found", http.StatusNotFound)
 		return
 	}
-	if offer.Creator != address {
-		http.Error(w, "only the seller can confirm payment received", http.StatusForbidden)
+	if offer.Creator != address && !hubWorkerStore.CanAutoConfirm(offer.Creator, address, offer.OfferAmount) {
+		http.Error(w, "only the seller (or an authorized automation agent within its cap) can confirm payment received", http.StatusForbidden)
 		return
 	}
 	if offer.SettlementStatus != core.SettlementAwaitingPayment {
@@ -349,15 +349,38 @@ func HandleP2PMessage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "offer not found", http.StatusNotFound)
 		return
 	}
+
+	fromAutomation := false
 	if address != offer.Creator && address != offer.AcceptedBy && address != offer.ModeratorAddress {
-		http.Error(w, "not a party to this trade", http.StatusForbidden)
-		return
+		// Not a direct party by wallet identity - the only other
+		// legitimate caller is a hub's own authorized automation
+		// worker, posting AS the hub (never as the counterparty), and
+		// only text that exactly matches one of the hub's own
+		// pre-authored canned replies - see api/hub_automation.go's
+		// doc comment for why this is deliberately not a free-form
+		// posting path.
+		hub, isWorker := hubWorkerStore.HubForWorker(address)
+		if !isWorker || (hub != offer.Creator && hub != offer.AcceptedBy) {
+			http.Error(w, "not a party to this trade", http.StatusForbidden)
+			return
+		}
+		if !hubWorkerStore.IsAutomationAgent(hub, address) {
+			http.Error(w, "not an authorized automation agent", http.StatusForbidden)
+			return
+		}
+		if !hubRulesStore.HasCannedReply(hub, req.Text) {
+			http.Error(w, "automated messages must match one of the hub's own canned replies", http.StatusForbidden)
+			return
+		}
+		address = hub
+		fromAutomation = true
 	}
 
 	ok = p2pOfferStore.AddMessage(offer.ID, core.NegotiationMessage{
-		Sender:    address,
-		Text:      req.Text,
-		Timestamp: time.Now().Unix(),
+		Sender:         address,
+		Text:           req.Text,
+		Timestamp:      time.Now().Unix(),
+		FromAutomation: fromAutomation,
 	})
 	if !ok {
 		http.Error(w, "this trade's chat isn't open", http.StatusBadRequest)

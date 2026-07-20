@@ -126,6 +126,8 @@ func StartServer(port string) {
 	InitEthSigner()
 	InitEthRPC()
 	startEthBridgeDepositLoop()
+	startBtcBridgeDepositLoop()
+	startPriceOracleLoop()
 	loadNodeIdentity()
 	loadPeersFromConfig()
 
@@ -530,6 +532,10 @@ func StartServer(port string) {
 		HandleCreateEthCustodialAccount,
 	)
 	http.HandleFunc(
+		"/eth-custodial/address",
+		HandleEthCustodialAddress,
+	)
+	http.HandleFunc(
 		"/eth-custodial/balance",
 		HandleEthCustodialBalance,
 	)
@@ -552,6 +558,34 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/eth-bridge/withdraw",
 		HandleBridgedEthWithdraw,
+	)
+	http.HandleFunc(
+		"/eth-bridge/withdraw-quote",
+		HandleBridgedEthWithdrawQuote,
+	)
+	http.HandleFunc(
+		"/btc-bridge/register-address",
+		HandleBtcRegisterAddress,
+	)
+	http.HandleFunc(
+		"/btc-bridge/address",
+		HandleBtcWatchedAddress,
+	)
+	http.HandleFunc(
+		"/btc-bridge/utxos",
+		HandleBtcUtxos,
+	)
+	http.HandleFunc(
+		"/btcb/balance",
+		HandleBtcbBalance,
+	)
+	http.HandleFunc(
+		"/btc-bridge/fee-estimate",
+		HandleBtcFeeEstimate,
+	)
+	http.HandleFunc(
+		"/btc-bridge/broadcast",
+		HandleBtcBroadcast,
 	)
 	http.HandleFunc(
 		"/hub-rates",
@@ -608,6 +642,34 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/hub-workers",
 		HandleListHubWorkers,
+	)
+	http.HandleFunc(
+		"/hub-automation/subscribe",
+		HandleHubAutomationSubscribe,
+	)
+	http.HandleFunc(
+		"/hub-automation/status",
+		HandleHubAutomationStatus,
+	)
+	http.HandleFunc(
+		"/hub-workers/set-automation",
+		HandleSetWorkerAutomation,
+	)
+	http.HandleFunc(
+		"/validator-application/create",
+		HandleCreateValidatorApplication,
+	)
+	http.HandleFunc(
+		"/validator-application/support",
+		HandleSupportValidatorApplication,
+	)
+	http.HandleFunc(
+		"/validator-application/confirm",
+		HandleConfirmValidatorApplication,
+	)
+	http.HandleFunc(
+		"/validator-application",
+		HandleGetValidatorApplication,
 	)
 	http.HandleFunc(
 		"/hub-agents/apply",
@@ -695,8 +757,16 @@ func StartServer(port string) {
 		HandleAdminSetTreasuryAddress,
 	)
 	http.HandleFunc(
+		"/admin/whoami",
+		HandleAdminWhoAmI,
+	)
+	http.HandleFunc(
 		"/admin/genesis-pools/allocate",
 		HandleAllocateGenesisPools,
+	)
+	http.HandleFunc(
+		"/admin/genesis-pools/withdraw",
+		HandleGenesisPoolWithdraw,
 	)
 	http.HandleFunc(
 		"/admin/token/transfer",
@@ -797,6 +867,56 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/governance/status/recent",
 		HandleRecentGovernanceStatuses,
+	)
+
+	http.HandleFunc(
+		"/governance/my-weight",
+		HandleGovernanceMyWeight,
+	)
+
+	http.HandleFunc(
+		"/governance/status/user",
+		HandleGovernanceStatusForUser,
+	)
+
+	http.HandleFunc(
+		"/governance/votes",
+		HandleGovernanceVotesForUser,
+	)
+
+	http.HandleFunc(
+		"/referrals",
+		HandleReferrals,
+	)
+
+	http.HandleFunc(
+		"/announcements/create",
+		HandleCreateAnnouncement,
+	)
+
+	http.HandleFunc(
+		"/announcements/recent",
+		HandleListAnnouncements,
+	)
+
+	http.HandleFunc(
+		"/ratings/submit",
+		HandleSubmitRating,
+	)
+
+	http.HandleFunc(
+		"/ratings/mine",
+		HandleMyRating,
+	)
+
+	http.HandleFunc(
+		"/ratings/recent",
+		HandleRecentRatings,
+	)
+
+	http.HandleFunc(
+		"/price/external",
+		HandleExternalPrice,
 	)
 
 	http.HandleFunc(

@@ -14,6 +14,19 @@ import "sync"
 // requests a trade, not a pre-locked pot). This is the deliberate
 // mechanism behind "the hub's wallet balance is the limit a buyer can
 // demand" - there is no other cap.
+// HubRateScale is the fixed-point scale SellRate/BuyRate are stored
+// at - both are the FiatSymbol amount per 1 whole unit of Symbol,
+// times HubRateScale, so a rate like "1 CCT = 0.000975 ETH" round-trips
+// as an exact integer (975) instead of truncating to 0 the way a bare
+// uint64 would. Mirrors core/order_book.go's identical priceScale
+// convention for the same reason - keeping the two on the same scale
+// isn't required for correctness (they're unrelated markets) but
+// avoids a second, differently-scaled "price" concept in this
+// codebase. Every SellRate/BuyRate value, and every computation that
+// multiplies an amount by one, must divide by this constant to recover
+// the real-world quantity.
+const HubRateScale = 1_000_000
+
 type HubRate struct {
 	Hub string
 	// HubPublicKey is the public key of whichever address actually
@@ -48,11 +61,13 @@ type HubRate struct {
 
 	// SellRate is the FiatSymbol amount per 1 unit of Symbol when a
 	// user BUYS Symbol from this hub (the hub sells its own
-	// inventory). Zero means this hub doesn't sell this symbol.
+	// inventory), scaled by HubRateScale (e.g. a real rate of 0.000975
+	// is stored as 975). Zero means this hub doesn't sell this symbol.
 	SellRate uint64
 	// BuyRate is the FiatSymbol amount per 1 unit of Symbol when a
 	// user SELLS Symbol to this hub (the hub buys, paying fiat off-
-	// app). Zero means this hub doesn't buy this symbol.
+	// app), scaled by HubRateScale exactly like SellRate. Zero means
+	// this hub doesn't buy this symbol.
 	BuyRate uint64
 
 	// Active gates whether new trades can be requested against this

@@ -3,6 +3,7 @@
 <head>
     <title>OUTERNET Validator Pools</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
     <link rel="stylesheet" href="css/style.css">
     <style>
         .explorer-search{
@@ -128,9 +129,58 @@
 <p style="opacity:0.7;font-size:13px;">
     Every registered validator's pool - delegate CCT to one to back its PoSR selection weight and share in
     its block rewards (net of its own commission), without running a node yourself. See
-    <a href="reputation.html#math" style="color:#8ef;">how PoSR selection actually works</a> for what really
+    <a href="reputation.html#math" style="color:var(--cc-accent-gold, #c9a227);">how PoSR selection actually works</a> for what really
     drives who gets picked (stake is only 25% of it).
 </p>
+
+<!-- ================= Validator Application (staged onboarding) ================= -->
+<div class="card" id="validatorApplicationCard">
+    <h2>Validator Application</h2>
+    <div id="unapprovedContent">
+        <p style="opacity:0.75;font-size:13px;">
+            Becoming a validator here is a staged process, not a one-click signup: first your application needs
+            real community support (1% of total governance voting weight), then a confirmation link emailed to
+            your recovery address, then real node registration and stake lock. This is deliberate - a validator
+            holds real trust over block production.
+        </p>
+        <p id="myApplicationStatus">Loading...</p>
+        <div id="applicationCreateBox">
+            <button onclick="createValidatorApplication()">Start My Application</button>
+        </div>
+        <div id="applicationSupportBox" style="display:none;">
+            <p style="opacity:0.7;font-size:12px;">Support weight so far: <span id="appSupportWeight">0</span> / <span id="appRequiredWeight">0</span> needed.</p>
+            <p style="opacity:0.7;font-size:12px;">Share your address with other activated-governance wallets so they can support your application below.</p>
+        </div>
+        <div id="applicationPendingBox" style="display:none;">
+            <p style="opacity:0.7;font-size:12px;">
+                You've reached the required support - check your recovery email for a confirmation link, or paste
+                the link's page here: <a href="validator-confirm.html">validator-confirm.html</a>.
+            </p>
+        </div>
+
+        <h3>Support Someone Else's Application</h3>
+        <p style="opacity:0.7;font-size:12px;">Requires your own governance to be activated (see the Governance page).</p>
+        <div class="explorer-search">
+            <input id="supportAddress" placeholder="Applicant's wallet address">
+            <button onclick="supportValidatorApplication()">Support</button>
+        </div>
+        <p id="supportStatus"></p>
+
+        <h3>Community Ratings</h3>
+        <div id="validatorPageRatings" class="explorer-empty">Loading...</div>
+
+        <h3>Verified Trading Hubs</h3>
+        <p style="opacity:0.7;font-size:12px;">Real, verified hubs on this network - a preview of the wider community while your application is pending.</p>
+        <div id="validatorPageHubAds" class="explorer-empty">Loading...</div>
+    </div>
+    <div id="approvedApplicationNote" style="display:none;">
+        <p style="opacity:0.75;font-size:13px;">Your application is approved - see "Become Validator" below to complete registration.</p>
+    </div>
+</div>
+
+<br>
+
+<div id="approvedOnlyContent" style="display:none;">
 
 <!-- ================= Leaderboard ================= -->
 <div class="card" id="leaderboardCard">
@@ -255,11 +305,11 @@
 
     <h2>Become Validator</h2>
 
-    <p>Requirements:</p>
+    <p>Requirements (increase as the network grows - see current numbers below):</p>
     <ul>
         <li>Reputation &ge; 50</li>
-        <li>Stake at least 1,000 ETHTEST</li>
-        <li>50 CCT registration fee, charged when registration confirms</li>
+        <li>Stake at least <span id="becomeValidatorMinStake">1,000</span> CCT</li>
+        <li><span id="becomeValidatorFee">50</span> CCT registration fee, charged when registration confirms</li>
     </ul>
     <p style="opacity:0.7;font-size:12px;">
         You start at a 10% commission rate - adjust it any time from your validator's detail page above,
@@ -282,6 +332,8 @@
     </p>
 
     <button onclick="produceBlock()">Produce Block Now</button>
+
+</div>
 
 </div>
 

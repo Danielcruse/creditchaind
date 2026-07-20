@@ -16,7 +16,7 @@
         #ccAiToggle {
             position: fixed; bottom: 22px; right: 22px; z-index: 9998;
             width: 54px; height: 54px; border-radius: 50%;
-            background: linear-gradient(135deg, #8ef, #6bd6ff);
+            background: linear-gradient(135deg, var(--cc-accent-2, #16c46f), var(--cc-accent-1, #0f9d58));
             border: none; cursor: pointer; font-size: 22px;
             box-shadow: 0 4px 16px rgba(0,0,0,0.4);
         }
@@ -35,7 +35,7 @@
             border-bottom: 1px solid rgba(255,255,255,0.08);
             display: flex; justify-content: space-between; align-items: center;
         }
-        #ccAiHeader strong { color: #8ef; font-size: 14px; }
+        #ccAiHeader strong { color: var(--cc-accent-2, #16c46f); font-size: 14px; }
         #ccAiClose { background: none; border: none; color: #aaa; cursor: pointer; font-size: 16px; }
         #ccAiMessages {
             flex: 1; overflow-y: auto; padding: 12px; font-size: 13px; line-height: 1.5;
@@ -51,7 +51,7 @@
         }
         #ccAiInput:focus { outline: none; }
         #ccAiSend {
-            background: #8ef; color: #14181f; border: none; padding: 0 16px;
+            background: var(--cc-accent-1, #0f9d58); color: white; border: none; padding: 0 16px;
             font-weight: 600; cursor: pointer;
         }
         #ccAiSend:disabled { opacity: 0.5; cursor: default; }

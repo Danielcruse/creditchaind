@@ -439,8 +439,17 @@ func syncChainFromPeer(addr string) {
 		// codebase doesn't do yet (a disclosed fork-resolution gap -
 		// simple longest-chain-wins isn't fully BFT-robust). Refuse
 		// rather than risk silently corrupting state by only replacing
-		// the block list without the state to match it.
-		fmt.Println("refusing chain from", addr, "- diverges from an already-applied block (reorg-with-rollback not supported)")
+		// the block list without the state to match it. recordForkEvent
+		// (fork_monitor.go) makes this visible on /health/sync
+		// immediately, rather than only on the periodic monitor's next
+		// tick - a refused reorg here means this node is now stuck
+		// behind, which needs the same manual intervention as any other
+		// detected fork.
+		details := fmt.Sprintf(
+			"refusing chain from %s - diverges from an already-applied block at index %d (reorg-with-rollback not supported)",
+			addr, prefix,
+		)
+		recordForkEvent(details)
 		return
 	}
 

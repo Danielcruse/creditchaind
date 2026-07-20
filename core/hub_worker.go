@@ -15,6 +15,19 @@ type HubWorker struct {
 	Name            string
 	Active          bool
 	AddedAt         int64
+
+	// IsAutomationAgent + AutoConfirmCapAmount are the scoped-automation
+	// delegation (see api/hub_automation.go's doc comment for the full
+	// design/scope rationale) - both are explicit, per-worker opt-in
+	// controls the hub sets themselves, never true/nonzero by default
+	// even once a hub subscribes to the paid Automation tier.
+	// IsAutomationAgent gates whether this worker may post one of the
+	// hub's own pre-written CannedReplies (core/hub_rules.go) on the
+	// hub's behalf. AutoConfirmCapAmount is the max OfferAmount this
+	// worker may auto-confirm-seller-paid for - 0 means never (a trade
+	// above the cap always needs the hub's own real key).
+	IsAutomationAgent    bool
+	AutoConfirmCapAmount uint64
 }
 
 func hubWorkerKey(hub, worker string) string {
@@ -63,6 +76,30 @@ func (s *HubWorkerStore) IsActiveWorker(hub, worker string) bool {
 
 	w, ok := s.Workers[hubWorkerKey(hub, worker)]
 	return ok && w.Active
+}
+
+// IsAutomationAgent reports whether worker is an active, hub-flagged
+// automation agent for hub - the gate api/p2p_external.go's
+// HandleP2PMessage checks before accepting a canned-reply post from a
+// worker instead of the hub's own key.
+func (s *HubWorkerStore) IsAutomationAgent(hub, worker string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	w, ok := s.Workers[hubWorkerKey(hub, worker)]
+	return ok && w.Active && w.IsAutomationAgent
+}
+
+// CanAutoConfirm reports whether worker may auto-confirm-seller-paid
+// on hub's behalf for a trade of the given amount - requires both the
+// automation flag AND the trade falling within the hub's own
+// configured per-worker cap (0 means never, the default).
+func (s *HubWorkerStore) CanAutoConfirm(hub, worker string, amount uint64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	w, ok := s.Workers[hubWorkerKey(hub, worker)]
+	return ok && w.Active && w.IsAutomationAgent && w.AutoConfirmCapAmount > 0 && amount <= w.AutoConfirmCapAmount
 }
 
 // ListForHub returns every worker a hub has ever added, active or not,

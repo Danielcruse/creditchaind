@@ -3,6 +3,7 @@
 <head>
     <title>Create Account</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -36,6 +37,13 @@
 
     <br><br>
 
+    <input
+        type="text"
+        id="referredBy"
+        placeholder="Referral address (optional)">
+
+    <br><br>
+
     <button onclick="register()">
         Create Account
     </button>
@@ -45,7 +53,7 @@
 <div
 id="seedPhraseModal"
 style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);align-items:center;justify-content:center;z-index:10000;">
-    <div style="background:#0b1026;border-radius:16px;padding:25px;max-width:600px;width:92vw;max-height:85vh;overflow-y:auto;">
+    <div style="background:var(--cc-bg-2, #082616);border-radius:16px;padding:25px;max-width:600px;width:92vw;max-height:85vh;overflow-y:auto;">
         <h2 style="margin-top:0;color:#ffd166;">⚠ Save Your Backup Phrase</h2>
         <p>
             This is the <strong>only time</strong> this backup phrase will ever be shown.
@@ -56,7 +64,7 @@ style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);align-ite
         <p style="opacity:0.7;font-size:12px;">
             This is a standard 12-word BIP-39 recovery phrase - it's the master key for your
             CreditChain, Ethereum, and Bitcoin (testnet) accounts, all derived from this one
-            phrase. See <a href="settings.html" style="color:#8ef;">Settings</a> later for the
+            phrase. See <a href="settings.html" style="color:var(--cc-accent-gold, #c9a227);">Settings</a> later for the
             email-based recovery option too.
         </p>
         <div id="seedPhraseText" style="font-family:monospace;font-size:13px;background:rgba(255,255,255,0.05);border-radius:10px;padding:15px;line-height:1.8;word-spacing:6px;"></div>
@@ -80,6 +88,15 @@ style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);align-ite
 <script>
 
 populateRegionSelect(document.getElementById("region"));
+
+// Auto-fill the referral field from a shared link, e.g.
+// register.html?ref=<referrer's cc address> - referral "codes" are
+// just the referrer's own address (see core.Wallet.ReferredBy's doc
+// comment), no separate code-issuing system needed.
+const refParam = new URLSearchParams(window.location.search).get("ref");
+if (refParam) {
+    document.getElementById("referredBy").value = refParam;
+}
 
 async function register() {
 
@@ -141,10 +158,13 @@ async function register() {
     const mnemonic = await HDWallet.generateMnemonic();
     const accounts = await HDWallet.deriveAllAccounts(mnemonic, "");
 
+    const referredBy = document.getElementById("referredBy").value.trim();
+
     try {
         await apiPost("/wallet/create", {
             address: accounts.creditchain.address,
             publicKey: accounts.creditchain.publicKey,
+            referredBy: referredBy,
         });
     } catch (e) {
         alert("Could not reach CreditChain node: " + e.message);

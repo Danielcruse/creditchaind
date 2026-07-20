@@ -26,6 +26,25 @@ async function loadBalance() {
     }
 }
 
+function copyReferralLink() {
+    const link = document.getElementById("referralLink").innerText;
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(link).catch(() => {});
+    }
+}
+
+async function loadReferrals() {
+    if (!wallet) return;
+    document.getElementById("referralLink").innerText =
+        `${location.origin}/register.html?ref=${wallet.address}`;
+    try {
+        const r = await apiGet(`/referrals?address=${wallet.address}`);
+        document.getElementById("referralCount").innerText = r.referralCount;
+    } catch (e) {
+        console.error(e);
+    }
+}
+
 function showReceiveAddress() {
     if (!wallet) return;
 
@@ -57,3 +76,4 @@ async function claimFaucet() {
 
 loadBalance();
 setInterval(loadBalance, 5000);
+loadReferrals();

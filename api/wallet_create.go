@@ -18,6 +18,14 @@ import (
 type createWalletRequest struct {
 	Address   string `json:"address"`
 	PublicKey string `json:"publicKey"`
+	// ReferredBy is optional - the referrer's own CreditChain address
+	// (see core.Wallet.ReferredBy's doc comment for why there's no
+	// separate referral-code system). Never validated against a real
+	// existing wallet - a referrer who hasn't registered yet, or a
+	// typo, just means ReferralCount never counts this row; harmless
+	// either way for a reputation/voting-weight bonus with no real
+	// value at stake.
+	ReferredBy string `json:"referredBy"`
 }
 
 func HandleCreateWallet(
@@ -52,6 +60,9 @@ func HandleCreateWallet(
 	registered.Address = req.Address
 	registered.CreatedAt = time.Now().Unix()
 	registered.LastActivityAt = time.Now().Unix()
+	if req.ReferredBy != "" && req.ReferredBy != req.Address {
+		registered.ReferredBy = req.ReferredBy
+	}
 	walletStore.Register(&registered)
 
 	json.NewEncoder(w).Encode(

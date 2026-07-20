@@ -32,6 +32,32 @@ const ProduceBlockReward = 10
 // existing core.MinValidatorStake CCT stake requirement.
 const ValidatorRegisterFeeCCT = 50
 
+// validatorScalingBlockSize/validatorScalingIncrementPercent implement
+// "if there's a new validator the requirement increases" - a judgment
+// call (not derived from any specified curve): the fee and minimum
+// stake stay flat for the first validatorScalingBlockSize validators,
+// then step up by validatorScalingIncrementPercent for every
+// additional full block of that size. Applied only at the final
+// registration step (stage 3 of the staged onboarding pipeline, see
+// api/validator_application.go) - an applicant's actual requirement is
+// locked in at the moment they clear the pipeline, not a moving
+// target while they wait through stages 1-2.
+const (
+	validatorScalingBlockSize        = 10
+	validatorScalingIncrementPercent = 10
+)
+
+func validatorRegisterFeeForCount(n int) uint64 {
+	tiers := uint64(n / validatorScalingBlockSize)
+	fee := governanceParam("ValidatorRegisterFeeCCT", ValidatorRegisterFeeCCT)
+	return fee + fee*tiers*validatorScalingIncrementPercent/100
+}
+
+func minValidatorStakeForCount(n int) uint64 {
+	tiers := uint64(n / validatorScalingBlockSize)
+	return core.MinValidatorStake + core.MinValidatorStake*tiers*validatorScalingIncrementPercent/100
+}
+
 type ValidatorInfo struct {
 	Address        string `json:"address"`
 	Stake          uint64 `json:"stake"`
@@ -106,7 +132,7 @@ func toValidatorInfo(v *core.ValidatorStatus, totalEffectiveStakeAcrossAll uint6
 		DelegatorCount:     delegationStore.DelegatorCount(v.Address),
 		EffectiveStake:     effectiveStake,
 		EstimatedAPY:       estimateDelegatorAPY(v, effectiveStake, totalDelegated, totalEffectiveStakeAcrossAll),
-		MinStakeRequired:   core.MinValidatorStake,
+		MinStakeRequired:   minValidatorStakeForCount(len(validatorStore.Validators)),
 		CurrentBlockReward: blockRewardForTimestamp(time.Now().Unix()),
 	}
 }
@@ -152,6 +178,17 @@ func totalEffectiveStakeAcrossValidators() uint64 {
 // canonical StakingStore/WalletStore - a real leaderboard, sortable
 // via ?sort=stake|uptime|blocks|reputation|delegated (defaults to
 // stake, meaning EffectiveStake, the PoSR-relevant figure).
+//
+// This endpoint itself stays ungated (api/profile.js also reads it to
+// check "is the wallet I'm viewing an active validator," a much
+// smaller/safer disclosure than the full economics view) - the real
+// security boundary is registration itself (see
+// applyValidatorRegister's validatorApplicationStore.IsApproved
+// gate), not read access to already-public network state. The staged
+// pipeline's "unapproved wallets only see an apply flow" ask (see
+// api/validator_application.go's doc comment) is implemented as
+// client-side conditional rendering in website/js/validator.js
+// instead, so it doesn't regress this other real consumer.
 func HandleValidators(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -201,11 +238,18 @@ func HandleRegisterValidator(
 		return
 	}
 
+	if !validatorApplicationStore.IsApproved(address) {
+		http.Error(w, "complete the validator application process first (governance support, then the emailed confirmation link)", http.StatusForbidden)
+		return
+	}
+
 	wallet := walletStore.Get(address)
 	stakingStore.SyncWallet(wallet, address)
 
-	if wallet.StakedCCT < core.MinValidatorStake {
-		http.Error(w, fmt.Sprintf("must stake at least %d CCT before becoming a validator", core.MinValidatorStake), http.StatusBadRequest)
+	validatorCount := len(validatorStore.Validators)
+	requiredStake := minValidatorStakeForCount(validatorCount)
+	if wallet.StakedCCT < requiredStake {
+		http.Error(w, fmt.Sprintf("must stake at least %d CCT before becoming a validator", requiredStake), http.StatusBadRequest)
 		return
 	}
 
@@ -214,8 +258,9 @@ func HandleRegisterValidator(
 		return
 	}
 
-	if tokenStore.BalanceOf(address) < ValidatorRegisterFeeCCT {
-		http.Error(w, fmt.Sprintf("you need at least %d CCT to cover the validator registration fee", ValidatorRegisterFeeCCT), http.StatusBadRequest)
+	registerFee := validatorRegisterFeeForCount(validatorCount)
+	if tokenStore.BalanceOf(address) < registerFee {
+		http.Error(w, fmt.Sprintf("you need at least %d CCT to cover the validator registration fee", registerFee), http.StatusBadRequest)
 		return
 	}
 

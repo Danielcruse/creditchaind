@@ -1,0 +1,428 @@
+/* landing.css - the public marketing landing page (index.html) ONLY.
+   Deliberately a separate look from the green "vault/ledger" theme
+   (theme.css/style.css) used across the authenticated app and the
+   other marketing pages (whitepaper/faq/explorer/governance) - this
+   file is loaded only by index.html, so nothing else on the site is
+   affected. Before this file existed, almost none of index.html's
+   sections (.navbar/.hero/.buttons/.feature-grid/.stats/footer) had
+   any real styling at all (confirmed by grep - only .card/button/body
+   were styled, everything else fell back to unstyled browser
+   defaults) - so this is a from-scratch design, not an override of
+   an existing look. White base, heavy blue accenting throughout. */
+
+body{
+    background:
+        radial-gradient(1100px 650px at 12% -8%, rgba(59,130,246,0.30), transparent 60%),
+        radial-gradient(1000px 700px at 108% 8%, rgba(37,99,235,0.24), transparent 55%),
+        radial-gradient(900px 550px at 50% 115%, rgba(96,165,250,0.22), transparent 60%),
+        #ffffff !important;
+    color:#10243e;
+    overflow-x:hidden;
+}
+
+/* Slowly drifting soft blue blobs behind everything, for the "heavily
+   beautiful" ask - subtle, not distracting, purely decorative. */
+body::before,
+body::after{
+    content:"";
+    position:fixed;
+    z-index:-1;
+    border-radius:50%;
+    filter:blur(60px);
+    opacity:0.35;
+    pointer-events:none;
+}
+body::before{
+    width:520px; height:520px;
+    top:-120px; left:-140px;
+    background:radial-gradient(circle, #60a5fa, transparent 70%);
+    animation:landingBlobDrift 22s ease-in-out infinite;
+}
+body::after{
+    width:600px; height:600px;
+    bottom:-180px; right:-160px;
+    background:radial-gradient(circle, #3b82f6, transparent 70%);
+    animation:landingBlobDrift 26s ease-in-out infinite reverse;
+}
+@keyframes landingBlobDrift{
+    0%,100%{ transform:translate(0,0) scale(1); }
+    50%{ transform:translate(60px,40px) scale(1.12); }
+}
+
+/* --- Navbar --- */
+.navbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:18px 40px;
+    background:rgba(255,255,255,0.72);
+    backdrop-filter:blur(16px);
+    border-bottom:1px solid rgba(37,99,235,0.12);
+    position:sticky;
+    top:0;
+    z-index:100;
+}
+.navbar .logo{
+    font-size:20px;
+    font-weight:800;
+    letter-spacing:0.3px;
+    background:linear-gradient(90deg,#1d4ed8,#3b82f6);
+    -webkit-background-clip:text;
+    background-clip:text;
+    color:transparent;
+}
+.navbar ul{
+    display:flex;
+    align-items:center;
+    gap:28px;
+    list-style:none;
+    margin:0;
+    padding:0;
+}
+.navbar ul li a{
+    color:#274670;
+    text-decoration:none;
+    font-size:14px;
+    font-weight:600;
+    transition:color 0.2s ease;
+}
+.navbar ul li a:hover{
+    color:#1d4ed8;
+}
+.navbar ul li:last-child a{
+    background:linear-gradient(90deg,#2563eb,#3b82f6);
+    color:#fff;
+    padding:9px 18px;
+    border-radius:10px;
+    box-shadow:0 4px 16px rgba(37,99,235,0.35);
+}
+.navbar ul li:last-child a:hover{
+    box-shadow:0 6px 22px rgba(37,99,235,0.5);
+}
+
+/* --- Hero --- */
+.hero{
+    text-align:center;
+    padding:100px 24px 70px;
+}
+.hero h1{
+    font-size:clamp(32px, 5vw, 54px);
+    line-height:1.15;
+    margin:0 0 20px;
+    color:#0b1f3a;
+}
+.hero h1::after{
+    content:"";
+    display:block;
+    width:90px;
+    height:4px;
+    margin:22px auto 0;
+    border-radius:4px;
+    background:linear-gradient(90deg,#2563eb,#60a5fa);
+}
+.hero p{
+    max-width:560px;
+    margin:0 auto;
+    font-size:16px;
+    line-height:1.7;
+    color:#3a557d;
+}
+.hero .buttons{
+    margin-top:36px;
+    display:flex;
+    justify-content:center;
+    gap:14px;
+    flex-wrap:wrap;
+}
+
+/* --- Buttons --- */
+button{
+    background:linear-gradient(90deg,#2563eb,#3b82f6,#60a5fa);
+    color:#fff;
+    border:none;
+    border-radius:12px;
+    padding:13px 26px;
+    font-size:14px;
+    font-weight:700;
+    cursor:pointer;
+    margin:0;
+    transition:0.25s;
+    box-shadow:0 6px 20px rgba(37,99,235,0.30);
+}
+button:hover{
+    transform:translateY(-2px) scale(1.03);
+    box-shadow:0 10px 28px rgba(37,99,235,0.45);
+}
+button.secondary{
+    background:rgba(255,255,255,0.7);
+    color:#1d4ed8;
+    border:2px solid #2563eb;
+    box-shadow:none;
+}
+button.secondary:hover{
+    background:rgba(37,99,235,0.08);
+    box-shadow:0 6px 20px rgba(37,99,235,0.18);
+}
+
+/* --- Section headings shared across ecosystem/stats/about/features/roadmap --- */
+section > h2{
+    text-align:center;
+    font-size:30px;
+    color:#0b1f3a;
+    margin-bottom:8px;
+}
+section#about p{
+    max-width:640px;
+    margin:0 auto;
+    text-align:center;
+    color:#3a557d;
+    line-height:1.7;
+}
+
+/* --- Cards (ecosystem + stats) --- */
+.ecosystem, .stats{
+    display:flex;
+    flex-wrap:wrap;
+    justify-content:center;
+    padding:20px 24px 40px;
+}
+.card{
+    background:rgba(255,255,255,0.68);
+    backdrop-filter:blur(16px);
+    border:1px solid rgba(37,99,235,0.16);
+    border-radius:18px;
+    padding:24px;
+    margin:12px;
+    width:220px;
+    color:#1a3357;
+    box-shadow:0 0 26px rgba(37,99,235,0.10);
+    transition:0.3s;
+    cursor:pointer;
+}
+.card:hover{
+    transform:translateY(-6px);
+    box-shadow:0 12px 34px rgba(37,99,235,0.22);
+    border-color:rgba(37,99,235,0.35);
+}
+.card h2, .card h3{
+    margin-top:0;
+    color:#1d4ed8;
+}
+.card p{
+    color:#4a6488;
+    font-size:14px;
+    line-height:1.5;
+    margin-bottom:0;
+}
+
+/* --- Features --- */
+.feature-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));
+    gap:20px;
+    max-width:960px;
+    margin:32px auto 0;
+    padding:0 24px;
+}
+.feature-card{
+    background:rgba(255,255,255,0.6);
+    border:1px solid rgba(37,99,235,0.14);
+    border-radius:16px;
+    padding:22px;
+    box-shadow:0 0 20px rgba(37,99,235,0.08);
+    transition:0.25s;
+}
+.feature-card:hover{
+    box-shadow:0 10px 26px rgba(37,99,235,0.18);
+    transform:translateY(-4px);
+}
+.feature-card h3{
+    margin-top:0;
+    color:#1d4ed8;
+    font-size:16px;
+}
+.feature-card p{
+    color:#4a6488;
+    font-size:14px;
+    margin-bottom:0;
+}
+
+/* --- Roadmap --- */
+#roadmap ul{
+    list-style:none;
+    max-width:420px;
+    margin:24px auto 0;
+    padding:0;
+}
+#roadmap li{
+    padding:12px 18px;
+    margin-bottom:10px;
+    border-radius:10px;
+    background:rgba(255,255,255,0.55);
+    border:1px solid rgba(37,99,235,0.12);
+    color:#2a4770;
+    font-size:14px;
+}
+
+/* --- Governance card: first-touch "light coming into existence" --- */
+.gov-tab{
+    position:relative;
+    overflow:visible;
+}
+.gov-tab-glow{
+    position:absolute;
+    inset:-18px;
+    border-radius:26px;
+    background:radial-gradient(circle at 50% 35%, rgba(59,130,246,0.6), rgba(96,165,250,0.28) 45%, transparent 72%);
+    opacity:0;
+    transform:scale(0.6);
+    pointer-events:none;
+    transition:opacity 0.8s ease, transform 0.8s cubic-bezier(.2,1.5,.4,1);
+    z-index:0;
+}
+.gov-tab.lit .gov-tab-glow{
+    opacity:1;
+    transform:scale(1);
+    animation:govGlowPulse 2.6s ease-in-out infinite;
+}
+@keyframes govGlowPulse{
+    0%,100%{ filter:blur(2px) brightness(1); }
+    50%{ filter:blur(5px) brightness(1.3); }
+}
+.gov-tab h3, .gov-tab p{
+    position:relative;
+    z-index:1;
+}
+.gov-tab-status{
+    position:relative;
+    z-index:1;
+    max-height:0;
+    opacity:0;
+    overflow:hidden;
+    transition:max-height 0.6s ease, opacity 0.5s ease 0.15s;
+    font-size:12px;
+    line-height:1.5;
+    color:#2a4770;
+    margin-top:0;
+    font-style:italic;
+}
+.gov-tab.lit .gov-tab-status{
+    max-height:90px;
+    opacity:1;
+    margin-top:10px;
+}
+
+/* --- Governance burst overlay: second-touch floating panels --- */
+.gov-burst-overlay{
+    position:fixed;
+    inset:0;
+    z-index:9999;
+    background:rgba(219,238,255,0.78);
+    backdrop-filter:blur(10px);
+    animation:govOverlayFadeIn 0.35s ease;
+}
+@keyframes govOverlayFadeIn{
+    from{ opacity:0; }
+    to{ opacity:1; }
+}
+
+.gov-float-panel{
+    position:absolute;
+    width:min(260px, 66vw);
+    padding:16px 18px;
+    border-radius:16px;
+    background:rgba(255,255,255,0.72);
+    border:1px solid rgba(37,99,235,0.35);
+    box-shadow:0 10px 34px rgba(37,99,235,0.25);
+    backdrop-filter:blur(12px);
+    color:#10243e;
+    transform:translate(-50%, -50%);
+    animation-name:govBurstFloat;
+    animation-duration:var(--dur, 9s);
+    animation-timing-function:ease-in-out;
+    animation-iteration-count:infinite;
+    animation-delay:var(--delay, 0s);
+}
+@keyframes govBurstFloat{
+    0%{ opacity:0; transform:translate(-50%,-50%) scale(0.25) translate(var(--ox), var(--oy)); }
+    12%{ opacity:1; transform:translate(-50%,-50%) scale(1) translate(0,0); }
+    35%{ transform:translate(-50%,-50%) scale(1) translate(var(--fx1), var(--fy1)) rotate(1.2deg); }
+    60%{ transform:translate(-50%,-50%) scale(1) translate(var(--fx2), var(--fy2)) rotate(-1.2deg); }
+    85%{ transform:translate(-50%,-50%) scale(1) translate(var(--fx1), var(--fy2)) rotate(0.8deg); }
+    100%{ opacity:1; transform:translate(-50%,-50%) scale(1) translate(0,0); }
+}
+.gov-float-panel-meta{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:0.4px;
+    color:#2563eb;
+    opacity:0.85;
+    margin-bottom:6px;
+}
+.gov-float-panel-text{
+    font-size:14px;
+    line-height:1.5;
+    color:#132f52;
+}
+
+.gov-burst-close{
+    position:fixed;
+    top:20px;
+    right:20px;
+    z-index:10000;
+    width:44px;
+    height:44px;
+    border-radius:50%;
+    border:1px solid rgba(37,99,235,0.35);
+    background:rgba(255,255,255,0.85);
+    color:#1d4ed8;
+    font-size:24px;
+    line-height:1;
+    cursor:pointer;
+    box-shadow:0 6px 20px rgba(37,99,235,0.25);
+    transition:0.2s;
+}
+.gov-burst-close:hover, .gov-burst-close:focus-visible{
+    background:#2563eb;
+    color:#fff;
+    outline:none;
+    box-shadow:0 8px 26px rgba(37,99,235,0.45);
+}
+
+.gov-burst-full{
+    position:fixed;
+    bottom:24px;
+    left:24px;
+    z-index:10000;
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:12px 20px;
+    border-radius:12px;
+    background:linear-gradient(90deg,#2563eb,#3b82f6);
+    color:#fff;
+    text-decoration:none;
+    font-size:14px;
+    font-weight:700;
+    box-shadow:0 8px 24px rgba(37,99,235,0.4);
+    transition:0.2s;
+}
+.gov-burst-full:hover, .gov-burst-full:focus-visible{
+    transform:translateY(-2px);
+    box-shadow:0 10px 30px rgba(37,99,235,0.55);
+    outline:none;
+}
+
+/* --- Footer --- */
+footer{
+    text-align:center;
+    padding:50px 24px 40px;
+    margin-top:40px;
+    background:linear-gradient(180deg, transparent, rgba(37,99,235,0.06));
+    border-top:1px solid rgba(37,99,235,0.12);
+    color:#3a557d;
+}
+footer h2{
+    color:#0b1f3a;
+    margin-bottom:6px;
+}

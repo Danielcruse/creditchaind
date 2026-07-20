@@ -8,7 +8,7 @@
 const assetsWallet = requireWallet();
 
 function tokenLabel(symbol) {
-    return symbol === "ETHB" ? "ETH" : symbol === "USDCTEST" ? "USDC" : symbol;
+    return symbol === "ETHB" ? "ETH" : symbol === "BTCB" ? "BTC" : symbol === "USDCTEST" ? "USDC" : symbol;
 }
 
 // weiToEth mirrors asset.js/defi.js's helper of the same name - ETHB
@@ -18,6 +18,16 @@ function weiToEth(weiString) {
     const wei = BigInt(weiString || "0");
     const whole = wei / 1000000000000000000n;
     const frac = (wei % 1000000000000000000n).toString().padStart(18, "0").replace(/0+$/, "") || "0";
+    return `${whole}.${frac}`;
+}
+
+// satsToBtc mirrors send-bridged-btc.js's helper - /btcb/balance
+// returns a plain sats integer (safe within JS's number range, unlike
+// ETHB's wei), so this is a much simpler base-1e8 conversion.
+function satsToBtc(sats) {
+    const n = Number(sats || 0);
+    const whole = Math.floor(n / 1e8);
+    const frac = String(n % 1e8).padStart(8, "0").replace(/0+$/, "") || "0";
     return `${whole}.${frac}`;
 }
 
@@ -71,15 +81,17 @@ async function loadAssets() {
     const listEl = document.getElementById("assetsList");
 
     try {
-        const [cctBalance, usdcTestAddress, ethbAddress] = await Promise.all([
+        const [cctBalance, usdcTestAddress, ethbAddress, btcbAddress] = await Promise.all([
             apiGet(`/token/balance?address=${assetsWallet.address}`),
             getUsdcTestAddress(assetsWallet),
             getEthbAddress(assetsWallet),
+            deriveTokenAddress(assetsWallet.publicKey, "BTCB-SUBADDRESS"),
         ]);
 
-        const [usdcTestBalance, ethbBalance, usdcPrice] = await Promise.all([
+        const [usdcTestBalance, ethbBalance, btcbBalance, usdcPrice] = await Promise.all([
             apiGet(`/usdctest/balance?address=${usdcTestAddress}`),
             apiGet(`/ethb/balance?address=${ethbAddress}`),
+            apiGet(`/btcb/balance?address=${btcbAddress}`),
             priceLine("USDCTEST"),
         ]);
 
@@ -110,18 +122,34 @@ async function loadAssets() {
             console.error(e);
         }
 
+        // Two BTC-related rows, mirroring the ETH row split: "BTC" is
+        // the self-custodial testnet address itself (its own network,
+        // real UTXOs, spent directly via BIP143 signing - see
+        // send-bridged-btc.html's "BTC network" mode); "BTCB" is the
+        // bridged ledger balance credited when deposits to that same
+        // address are detected (see api/btc_bridge.go) - unlike ETHB
+        // there's no separate custodial address for BTCB, deposits
+        // land on the user's own self-custodial address.
         let btcRowHTML = "";
         const btcAccount = hdAccount("btc");
         if (btcAccount) {
             btcRowHTML = assetRowHTML(
                 "BTC",
                 "BTC",
-                "Bitcoin (testnet), self-custodial - receive-only",
+                "Bitcoin (testnet), self-custodial address",
                 btcAccount.address,
-                "Phase A: receive-only",
+                "View on Bitcoin network",
                 ""
             );
         }
+        const btcbRowHTML = assetRowHTML(
+            "BTC",
+            "BTCB",
+            "Bridged BTC (deposits to your Bitcoin address auto-credit here; send picks CCT or BTC network)",
+            null,
+            `${satsToBtc(btcbBalance.balance)} BTC`,
+            ""
+        );
 
         // One "ETH" row - real bridged Sepolia ETH (the auto-bridge
         // balance, symbol ETHB internally). Deposits to your custodial
@@ -145,6 +173,7 @@ async function loadAssets() {
         listEl.innerHTML =
             assetRowHTML("CCT", "CCT", "CreditChain native token", null, `${cctBalance.balance} CCT`, "Hub currency") +
             ethRowHTML +
+            btcbRowHTML +
             assetRowHTML("USDC", "USDCTEST", "Imported token", usdcTestAddress, `${usdcTestBalance.balance} USDCTEST`, usdcPrice) +
             btcRowHTML +
             customRowsHTML;

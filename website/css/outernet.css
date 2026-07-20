@@ -12,8 +12,8 @@ body{
     background:
         radial-gradient(
             circle at top,
-            #111827,
-            #050816
+            #123423,
+            var(--cc-bg-1, #04150d)
         );
 
     color:#fff;
@@ -291,7 +291,7 @@ body{
     border-radius:10px;
 
     background:
-        #00bfff;
+        var(--cc-accent-gold, #c9a227);
 
     color:white;
 
@@ -395,7 +395,7 @@ body{
         linear-gradient(
             90deg,
             #00ff95,
-            #8ef
+            var(--cc-accent-gold-soft, #e0c674)
         );
     -webkit-background-clip:text;
     background-clip:text;
@@ -481,7 +481,7 @@ body{
     font-weight:800;
     font-size:14px;
     letter-spacing:0.3px;
-    background:linear-gradient(135deg,#00d2ff,#3a7bd5);
+    background:linear-gradient(135deg,var(--cc-accent-1, #0f9d58),var(--cc-accent-2, #16c46f));
     color:#04101f;
 }
 
@@ -558,7 +558,7 @@ pre{
         break-word;
 
     color:
-        #8ef;
+        var(--cc-accent-gold-soft, #e0c674);
 
     font-size:
         12px;
@@ -712,7 +712,7 @@ body.mobile-nav .mobile-tabbar{
 
 .tabbar-btn.active{
     opacity:1;
-    color:#00bfff;
+    color:var(--cc-accent-gold, #c9a227);
 }
 
 .tabbar-icon{
@@ -754,7 +754,7 @@ body.mobile-nav .mobile-tabbar{
 }
 
 .modal-box{
-    background:#0b1026;
+    background:var(--cc-bg-2, #082616);
     color:#fff;
     border-radius:16px;
     padding:20px;
@@ -910,7 +910,7 @@ body.outernet-light .wallet-address-chip:hover{
 }
 
 body.outernet-light .wallet-balance-amount{
-    background:linear-gradient(90deg,#059669,#0284c7);
+    background:linear-gradient(90deg,#059669,var(--cc-accent-gold, #c9a227));
     -webkit-background-clip:text;
     background-clip:text;
 }
@@ -955,7 +955,7 @@ body.outernet-light .mobile-tabbar{
 }
 
 body.outernet-light .tabbar-btn.active{
-    color:#0284c7;
+    color:var(--cc-accent-gold, #c9a227);
 }
 
 body.outernet-light .modal-box{
@@ -1022,13 +1022,13 @@ body.outernet-light .copy-icon:hover{
 }
 
 .health-healthy{ background:rgba(0,255,149,.15); color:#00ff95; }
-.health-safe{ background:rgba(0,191,255,.15); color:#00bfff; }
+.health-safe{ background:rgba(201,162,39,.15); color:var(--cc-accent-gold, #c9a227); }
 .health-warning{ background:rgba(255,176,32,.18); color:#ffb020; }
 .health-liquidation{ background:rgba(255,90,90,.18); color:#ff5a5a; }
 .health-unknown{ background:rgba(255,255,255,.08); color:#999; }
 
 .risk-verylow{ background:rgba(0,255,149,.15); color:#00ff95; }
-.risk-low{ background:rgba(142,238,255,.15); color:#8ef; }
+.risk-low{ background:rgba(224,198,116,.15); color:var(--cc-accent-gold-soft, #e0c674); }
 .risk-medium{ background:rgba(255,176,32,.18); color:#ffb020; }
 .risk-high{ background:rgba(255,140,60,.18); color:#ff8c3c; }
 .risk-veryhigh{ background:rgba(255,90,90,.18); color:#ff5a5a; }
@@ -1074,7 +1074,7 @@ body.outernet-light .copy-icon:hover{
     font-size:44px;
     font-weight:700;
     line-height:1.1;
-    background:linear-gradient(90deg,#00ff95,#8ef);
+    background:linear-gradient(90deg,#00ff95,var(--cc-accent-gold-soft, #e0c674));
     -webkit-background-clip:text;
     background-clip:text;
     color:transparent;
@@ -1119,8 +1119,8 @@ body.outernet-light .copy-icon:hover{
 }
 
 .timeline-step.active{
-    background:rgba(0,191,255,.2);
-    color:#00bfff;
+    background:rgba(201,162,39,.2);
+    color:var(--cc-accent-gold, #c9a227);
     opacity:1;
     font-weight:700;
 }
@@ -1143,7 +1143,7 @@ body.outernet-light .stat-tile-value{
 }
 
 body.outernet-light .bp-score{
-    background:linear-gradient(90deg,#059669,#0284c7);
+    background:linear-gradient(90deg,#059669,var(--cc-accent-gold, #c9a227));
     -webkit-background-clip:text;
     background-clip:text;
 }

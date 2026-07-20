@@ -4,8 +4,7 @@ import (
 	"github.com/creditchain/creditchaind/core"
 )
 
-var tokenStore =
-	core.NewTokenStore()
+var tokenStore = core.NewTokenStore()
 
 // usdcTestStore is a completely separate ledger from tokenStore (CCT)
 // - borrowed funds land here, not in CCT, so "what you earned by
@@ -64,6 +63,18 @@ var cctYenPool = core.NewLiquidityPool("YENE")
 // bridged Sepolia ETH 1:1, not float against CCT. Units are wei.
 var bridgedEthStore = core.NewTokenStore()
 
+// bridgedBtcStore is BTCB - the bridged-BTC counterpart to ETHB, same
+// "real bridged balance, no CCT-paired AMM pool" shape (see
+// bridgedEthStore's doc comment for why). Deliberately self-custodial
+// on the deposit side, not KMS-custodial like ETHB - see
+// core/btc_address.go's doc comment. Units are satoshis.
+var bridgedBtcStore = core.NewTokenStore()
+
+// btcAddressStore tracks which self-custodial BTC testnet address each
+// wallet has registered for deposit-watching - see
+// core/btc_address.go's doc comment.
+var btcAddressStore = core.NewBtcAddressStore()
+
 // priceHistoryStore is a bounded, per-symbol price time series fed by
 // recordPoolPrice (api/apply.go) every time a swap or liquidity change
 // actually moves a pool's ratio - purely observational, never itself
@@ -85,4 +96,7 @@ func init() {
 
 	bridgedEthStore.Token.Name = "CreditChain Bridged ETH"
 	bridgedEthStore.Token.Symbol = "ETHB"
+
+	bridgedBtcStore.Token.Name = "CreditChain Bridged BTC"
+	bridgedBtcStore.Token.Symbol = "BTCB"
 }

@@ -347,12 +347,135 @@ async function produceBlock() {
     }
 }
 
-loadLeaderboard();
-loadMyDelegations();
-refreshConsensusStatus();
+// --- Staged validator-application gate ------------------------------------
+//
+// Per the staged onboarding pipeline (see api/validator_application.go):
+// an unapproved wallet only sees the application/support flow + ratings/
+// hub previews. The real leaderboard/delegations/consensus-status/manual-
+// nudge content only loads once this wallet's own application has reached
+// APPROVED - the actual security boundary is server-side
+// (applyValidatorRegister's gate), this is just matching what the page
+// shows to what a wallet can actually do.
+let validatorApproved = false;
+
+async function checkValidatorApplicationGate() {
+    if (!wallet) return;
+    try {
+        const app = await apiGet(`/validator-application?address=${wallet.address}`);
+        validatorApproved = app.exists && app.status === "APPROVED";
+
+        document.getElementById("approvedOnlyContent").style.display = validatorApproved ? "block" : "none";
+        document.getElementById("unapprovedContent").style.display = validatorApproved ? "none" : "block";
+        document.getElementById("approvedApplicationNote").style.display = validatorApproved ? "block" : "none";
+
+        if (!validatorApproved) {
+            renderApplicationStatus(app);
+        } else {
+            loadLeaderboard();
+            loadMyDelegations();
+            refreshConsensusStatus();
+        }
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+function renderApplicationStatus(app) {
+    const statusEl = document.getElementById("myApplicationStatus");
+    const createBox = document.getElementById("applicationCreateBox");
+    const supportBox = document.getElementById("applicationSupportBox");
+    const pendingBox = document.getElementById("applicationPendingBox");
+
+    createBox.style.display = "none";
+    supportBox.style.display = "none";
+    pendingBox.style.display = "none";
+
+    if (!app.exists) {
+        statusEl.innerText = "You haven't started a validator application yet.";
+        createBox.style.display = "block";
+        return;
+    }
+
+    if (app.status === "OPEN") {
+        statusEl.innerText = "Application open - gathering community support.";
+        supportBox.style.display = "block";
+        document.getElementById("appSupportWeight").innerText = app.supportWeight;
+        document.getElementById("appRequiredWeight").innerText = app.requiredWeight;
+    } else if (app.status === "PENDING_NODE_PROOF") {
+        statusEl.innerText = "Support threshold reached - check your email for the confirmation link.";
+        pendingBox.style.display = "block";
+    } else {
+        statusEl.innerText = `Status: ${app.status}`;
+    }
+}
+
+async function createValidatorApplication() {
+    if (!wallet) return;
+    try {
+        await apiPostSigned("/validator-application/create", {});
+        document.getElementById("myApplicationStatus").innerText = "Application submitted - refreshing...";
+        setTimeout(checkValidatorApplicationGate, 9000);
+    } catch (e) {
+        alert("Could not start application: " + e.message);
+    }
+}
+
+async function supportValidatorApplication() {
+    if (!wallet) return;
+    const address = document.getElementById("supportAddress").value.trim();
+    const statusEl = document.getElementById("supportStatus");
+    if (!address) {
+        statusEl.innerText = "Enter the applicant's address.";
+        return;
+    }
+    try {
+        const result = await apiPostSigned("/validator-application/support", { address });
+        statusEl.innerText = `Support submitted (tx ${result.txId}).`;
+    } catch (e) {
+        statusEl.innerText = e.message;
+    }
+}
+
+async function loadValidatorPageRatings() {
+    try {
+        const ratings = await apiGet("/ratings/recent");
+        const el = document.getElementById("validatorPageRatings");
+        if (!ratings || ratings.length === 0) {
+            el.innerHTML = `<p class="explorer-empty">No ratings yet.</p>`;
+            return;
+        }
+        el.innerHTML = ratings
+            .slice(0, 5)
+            .map((r) => `<div class="explorer-row"><span>${"&#9733;".repeat(r.Stars)}</span><span>${r.Comment || ""}</span></div>`)
+            .join("");
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function loadValidatorPageHubAds() {
+    try {
+        const companies = await apiGet("/companies");
+        const verified = (companies || []).filter((c) => c.Status === "VERIFIED");
+        const el = document.getElementById("validatorPageHubAds");
+        if (verified.length === 0) {
+            el.innerHTML = `<p class="explorer-empty">No verified Trading Hubs yet.</p>`;
+            return;
+        }
+        el.innerHTML = verified
+            .slice(0, 5)
+            .map((c) => `<div class="explorer-row"><span>${c.Name}</span><a href="p2p.html">Visit &rarr;</a></div>`)
+            .join("");
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+checkValidatorApplicationGate();
+loadValidatorPageRatings();
+loadValidatorPageHubAds();
 
 setInterval(() => {
-    loadLeaderboard();
-    if (!selectedValidatorAddress) loadMyDelegations();
-    refreshConsensusStatus();
+    checkValidatorApplicationGate();
+    if (validatorApproved && !selectedValidatorAddress) loadMyDelegations();
 }, 10000);

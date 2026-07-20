@@ -22,8 +22,13 @@ type hubRateSetData struct {
 	Hub        string `json:"hub"`
 	Symbol     string `json:"symbol"`
 	FiatSymbol string `json:"fiatSymbol"`
-	SellRate   uint64 `json:"sellRate"`
-	BuyRate    uint64 `json:"buyRate"`
+	// SellRate/BuyRate are already scaled by core.HubRateScale by the
+	// caller (see website/js/p2p.js's setHubRate, which multiplies the
+	// trader-entered decimal price before sending) - this handler
+	// stores whatever it receives verbatim, it never scales/unscales
+	// on its own.
+	SellRate uint64 `json:"sellRate"`
+	BuyRate  uint64 `json:"buyRate"`
 	Active     bool   `json:"active"`
 	// Mode is "" / "OFFAPP" (default, FiatSymbol is a free-text
 	// off-app label) or "ONCHAIN" (FiatSymbol must be a real,
@@ -282,7 +287,7 @@ func HandleRequestHubTrade(w http.ResponseWriter, r *http.Request) {
 		// too, same as every other balance check in this handler.
 		if rate.IsOnChain() {
 			userCounterSide := resolveBalanceAddress(address, auth.PublicKey, rate.FiatSymbol)
-			if counterStore.BalanceOf(userCounterSide) < req.Amount*rate.SellRate {
+			if counterStore.BalanceOf(userCounterSide) < req.Amount*rate.SellRate/core.HubRateScale {
 				http.Error(w, fmt.Sprintf("insufficient %s balance to pay for this trade", rate.FiatSymbol), http.StatusBadRequest)
 				return
 			}
@@ -300,7 +305,7 @@ func HandleRequestHubTrade(w http.ResponseWriter, r *http.Request) {
 		}
 		if rate.IsOnChain() {
 			hubCounterSide := resolveBalanceAddress(rate.InventoryAddress(), rate.HubPublicKey, rate.FiatSymbol)
-			if counterStore.BalanceOf(hubCounterSide) < req.Amount*rate.BuyRate {
+			if counterStore.BalanceOf(hubCounterSide) < req.Amount*rate.BuyRate/core.HubRateScale {
 				http.Error(w, "does not currently have enough balance to pay for this trade", http.StatusBadRequest)
 				return
 			}

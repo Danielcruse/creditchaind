@@ -34,8 +34,27 @@ type HubRules struct {
 	// the agent request rules." Zero (the default for a hub that never
 	// set this) means no reputation floor - anyone can apply.
 	MinReputationToApply uint64
-	UpdatedAt            int64
+	// CannedReplies is the entire "logic" an automation-tier worker may
+	// ever post on this hub's behalf (see api/hub_automation.go's doc
+	// comment) - a hub authors these themselves, capped at
+	// MaxCannedReplies entries of MaxCannedReplyLen characters each.
+	// A worker's automated chat message must exactly match one of
+	// these, server-side validated, never free-form text - this is
+	// deliberately not a scripting surface.
+	CannedReplies []CannedReply
+	UpdatedAt     int64
 }
+
+// CannedReply is one hub-authored automated reply option.
+type CannedReply struct {
+	Trigger string
+	Text    string
+}
+
+const (
+	MaxCannedReplies  = 10
+	MaxCannedReplyLen = 280
+)
 
 // PaymentWindowFor returns the payment window (in minutes) for a
 // trade direction, falling back to DefaultPaymentWindowMinutes if the
@@ -63,7 +82,7 @@ func NewHubRulesStore() *HubRulesStore {
 // Set posts or replaces a hub's rules text and payment windows -
 // always the whole record, same "no partial-field update" convention
 // as HubRateStore.Set.
-func (s *HubRulesStore) Set(hub, text string, paymentWindowMinutes map[string]int, minReputationToApply uint64, at int64) {
+func (s *HubRulesStore) Set(hub, text string, paymentWindowMinutes map[string]int, minReputationToApply uint64, cannedReplies []CannedReply, at int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -72,8 +91,29 @@ func (s *HubRulesStore) Set(hub, text string, paymentWindowMinutes map[string]in
 		Text:                 text,
 		PaymentWindowMinutes: paymentWindowMinutes,
 		MinReputationToApply: minReputationToApply,
+		CannedReplies:        cannedReplies,
 		UpdatedAt:            at,
 	}
+}
+
+// HasCannedReply reports whether text exactly matches one of hub's own
+// authored canned replies - the server-side validation that keeps an
+// automation worker's posts to hub-approved text only, never free-form
+// (see api/p2p_external.go's HandleP2PMessage).
+func (s *HubRulesStore) HasCannedReply(hub, text string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	r, ok := s.Rules[hub]
+	if !ok {
+		return false
+	}
+	for _, c := range r.CannedReplies {
+		if c.Text == text {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *HubRulesStore) Get(hub string) (*HubRules, bool) {

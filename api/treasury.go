@@ -79,12 +79,17 @@ func HandleCreatePurchaseRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleAdminListPurchases feeds the admin dashboard's pending queue.
+// POST (not GET) so it goes through the same requireAdminAuthed
+// signed-request path as every other admin action - a signature can't
+// be attached to a bare GET, and having one endpoint use a different
+// admin-auth shape than the other eight would just be a second code
+// path to keep in sync. The body carries no meaningful payload.
 func HandleAdminListPurchases(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w)
 
-	if !requireAdmin(r) {
+	if _, _, err := requireAdminAuthed(r, nil); err != nil {
 		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(map[string]string{"error": "admin token required"})
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -98,19 +103,16 @@ func HandleAdminListPurchases(w http.ResponseWriter, r *http.Request) {
 func HandleAdminConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w)
 
-	if !requireAdmin(r) {
-		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(map[string]string{"error": "admin token required"})
-		return
-	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
 		return
 	}
 
 	var req treasuryPurchaseConfirmData
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+	signedAuth, legacy, err := requireAdminAuthed(r, &req)
+	if err != nil {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -121,7 +123,7 @@ func HandleAdminConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data, _ := json.Marshal(req)
-	tx := recordTx(selfSignedEnvelope(data), reporterAddress(), "", 0, core.TxTreasuryPurchaseConfirm, string(data))
+	tx := recordAdminTx(signedAuth, legacy, "", 0, core.TxTreasuryPurchaseConfirm, string(data))
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "pending",
@@ -137,24 +139,21 @@ func HandleAdminConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 func HandleAdminSetSalePrice(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w)
 
-	if !requireAdmin(r) {
-		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(map[string]string{"error": "admin token required"})
-		return
-	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
 		return
 	}
 
 	var req treasurySetSalePriceData
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+	signedAuth, legacy, err := requireAdminAuthed(r, &req)
+	if err != nil {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
 	data, _ := json.Marshal(req)
-	tx := recordTx(selfSignedEnvelope(data), reporterAddress(), "", 0, core.TxTreasurySetSalePrice, string(data))
+	tx := recordAdminTx(signedAuth, legacy, "", 0, core.TxTreasurySetSalePrice, string(data))
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "pending",
@@ -165,24 +164,21 @@ func HandleAdminSetSalePrice(w http.ResponseWriter, r *http.Request) {
 func HandleAdminSetPaused(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w)
 
-	if !requireAdmin(r) {
-		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(map[string]string{"error": "admin token required"})
-		return
-	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
 		return
 	}
 
 	var req treasurySetPausedData
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+	signedAuth, legacy, err := requireAdminAuthed(r, &req)
+	if err != nil {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
 	data, _ := json.Marshal(req)
-	tx := recordTx(selfSignedEnvelope(data), reporterAddress(), "", 0, core.TxTreasurySetPaused, string(data))
+	tx := recordAdminTx(signedAuth, legacy, "", 0, core.TxTreasurySetPaused, string(data))
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "pending",
@@ -193,19 +189,16 @@ func HandleAdminSetPaused(w http.ResponseWriter, r *http.Request) {
 func HandleAdminSetTreasuryAddress(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w)
 
-	if !requireAdmin(r) {
-		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(map[string]string{"error": "admin token required"})
-		return
-	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
 		return
 	}
 
 	var req treasurySetAddressData
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request", http.StatusBadRequest)
+	signedAuth, legacy, err := requireAdminAuthed(r, &req)
+	if err != nil {
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 	if req.FoundationAddress == "" {
@@ -214,7 +207,7 @@ func HandleAdminSetTreasuryAddress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data, _ := json.Marshal(req)
-	tx := recordTx(selfSignedEnvelope(data), reporterAddress(), "", 0, core.TxTreasurySetAddress, string(data))
+	tx := recordAdminTx(signedAuth, legacy, "", 0, core.TxTreasurySetAddress, string(data))
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "pending",

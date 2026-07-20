@@ -3,6 +3,7 @@
 <head>
     <title>Marketplace (P2P)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
     <link rel="stylesheet" href="css/style.css">
     <style>
         .explorer-search{
@@ -101,8 +102,8 @@
         }
         .hub-mode-toggle button.active{
             opacity:1;
-            border-color:#00d2ff;
-            background:rgba(0,210,255,0.15);
+            border-color:var(--cc-accent-gold, #c9a227);
+            background:rgba(201,162,39,0.15);
         }
         .hub-marketplace-col h3{
             text-align:center;
@@ -162,28 +163,28 @@
             left:50%;
             transform:translateX(-50%);
             z-index:10002;
-            background:#0b1026;
-            border:1px solid rgba(0,210,255,0.4);
+            background:var(--cc-bg-2, #082616);
+            border:1px solid var(--cc-accent-gold, #c9a227);
             border-radius:10px;
             padding:10px 18px;
             font-size:13px;
             box-shadow:0 10px 30px rgba(0,0,0,0.5);
         }
         #activeTradesToggle{
-            background:linear-gradient(90deg,#00d2ff,#3a7bd5);
+            background:linear-gradient(90deg,var(--cc-accent-1, #0f9d58),var(--cc-accent-2, #16c46f));
             color:white;
             padding:10px 16px;
             border-radius:10px;
             cursor:pointer;
             font-size:13px;
             font-weight:600;
-            box-shadow:0 0 20px rgba(0,210,255,0.4);
+            box-shadow:0 0 20px rgba(16,196,111,0.4);
             border:none;
         }
         #activeTradesList{
             display:none;
             margin-top:8px;
-            background:#0b1026;
+            background:var(--cc-bg-2, #082616);
             border:1px solid rgba(255,255,255,0.15);
             border-radius:10px;
             padding:6px;
@@ -229,7 +230,7 @@
             z-index:10001;
         }
         .rules-modal-box{
-            background:#0b1026;
+            background:var(--cc-bg-2, #082616);
             border-radius:16px;
             padding:24px;
             width:min(500px, 90vw);
@@ -444,8 +445,8 @@
            before the trade starts) so it's still there to reference
            once payment is actually due. */
         .p2p-payment-instructions{
-            background:rgba(0,210,255,0.08);
-            border:1px solid rgba(0,210,255,0.35);
+            background:rgba(201,162,39,0.08);
+            border:1px solid rgba(201,162,39,0.35);
             border-radius:10px;
             padding:10px 14px;
             font-size:12px;
@@ -603,9 +604,9 @@
 
 <p style="opacity:0.6;font-size:12px;">
     With thanks to
-    <a href="companies.html?address=a576b7ac5e34c682bd9fe58c4e4fc72023fd96d4" style="color:#8ef;">HF BOSS</a>
+    <a href="companies.html?address=a576b7ac5e34c682bd9fe58c4e4fc72023fd96d4" style="color:var(--cc-accent-gold, #c9a227);">HF BOSS</a>
     and
-    <a href="companies.html?address=4a550c9c4c3aa166a6518ce02ed59fdad5b88a26" style="color:#8ef;">Swift Exchange</a>
+    <a href="companies.html?address=4a550c9c4c3aa166a6518ce02ed59fdad5b88a26" style="color:var(--cc-accent-gold, #c9a227);">Swift Exchange</a>
     for supporting this testnet build.
 </p>
 
@@ -618,7 +619,7 @@
     <h2>Trading Hubs</h2>
     <p style="opacity:0.75;font-size:13px;">
         Every trade here goes through a verified Trading Hub - select one below to see what it
-        trades and at what rate. Not verified yet? <a href="companies.html" style="color:#8ef;">Apply here</a>.
+        trades and at what rate. Not verified yet? <a href="companies.html" style="color:var(--cc-accent-gold, #c9a227);">Apply here</a>.
     </p>
     <div id="hubDirectoryBody" class="hub-directory">
         <p class="explorer-empty">Loading...</p>
@@ -678,12 +679,13 @@
                     </div>
                     <div class="explorer-search">
                         <input id="hubRateFiatSymbol" type="text" placeholder="Currency code (e.g. USD, EUR, NGN)">
-                        <select id="hubRateCounterSymbol" style="display:none;"></select>
+                        <select id="hubRateCounterSymbol" style="display:none;" onchange="showHubRateExternalReference()"></select>
                     </div>
                     <div class="explorer-search">
-                        <input id="hubRateSellRate" type="number" placeholder="Your sell price - what a buyer pays per unit" min="0">
-                        <input id="hubRateBuyRate" type="number" placeholder="Your buy price - what you pay per unit when someone sells to you" min="0">
+                        <input id="hubRateSellRate" type="number" placeholder="Your sell price - what a buyer pays per unit (decimals OK, e.g. 0.000975)" min="0" step="any">
+                        <input id="hubRateBuyRate" type="number" placeholder="Your buy price - what you pay per unit when someone sells to you (decimals OK)" min="0" step="any">
                     </div>
+                    <p style="opacity:0.7;font-size:12px;" id="hubRateExternalRefPrice"></p>
                     <label><input id="hubRateActive" type="checkbox" checked> Active (open for trades)</label>
                     <button onclick="setHubRate()">Post / Update Listing</button>
                     <p id="hubRateSetStatus"></p>
@@ -709,6 +711,11 @@
                         </div>
                         <p style="opacity:0.7;font-size:12px;margin-bottom:6px;">Minimum reputation an outernet user needs before they can apply to become one of your agents (0 = anyone can apply).</p>
                         <input id="hubRulesMinRepToApply" type="number" min="0" max="100" placeholder="Min reputation to apply (default 0)">
+                        <p style="opacity:0.7;font-size:12px;margin-bottom:6px;">
+                            Canned replies (optional) - the ONLY text an automation agent (see Automation below) may ever
+                            post on your behalf, one per line. Leave blank if you're not using automation.
+                        </p>
+                        <textarea id="hubCannedReplies" rows="3" style="width:100%;padding:10px;border-radius:10px;box-sizing:border-box;" placeholder="Thanks, please send payment to the account shown above.&#10;Payment confirmed, releasing now."></textarea>
                         <button onclick="setHubRules()">Save Rules</button>
                         <p id="hubRulesSetStatus"></p>
 
@@ -735,6 +742,24 @@
                         </div>
                         <p id="hubWorkerSetStatus"></p>
                         <div id="hubWorkerList" class="explorer-empty">No workers added yet.</div>
+
+                        <h4>Automation</h4>
+                        <p style="opacity:0.7;font-size:12px;">
+                            Let an operator automatically post one of your canned replies and confirm payment received for
+                            trades under a cap you set, when you're not actively online. Not a general "smart contract" -
+                            it can only post text you've pre-written above, and only confirm trades below the cap you
+                            choose per operator. A paid subscription, billed monthly in CCT.
+                        </p>
+                        <p id="hubAutomationStatus">Loading...</p>
+                        <button onclick="subscribeHubAutomation()">Subscribe / Renew (100 CCT / 30 days)</button>
+                        <p id="hubAutomationSubStatus"></p>
+                        <div class="explorer-search">
+                            <select id="hubAutomationWorker"></select>
+                            <input id="hubAutomationCap" type="number" min="0" placeholder="Auto-confirm cap (amount)">
+                        </div>
+                        <label><input id="hubAutomationEnabled" type="checkbox"> Enable automation for this operator</label>
+                        <button onclick="saveWorkerAutomation()">Save</button>
+                        <p id="hubAutomationWorkerStatus"></p>
 
                         <h4>Storefront Design</h4>
                         <p style="opacity:0.7;font-size:12px;">

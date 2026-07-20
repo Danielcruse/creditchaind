@@ -624,6 +624,71 @@
         return out;
     }
 
+    // segwitAddrDecode is segwitAddrEncode's inverse - turns a typed
+    // recipient bech32 address (e.g. "tb1q...") back into the raw
+    // {hrp, witver, witprogBytes} a send transaction needs to build a
+    // scriptPubKey from. Throws on anything malformed rather than
+    // returning a best-effort guess, since a wrongly-decoded recipient
+    // program here would misdirect real funds - every check below
+    // mirrors a real validity rule from BIP-173/BIP-141, not just a
+    // loose shape check the way btcRegisterAddressData's server-side
+    // validation is (that one only gates which address THIS wallet
+    // watches for its own deposits; this one gates where an outbound
+    // real send actually goes).
+    function segwitAddrDecode(addrStr) {
+        // BIP-173: a valid bech32 string is either all-lowercase or
+        // all-uppercase, never mixed - reject before any other check,
+        // then normalize to lowercase for the rest of decoding.
+        if (addrStr !== addrStr.toLowerCase() && addrStr !== addrStr.toUpperCase()) {
+            throw new Error("invalid bech32 address: mixed case");
+        }
+        addrStr = addrStr.toLowerCase();
+
+        const sep = addrStr.lastIndexOf("1");
+        if (sep < 1 || sep + 7 > addrStr.length) {
+            throw new Error("invalid bech32 address: missing/misplaced separator");
+        }
+        const hrp = addrStr.slice(0, sep);
+        const dataPart = addrStr.slice(sep + 1);
+
+        const data = [];
+        for (const ch of dataPart) {
+            const v = BECH32_CHARSET.indexOf(ch);
+            if (v === -1) {
+                throw new Error("invalid bech32 address: bad character '" + ch + "'");
+            }
+            data.push(v);
+        }
+
+        const checksumStart = data.length - 6;
+        if (checksumStart < 1) {
+            throw new Error("invalid bech32 address: too short");
+        }
+        const values = bech32HrpExpand(hrp).concat(data);
+        if (bech32Polymod(values) !== 1) {
+            throw new Error("invalid bech32 address: checksum mismatch");
+        }
+
+        const witver = data[0];
+        if (witver < 0 || witver > 16) {
+            throw new Error("invalid bech32 address: bad witness version " + witver);
+        }
+        const program5bit = data.slice(1, checksumStart);
+        const witprog = convertBits(program5bit, 5, 8, false);
+        if (witprog === null || witprog.length < 2 || witprog.length > 40) {
+            throw new Error("invalid bech32 address: bad witness program length");
+        }
+        // BIP-141: version 0 programs must be exactly 20 bytes (P2WPKH)
+        // or 32 bytes (P2WSH) - this bridge only ever sends to P2WPKH
+        // (see send-bridged-btc.js's own scope note), but the length
+        // check itself is a real protocol rule, not a scope choice.
+        if (witver === 0 && witprog.length !== 20 && witprog.length !== 32) {
+            throw new Error("invalid bech32 address: v0 program must be 20 or 32 bytes");
+        }
+
+        return { hrp, witver, witprogBytes: new Uint8Array(witprog) };
+    }
+
     // ---------- EIP-55 checksummed Ethereum address ----------
 
     async function toChecksumAddress(addressHex) {
@@ -645,6 +710,6 @@
         HARDENED_OFFSET, masterKeyFromSeed, ckdPriv, deriveSecp256k1Path,
         deriveEd25519Path, ed25519PublicKeyFromSeed,
         keccak256, ripemd160, hash160,
-        segwitAddrEncode, toChecksumAddress,
+        segwitAddrEncode, segwitAddrDecode, toChecksumAddress,
     };
 })(window);

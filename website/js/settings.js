@@ -43,3 +43,54 @@ async function confirmSettingsEmail() {
         statusEl.innerText = "Could not confirm: " + e.message;
     }
 }
+
+let ratingSelectedStars = 0;
+
+function paintRatingStars(count) {
+    document.querySelectorAll("#ratingStarPicker span").forEach((el) => {
+        el.innerHTML = Number(el.dataset.star) <= count ? "&#9733;" : "&#9734;";
+    });
+}
+
+document.querySelectorAll("#ratingStarPicker span").forEach((el) => {
+    el.addEventListener("click", () => {
+        ratingSelectedStars = Number(el.dataset.star);
+        paintRatingStars(ratingSelectedStars);
+    });
+    el.addEventListener("mouseenter", () => paintRatingStars(Number(el.dataset.star)));
+});
+document.getElementById("ratingStarPicker").addEventListener("mouseleave", () => paintRatingStars(ratingSelectedStars));
+
+async function loadExistingRating() {
+    const wallet = getWallet();
+    if (!wallet) return;
+    try {
+        const result = await apiGet(`/ratings/mine?address=${wallet.address}`);
+        if (result.rated) {
+            document.getElementById("ratingExistingNote").innerText =
+                `You already rated us ${result.rating.Stars} star(s) - resubmitting updates your rating but won't pay out again.`;
+            ratingSelectedStars = result.rating.Stars;
+            paintRatingStars(ratingSelectedStars);
+            document.getElementById("ratingComment").value = result.rating.Comment || "";
+        }
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function submitRating() {
+    const statusEl = document.getElementById("ratingStatus");
+    if (ratingSelectedStars < 1) {
+        statusEl.innerText = "Pick a star rating first.";
+        return;
+    }
+    const comment = document.getElementById("ratingComment").value.trim();
+    try {
+        const result = await apiPostSigned("/ratings/submit", { stars: ratingSelectedStars, comment });
+        statusEl.innerText = `Thanks! (tx ${result.txId}) - takes effect once the next block confirms it.`;
+    } catch (e) {
+        statusEl.innerText = "Could not submit: " + e.message;
+    }
+}
+
+loadExistingRating();

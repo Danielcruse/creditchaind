@@ -183,6 +183,7 @@ func TestApplyValidatorRegister_DeductsFeeAndBlocksWhenInsufficient(t *testing.T
 	const addr = "fee-test-validator-applicant"
 	w := walletStore.Get(addr)
 	w.Reputation = 50
+	validatorApplicationStore.Apps[addr] = &core.ValidatorApplication{Address: addr, Status: core.ValidatorApplicationApproved}
 	// applyValidatorRegister calls stakingStore.SyncWallet, which
 	// overwrites wallet.StakedCCT from the staking ledger - setting it
 	// directly on the wallet would just get clobbered back to 0. CCT
@@ -209,6 +210,7 @@ func TestApplyValidatorRegister_DeductsFeeAndBlocksWhenInsufficient(t *testing.T
 	const poorAddr = "fee-test-validator-applicant-poor"
 	pw := walletStore.Get(poorAddr)
 	pw.Reputation = 50
+	validatorApplicationStore.Apps[poorAddr] = &core.ValidatorApplication{Address: poorAddr, Status: core.ValidatorApplicationApproved}
 	stakingStore.Stakes[poorAddr] = map[string]uint64{"CCT": 2000}
 	tx2 := core.Transaction{
 		ID:   "test-validator-register-poor",

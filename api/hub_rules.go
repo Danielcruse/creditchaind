@@ -17,6 +17,9 @@ type hubRulesSetData struct {
 	// MinReputationToApply gates HubAgentApplication submission - see
 	// core.HubRules.MinReputationToApply's doc comment. 0 = no floor.
 	MinReputationToApply uint64 `json:"minReputationToApply"`
+	// CannedReplies is the entire "logic" an automation-tier worker may
+	// post - see core.HubRules.CannedReplies's doc comment.
+	CannedReplies []core.CannedReply `json:"cannedReplies"`
 }
 
 // maxPaymentWindowMinutes caps a hub-set payment window at 24 hours -
@@ -60,6 +63,16 @@ func HandleSetHubRules(w http.ResponseWriter, r *http.Request) {
 		}
 		if minutes <= 0 || minutes > maxPaymentWindowMinutes {
 			http.Error(w, "paymentWindowMinutes must be between 1 and 1440", http.StatusBadRequest)
+			return
+		}
+	}
+	if len(req.CannedReplies) > core.MaxCannedReplies {
+		http.Error(w, "at most 10 canned replies allowed", http.StatusBadRequest)
+		return
+	}
+	for _, c := range req.CannedReplies {
+		if len(c.Text) == 0 || len(c.Text) > core.MaxCannedReplyLen {
+			http.Error(w, "each canned reply must be 1-280 characters", http.StatusBadRequest)
 			return
 		}
 	}

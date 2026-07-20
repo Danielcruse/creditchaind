@@ -97,9 +97,35 @@ function onHubRateModeChange() {
             .filter((s) => s !== chosenSymbol)
             .map((s) => `<option value="${s}">${p2pSymbolLabels[s] || s}</option>`)
             .join("");
+        showHubRateExternalReference();
     } else {
         fiatInput.style.display = "";
         counterSelect.style.display = "none";
+        document.getElementById("hubRateExternalRefPrice").innerText = "";
+    }
+}
+
+// showHubRateExternalReference is purely informational (see
+// api/price_oracle.go's GET /price/external) - the hub's actual
+// SellRate/BuyRate stays their own free choice, exactly as before;
+// this just shows a live market reference alongside the form so a hub
+// can eyeball whether their own quote is in the right ballpark.
+async function showHubRateExternalReference() {
+    const el = document.getElementById("hubRateExternalRefPrice");
+    const counter = document.getElementById("hubRateCounterSymbol").value;
+    if (counter !== "ETHB" && counter !== "ETHTEST") {
+        el.innerText = "";
+        return;
+    }
+    try {
+        const prices = await apiGet("/price/external");
+        if (!prices.ethUsd) {
+            el.innerText = "";
+            return;
+        }
+        el.innerText = `Reference: 1 ETH ≈ $${prices.ethUsd.toFixed(2)} (external market price)`;
+    } catch (e) {
+        el.innerText = "";
     }
 }
 
@@ -123,7 +149,7 @@ async function loadHubDirectory() {
                 <div>
                     <div class="hub-card-name">${c.Name}</div>
                     <div class="hub-card-badge">
-                        <span title="Moderator-reviewed testnet badge - not real KYC/AML" style="color:#8ef;">&#9989; Verified Hub</span>
+                        <span title="Moderator-reviewed testnet badge - not real KYC/AML" style="color:var(--cc-accent-gold, #c9a227);">&#9989; Verified Hub</span>
                     </div>
                 </div>
                 <button class="hub-view-btn" onclick="viewHub('${c.Address}')">View</button>
@@ -204,6 +230,7 @@ async function viewHub(address) {
         document.getElementById("hubRulesText").value = hubRulesCache;
         await loadHubWorkers();
         await loadHubAgentApplications();
+        await loadHubAutomationStatus();
         document.getElementById("hubStorefrontHtml").value = hubStorefrontCache;
     }
 }
@@ -285,14 +312,42 @@ async function loadHubOpenTrades() {
 
 // --- Off-app / on-chain rate posting -------------------------------------
 
+// HUB_RATE_SCALE must match core.HubRateScale exactly - rates are
+// stored server-side as integers scaled by this factor (e.g. a real
+// price of 0.000975 is sent/stored as 975) so a fractional price like
+// "1 CCT = 0.000975 ETH" doesn't get floored to 0 the way a bare
+// parseInt of a decimal string would. Every place this file reads a
+// trader-entered rate or displays a stored one must scale/unscale by
+// this same constant.
+const HUB_RATE_SCALE = 1000000;
+
+// scaleHubRateInput turns a trader-entered decimal string (e.g.
+// "0.000975") into the integer the backend stores, rounding to the
+// nearest whole scaled unit rather than truncating - parseFloat handles
+// the decimal correctly where the old parseInt silently floored any
+// fractional price straight to 0.
+function scaleHubRateInput(value) {
+    const n = parseFloat(value);
+    if (!n || n <= 0) return 0;
+    return Math.round(n * HUB_RATE_SCALE);
+}
+
+// unscaleHubRate turns a stored scaled-integer rate back into the real
+// decimal price for display - trims trailing zeros via parseFloat so
+// whole-number rates (e.g. "1 CCT = 2 USDC") still display as "2", not
+// "2.000000".
+function unscaleHubRate(scaledValue) {
+    return parseFloat((scaledValue / HUB_RATE_SCALE).toFixed(6));
+}
+
 async function setHubRate() {
     const symbol = document.getElementById("hubRateSymbol").value;
     const mode = document.getElementById("hubRateMode").value;
     const fiatSymbol = mode === "ONCHAIN"
         ? document.getElementById("hubRateCounterSymbol").value
         : document.getElementById("hubRateFiatSymbol").value.trim();
-    const sellRate = parseInt(document.getElementById("hubRateSellRate").value, 10) || 0;
-    const buyRate = parseInt(document.getElementById("hubRateBuyRate").value, 10) || 0;
+    const sellRate = scaleHubRateInput(document.getElementById("hubRateSellRate").value);
+    const buyRate = scaleHubRateInput(document.getElementById("hubRateBuyRate").value);
     const active = document.getElementById("hubRateActive").checked;
     const statusEl = document.getElementById("hubRateSetStatus");
 
@@ -437,7 +492,7 @@ function updateCardRateDisplay(direction, symbol, operator, session, rate) {
         return;
     }
     const isBuy = direction === "BUY_FROM_HUB";
-    const rateValue = isBuy ? rate.SellRate : rate.BuyRate;
+    const rateValue = unscaleHubRate(isBuy ? rate.SellRate : rate.BuyRate);
     const counterLabel = rate.Mode === "ONCHAIN" ? (p2pSymbolLabels[rate.FiatSymbol] || rate.FiatSymbol) : rate.FiatSymbol;
     rateLineEl.innerText = `Rate: ${rateValue} ${counterLabel} per ${label}`;
 
@@ -486,11 +541,19 @@ function onHubCardAmountChange(direction, symbol, operator, session, source) {
         quoteDiv.innerHTML = "";
         return;
     }
-    const rateValue = direction === "BUY_FROM_HUB" ? rate.SellRate : rate.BuyRate;
+    const rateValue = unscaleHubRate(direction === "BUY_FROM_HUB" ? rate.SellRate : rate.BuyRate);
     if (!rateValue) {
         quoteDiv.innerHTML = "";
         return;
     }
+
+    // roundDisplay trims floating-point noise (e.g. 0.19499999999999998)
+    // from a rate * amount multiplication down to a clean 6-decimal
+    // figure - this is a client-side display estimate only (the
+    // trade's real amounts are computed server-side, see
+    // requestHubTradeFromCard, which only ever submits the whole-unit
+    // Symbol amount).
+    const roundDisplay = (n) => parseFloat(n.toFixed(6));
 
     if (source === "cct") {
         const cctAmount = parseInt(cctInput.value, 10) || 0;
@@ -499,11 +562,11 @@ function onHubCardAmountChange(direction, symbol, operator, session, source) {
             quoteDiv.innerHTML = "";
             return;
         }
-        const currencyAmount = cctAmount * rateValue;
+        const currencyAmount = roundDisplay(cctAmount * rateValue);
         currencyInput.value = currencyAmount;
         renderCardQuote(direction, symbol, operator, session, rate, cctAmount, currencyAmount);
     } else {
-        const currencyAmount = parseInt(currencyInput.value, 10) || 0;
+        const currencyAmount = parseFloat(currencyInput.value) || 0;
         if (!currencyAmount) {
             cctInput.value = "";
             quoteDiv.innerHTML = "";
@@ -511,7 +574,7 @@ function onHubCardAmountChange(direction, symbol, operator, session, source) {
         }
         const cctAmount = Math.floor(currencyAmount / rateValue);
         cctInput.value = cctAmount;
-        const exactCurrencyAmount = cctAmount * rateValue;
+        const exactCurrencyAmount = roundDisplay(cctAmount * rateValue);
         currencyInput.value = exactCurrencyAmount;
         renderCardQuote(direction, symbol, operator, session, rate, cctAmount, exactCurrencyAmount);
     }
@@ -843,6 +906,10 @@ async function loadHubRulesForDisplay(hub) {
 
         const minRepInput = document.getElementById("hubRulesMinRepToApply");
         if (minRepInput) minRepInput.value = (rules && (rules.MinReputationToApply || rules.minReputationToApply)) || "";
+
+        const cannedReplies = (rules && (rules.CannedReplies || rules.cannedReplies)) || [];
+        const cannedTextarea = document.getElementById("hubCannedReplies");
+        if (cannedTextarea) cannedTextarea.value = cannedReplies.map((c) => c.Text || c.text || "").join("\n");
     } catch (e) {
         hubRulesCache = "";
         hubRulesWindowsCache = {};
@@ -869,8 +936,15 @@ async function setHubRules() {
 
     const minReputationToApply = parseInt(document.getElementById("hubRulesMinRepToApply").value, 10) || 0;
 
+    const cannedReplies = document
+        .getElementById("hubCannedReplies")
+        .value.split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line) => ({ trigger: "", text: line }));
+
     try {
-        const result = await apiPostSigned("/hub-rates/rules/set", { text, paymentWindowMinutes, minReputationToApply });
+        const result = await apiPostSigned("/hub-rates/rules/set", { text, paymentWindowMinutes, minReputationToApply, cannedReplies });
         statusEl.innerText = `Rules pending confirmation (tx ${result.txId}).`;
         setTimeout(() => loadHubRulesForDisplay(currentHubAddress), 9000);
     } catch (e) {
@@ -950,14 +1024,75 @@ async function loadHubWorkers() {
                     <span style="opacity:${w.Active ? "1" : "0.5"};">
                         ${w.Name || "(unnamed)"} - ${w.WorkerAddress.slice(0, 8)}...${w.WorkerAddress.slice(-6)}
                         ${w.Active ? "" : " (removed)"}
+                        ${w.IsAutomationAgent ? " &#9889; automation on" : ""}
                     </span>
                     ${w.Active ? `<button onclick="removeHubWorker('${w.WorkerAddress}')">Remove</button>` : ""}
                 </div>`
                   )
                   .join("")
             : `<p class="explorer-empty">No workers added yet.</p>`;
+
+        const activeWorkers = (workers || []).filter((w) => w.Active);
+        const select = document.getElementById("hubAutomationWorker");
+        if (select) {
+            select.innerHTML = activeWorkers.length
+                ? activeWorkers
+                      .map((w) => `<option value="${w.WorkerAddress}">${w.Name || w.WorkerAddress.slice(0, 8)}</option>`)
+                      .join("")
+                : `<option value="">No active operators yet</option>`;
+        }
     } catch (e) {
         console.error(e);
+    }
+}
+
+// --- Hub automation --------------------------------------------------------
+
+async function loadHubAutomationStatus() {
+    if (!currentHubAddress) return;
+    try {
+        const status = await apiGet(`/hub-automation/status?hub=${currentHubAddress}`);
+        const el = document.getElementById("hubAutomationStatus");
+        el.innerText = status.active
+            ? `Active until ${new Date(status.activeUntil * 1000).toLocaleString()}.`
+            : "Not subscribed - operators can't auto-reply or auto-confirm until you subscribe.";
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function subscribeHubAutomation() {
+    const statusEl = document.getElementById("hubAutomationSubStatus");
+    try {
+        const result = await apiPostSigned("/hub-automation/subscribe", {});
+        statusEl.innerText = `Subscription pending confirmation (tx ${result.txId}).`;
+        setTimeout(loadHubAutomationStatus, 9000);
+    } catch (e) {
+        statusEl.innerText = e.message;
+    }
+}
+
+async function saveWorkerAutomation() {
+    const workerAddress = document.getElementById("hubAutomationWorker").value;
+    const isAutomationAgent = document.getElementById("hubAutomationEnabled").checked;
+    const autoConfirmCapAmount = parseInt(document.getElementById("hubAutomationCap").value, 10) || 0;
+    const statusEl = document.getElementById("hubAutomationWorkerStatus");
+
+    if (!workerAddress) {
+        statusEl.innerText = "Add an operator first.";
+        return;
+    }
+
+    try {
+        const result = await apiPostSigned("/hub-workers/set-automation", {
+            workerAddress,
+            isAutomationAgent,
+            autoConfirmCapAmount,
+        });
+        statusEl.innerText = `Saved (tx ${result.txId}).`;
+        setTimeout(loadHubWorkers, 9000);
+    } catch (e) {
+        statusEl.innerText = e.message;
     }
 }
 
@@ -1417,9 +1552,12 @@ function renderP2PChatModal(offerId) {
     messagesDiv.innerHTML = (o.Messages || [])
         .map((m) => {
             const fromHub = hubAddress && m.Sender === hubAddress;
+            const automationBadge = m.FromAutomation
+                ? ` <span style="opacity:0.6;font-size:10px;">&#9889; Automated response</span>`
+                : "";
             return `
         <div class="chat-message ${fromHub ? "mine" : "theirs"}">
-            <div class="sender">${m.Sender.slice(0, 8)}...${m.Sender.slice(-6)}</div>
+            <div class="sender">${m.Sender.slice(0, 8)}...${m.Sender.slice(-6)}${automationBadge}</div>
             <div>${m.Text}</div>
         </div>`;
         })

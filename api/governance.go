@@ -21,6 +21,17 @@ const (
 type CreateProposalRequest struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
+
+	// Kind/ParamKey/ParamValue/TargetVersion let a proposal request an
+	// automatic protocol-parameter change or a version-activation flag
+	// flip once it passes - see core.ProposalKind's doc comment.
+	// Creation stays open to any activated wallet regardless of kind;
+	// the real gate is the vote itself (real quorum + majority), not
+	// who's allowed to propose - see the governance plan's §4/§5.
+	Kind          string `json:"kind,omitempty"`
+	ParamKey      string `json:"paramKey,omitempty"`
+	ParamValue    uint64 `json:"paramValue,omitempty"`
+	TargetVersion string `json:"targetVersion,omitempty"`
 }
 
 type VoteRequest struct {
@@ -69,10 +80,30 @@ func HandleCreateProposal(
 		return
 	}
 
+	switch req.Kind {
+	case "", string(core.ProposalKindParamChange), string(core.ProposalKindVersionActivation):
+		// valid
+	default:
+		http.Error(w, "kind must be empty, PARAM_CHANGE, or VERSION_ACTIVATION", http.StatusBadRequest)
+		return
+	}
+	if req.Kind == string(core.ProposalKindParamChange) && req.ParamKey == "" {
+		http.Error(w, "paramKey required for a PARAM_CHANGE proposal", http.StatusBadRequest)
+		return
+	}
+	if req.Kind == string(core.ProposalKindVersionActivation) && req.TargetVersion == "" {
+		http.Error(w, "targetVersion required for a VERSION_ACTIVATION proposal", http.StatusBadRequest)
+		return
+	}
+
 	data, _ := json.Marshal(governanceData{
-		Action:      "create",
-		Title:       req.Title,
-		Description: req.Description,
+		Action:        "create",
+		Title:         req.Title,
+		Description:   req.Description,
+		Kind:          req.Kind,
+		ParamKey:      req.ParamKey,
+		ParamValue:    req.ParamValue,
+		TargetVersion: req.TargetVersion,
 	})
 
 	tx := recordTx(auth, address, "", 0, core.TxGovernance, string(data))
@@ -111,6 +142,15 @@ func HandleVoteProposal(
 
 	if proposalStore.HasVoted(req.ProposalID, address) {
 		http.Error(w, "address already voted on this proposal", http.StatusBadRequest)
+		return
+	}
+
+	// Voting now requires the same one-time governance opt-in as
+	// posting a status update (HandlePostGovernanceStatus already had
+	// this check; voting itself never did - see the governance plan's
+	// §1 for why that was a real inconsistency worth closing here).
+	if walletStore.Get(address).VotingPower == 0 {
+		http.Error(w, "activate governance/voting rights before voting", http.StatusForbidden)
 		return
 	}
 
@@ -210,6 +250,24 @@ func HandlePostGovernanceStatus(w http.ResponseWriter, r *http.Request) {
 	})
 
 	json.NewEncoder(w).Encode(map[string]string{"status": "posted"})
+}
+
+// HandleGovernanceMyWeight is a small public read-only wrapper around
+// votingWeight (api/governance_weight.go) - lets the frontend show a
+// wallet its real, current vote weight before it votes, so "your vote
+// is weighted by stake/reputation" isn't just copy nobody can verify.
+func HandleGovernanceMyWeight(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	address := r.URL.Query().Get("address")
+	if address == "" {
+		http.Error(w, "address required", http.StatusBadRequest)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]uint64{
+		"weight": votingWeight(address),
+	})
 }
 
 // HandleRecentGovernanceStatuses is a public read (no wallet needed) -

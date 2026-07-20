@@ -5,6 +5,16 @@ import (
 	"os"
 )
 
+// ActivatedProtocolVersion is the "ship dormant, activate via
+// governance" flag - see api/apply.go's processProposalFinalization
+// VERSION_ACTIVATION branch, the only writer. Empty means no
+// governance-gated version has ever been activated. This does NOT
+// prevent an operator from deploying new code (impossible for an
+// off-chain binary swap) - it only gives future consensus-critical
+// code a real, governance-approved switch to check before turning
+// itself on, e.g. `if core.ActivatedProtocolVersion >= "v2" { ... }`.
+var ActivatedProtocolVersion string
+
 type Config struct {
 	ChainID uint64 `json:"chainId"`
 

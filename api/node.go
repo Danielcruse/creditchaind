@@ -4,6 +4,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+
+	"github.com/creditchain/creditchaind/core"
 )
 
 func HandleNode(
@@ -22,9 +24,14 @@ func HandleNode(
 			// receiving node asserts about itself, unsigned and
 			// therefore tamperable in transit by a malicious producer.
 			"nodePublicKey": hex.EncodeToString(nodeIdentity.PublicKey),
-			"version": config.Version,
-			"network": config.Network,
-			"chainId": config.ChainID,
+			"version":       config.Version,
+			// activatedProtocolVersion is the governance-gated feature-
+			// flag flip - see core.ActivatedProtocolVersion's doc
+			// comment. Empty string means nothing has ever been
+			// activated via a VERSION_ACTIVATION proposal.
+			"activatedProtocolVersion": core.ActivatedProtocolVersion,
+			"network":                  config.Network,
+			"chainId":                  config.ChainID,
 			"blockHeight": len(
 				blockchain.Blocks,
 			),

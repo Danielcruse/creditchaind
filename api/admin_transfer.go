@@ -32,17 +32,11 @@ func HandleAdminTransfer(
 ) {
 	enableCors(&w)
 
-	if !requireAdmin(r) {
-		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(map[string]string{"error": "admin token required"})
-		return
-	}
-
 	var req adminTransferData
-
-	err := json.NewDecoder(r.Body).Decode(&req)
+	signedAuth, legacy, err := requireAdminAuthed(r, &req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -65,7 +59,7 @@ func HandleAdminTransfer(
 	}
 
 	data, _ := json.Marshal(req)
-	tx := recordTx(selfSignedEnvelope(data), reporterAddress(), "", 0, core.TxAdminTransfer, string(data))
+	tx := recordAdminTx(signedAuth, legacy, "", 0, core.TxAdminTransfer, string(data))
 
 	json.NewEncoder(w).Encode(
 		map[string]string{

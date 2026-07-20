@@ -5,19 +5,36 @@ import (
 	"sync"
 )
 
+// VoteRecord is one address's cast vote on one proposal - the
+// permanent, public "community remembers" record (see
+// api/governance_social.go's HandleGovernanceVotesForUser). Kept
+// alongside, not instead of, the existing Voted bool map - Voted stays
+// the fast "has this address already voted" check every apply-time
+// guard already uses; VotesByAddress is purely additive, for history
+// display.
+type VoteRecord struct {
+	ProposalID    string
+	ProposalTitle string
+	Support       bool
+	Weight        uint64
+	Timestamp     int64
+}
+
 // ProposalStore is the canonical, shared registry of governance
 // Proposals and who has already voted on each one. It is the single
 // owner of vote-tallying so every node reads the same result.
 type ProposalStore struct {
-	mu        sync.Mutex
-	Proposals map[string]*Proposal
-	Voted     map[string]map[string]bool // proposalID -> voter address -> voted
+	mu             sync.Mutex
+	Proposals      map[string]*Proposal
+	Voted          map[string]map[string]bool // proposalID -> voter address -> voted
+	VotesByAddress map[string][]VoteRecord    // voter address -> their full vote history, oldest first
 }
 
 func NewProposalStore() *ProposalStore {
 	return &ProposalStore{
-		Proposals: make(map[string]*Proposal),
-		Voted:     make(map[string]map[string]bool),
+		Proposals:      make(map[string]*Proposal),
+		Voted:          make(map[string]map[string]bool),
+		VotesByAddress: make(map[string][]VoteRecord),
 	}
 }
 
@@ -54,6 +71,17 @@ func (ps *ProposalStore) HasVoted(proposalID, address string) bool {
 	return ps.Voted[proposalID][address]
 }
 
+// VotesForAddress returns one address's full vote history, oldest
+// first - the thread-safe read path for VotesByAddress (see
+// api/governance_social.go's HandleGovernanceVotesForUser), rather
+// than reading the map field directly from outside the package.
+func (ps *ProposalStore) VotesForAddress(address string) []VoteRecord {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	return ps.VotesByAddress[address]
+}
+
 func (ps *ProposalStore) List() []*Proposal {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
@@ -66,8 +94,12 @@ func (ps *ProposalStore) List() []*Proposal {
 }
 
 // Vote applies a single address's vote to a proposal exactly once,
-// using their current Wallet.VotingPower as weight.
-func (ps *ProposalStore) Vote(proposalID, address string, support bool, power uint64) (*Proposal, error) {
+// using their current Wallet.VotingPower as weight. timestamp is the
+// authoring transaction's own timestamp (never wall-clock), matching
+// this codebase's usual cross-node determinism discipline - it's only
+// used for VoteRecord display, never for any consensus-affecting
+// decision.
+func (ps *ProposalStore) Vote(proposalID, address string, support bool, power uint64, timestamp int64) (*Proposal, error) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
 
@@ -90,6 +122,14 @@ func (ps *ProposalStore) Vote(proposalID, address string, support bool, power ui
 		ps.Voted[proposalID] = make(map[string]bool)
 	}
 	ps.Voted[proposalID][address] = true
+
+	ps.VotesByAddress[address] = append(ps.VotesByAddress[address], VoteRecord{
+		ProposalID:    proposalID,
+		ProposalTitle: p.Title,
+		Support:       support,
+		Weight:        power,
+		Timestamp:     timestamp,
+	})
 
 	return p, nil
 }

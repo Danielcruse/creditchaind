@@ -93,6 +93,29 @@ func HandleCreateEthCustodialAccount(w http.ResponseWriter, r *http.Request) {
 // tracked internally, since this corner has no internal ledger of its
 // own; the real chain is the only source of truth for this balance,
 // unlike CCT/ETHTEST/USDCTEST which are internally tracked balances).
+// HandleEthCustodialAddress is a lightweight, RPC-free lookup of a
+// wallet's real custodial Sepolia address - unlike
+// HandleEthCustodialBalance, this never touches ethRPCClient, so it
+// works even when no Sepolia RPC is configured (local dev/tests).
+// This is what the frontend now calls to resolve "my ETHB address"
+// (see website/js/api.js's getEthbAddress) instead of computing the
+// old derived-hash sub-address locally, matching resolveBalanceAddress's
+// same real-address-first, derived-hash-fallback resolution on the Go
+// side (see api/subaddress.go) - without this, the two sides would
+// disagree the moment a custodial account exists.
+func HandleEthCustodialAddress(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	address := r.URL.Query().Get("address")
+	account, ok := ethCustodialStore.Get(address)
+	if !ok {
+		http.Error(w, "no custodial ETH account for that address", http.StatusNotFound)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"ethAddress": account.EthAddress})
+}
+
 func HandleEthCustodialBalance(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w)
 

@@ -109,14 +109,35 @@ the same gossip/block-confirmation pipeline as every other economic
 action. Double-sign reports are independently re-verified from embedded
 evidence (both conflicting blocks' hash/signature/producer consistency)
 before the penalty is ever applied — a bare claim isn't trusted.
-Missed-block reports remain single-reporter-trusted (no cryptographic
-proof of absence is possible) — this residual limitation is explicitly
-disclosed (see `KNOWN_GAPS.md`) rather than silently accepted as solved.
+Missed-block reports were, at the time, single-reporter-trusted (no
+cryptographic proof of absence is possible) — this residual limitation was
+explicitly disclosed (see `KNOWN_GAPS.md`) rather than silently accepted
+as solved.
 
 **Verified**: forced a real missed-block scenario across a live two-node
 test setup and confirmed both nodes converged on identical slash
 count/reputation for the affected validator — not just the node that
 happened to detect it first.
+
+**Follow-up (2026-07-20): M-of-N corroboration for missed-block reports.**
+The single-reporter-trust gap flagged above got its real fix: every node
+that independently detects the same missed round still submits its own
+report exactly as before, but `applySlashReport` now withholds the actual
+penalty until a strict majority of currently known, independently-operated
+nodes have corroborated the *same* event (`api/missed_block_confirmation.go`,
+`requiredMissedBlockConfirmations`). The node count itself is derived from
+already-applied validator-registration state (deterministic — every node
+computes the identical value), floored at 1 so a genuinely single-node
+network doesn't deadlock. See `KNOWN_GAPS.md`'s updated entry for the
+disclosed undercount limitation in how that node count is derived. New
+tests: `api/missed_block_confirmation_test.go` (majority-formula table
+test, node-count-derivation test, and the core regression test proving a
+single reporting node's claim is no longer sufficient once multiple nodes
+are known — plus a same-reporter-double-counts-once check and a
+late-arriving-report-after-resolution-is-a-no-op check) plus the
+pre-existing `TestApplySlashReport_MissedBlock_SlashesStakeAndBansAfterThreshold`
+in `api/posr_test.go`, confirmed to still pass unchanged (a single-validator
+test network has N=1, so the floor keeps its exact prior behavior).
 
 ## 5. Per-token sub-addressing (closing a cross-token authorization gap)
 
@@ -260,6 +281,24 @@ phase has already produced, both requiring manual operator resolution:
    was deliberately left unreconciled on production (see `KNOWN_GAPS.md`)
    — a decision, not an oversight.
 
+Both fork incidents above were only noticed by an operator manually
+comparing chain state during unrelated work — `/health/sync` and the
+periodic fork monitor already existed by the time of writing this, but
+`syncChainFromPeer`'s own refusal-to-adopt-a-diverging-chain path (the
+actual moment either fork was first *detectable* from inside the code)
+only ever `fmt.Println`'d to server stdout, with no status update and no
+durable record. **Fix (2026-07-20):** both the periodic monitor and the
+refusal path now funnel through one `recordForkEvent` chokepoint
+(`api/fork_monitor.go`) that immediately flips `forkStatus` (so
+`/health/sync` reflects it without waiting for the next 60s tick),
+appends a durable line to `fork_events.log`, and optionally emails
+`FORK_ALERT_EMAIL` if SMTP is configured. This does not resolve a fork
+automatically — the fix is purely "a human finds out fast," closing the
+exact "found by accident during a deploy" pattern both incidents above
+actually followed. See `KNOWN_GAPS.md`'s "No state rollback on reorg"
+entry for why a real rollback-and-replay engine was designed and
+deliberately deferred rather than attempted alongside this.
+
 ## 9. Test coverage added specifically to prevent regressions in the above
 
 - `core/request_auth_test.go` — 9 tests, signed-envelope verification.
@@ -275,6 +314,11 @@ phase has already produced, both requiring manual operator resolution:
   recipient mismatch between signed and claimed effect).
 - `api/hub_operator_test.go` — 1 focused end-to-end test proving operator/
   hub inventory isolation (§6 above).
+- `api/fork_monitor_test.go` — 3 tests for the `recordForkEvent` chokepoint
+  added above: a refused/detected fork immediately flips `forkStatus` to
+  unhealthy, writes a durable line to `fork_events.log` containing the real
+  fork details (not just "a fork happened"), and is reflected on
+  `GET /health/sync`.
 
 Before this session's testing pass, the entire Go codebase (~197 files at
 the time) had exactly one test file. This is a real, disclosed prior gap

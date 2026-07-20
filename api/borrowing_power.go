@@ -40,7 +40,17 @@ type borrowingPowerResponse struct {
 	GovernanceFactor uint64 `json:"governanceFactor"`
 	ValidatorWeight  uint64 `json:"validatorEndorsementWeight"`
 	ValidatorStatus  string `json:"validatorEndorsementStatus"`
+	ReferralCount    uint64 `json:"referralCount"`
+	ReferralBonusPct uint64 `json:"referralBorrowBonusPercent"`
 }
+
+// referralBorrowBonusCapPercent caps how much extra borrowing room top
+// referrers get, as a percentage bump on top of the already-computed
+// MaxBorrow - "top community users... higher loans," same additive-
+// bonus-not-a-rebalance approach as votingWeight's referral bonus
+// (api/governance_weight.go). A judgment call, not derived from any
+// specified model.
+const referralBorrowBonusCapPercent = 20
 
 // HandleBorrowingPower computes CreditChain's signature "Borrowing
 // Power Score" - a weighted composite of five REAL, already-tracked
@@ -102,6 +112,13 @@ func HandleBorrowingPower(w http.ResponseWriter, r *http.Request) {
 		maxBorrow = minLimit
 	}
 
+	referralCount := core.ReferralCount(walletStore.Wallets, address)
+	referralBonusPct := referralCount
+	if referralBonusPct > referralBorrowBonusCapPercent {
+		referralBonusPct = referralBorrowBonusCapPercent
+	}
+	maxBorrow += maxBorrow * referralBonusPct / 100
+
 	bronzeRate := core.InterestRate(0) // Bronze baseline
 	walletRate := core.InterestRate(wallet.Reputation)
 	discount := uint64(0)
@@ -122,6 +139,8 @@ func HandleBorrowingPower(w http.ResponseWriter, r *http.Request) {
 		GovernanceFactor: governanceFactor,
 		ValidatorWeight:  0,
 		ValidatorStatus:  "not yet active",
+		ReferralCount:    referralCount,
+		ReferralBonusPct: referralBonusPct,
 	})
 }
 

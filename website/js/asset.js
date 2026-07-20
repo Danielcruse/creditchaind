@@ -9,7 +9,8 @@ const ASSET_DESCRIPTIONS = {
     USDCTEST: "Imported test USDC token - lives at its own address derived from this wallet's key, separate from your CCT address.",
     ETH: "Real Ethereum (testnet), self-custodial - derived from the same recovery phrase as your CreditChain account, but an entirely separate blockchain with its own address and key.",
     BTC: "Real Bitcoin (testnet), self-custodial - derived from the same recovery phrase as your CreditChain account, but an entirely separate blockchain with its own address and key. Receive-only for now.",
-    ETHB: "Real bridged Sepolia ETH. Deposits auto-credit here. Receive and Send both ask which network: CCT network (instant, inside CreditChain) or ERC network (real Sepolia address - a bridge action moves it between the two automatically, no separate step to click).",
+    ETHB: "Your ETH balance.",
+    BTCB: "Your BTC balance.",
 };
 
 // EXTERNAL_CHAIN_SYMBOLS are not CreditChain tokens at all - they live
@@ -33,6 +34,16 @@ function weiToEth(weiString) {
     const wei = BigInt(weiString);
     const whole = wei / 1000000000000000000n;
     const frac = (wei % 1000000000000000000n).toString().padStart(18, "0").replace(/0+$/, "") || "0";
+    return `${whole}.${frac}`;
+}
+
+// satsToBtcAsset mirrors send-bridged-btc.js's satsToBtc helper -
+// BTCB/real-BTC balances are plain sats integers (safe within JS's
+// number range), a much simpler base-1e8 conversion than weiToEth.
+function satsToBtcAsset(sats) {
+    const n = Number(sats || 0);
+    const whole = Math.floor(n / 1e8);
+    const frac = String(n % 1e8).padStart(8, "0").replace(/0+$/, "") || "0";
     return `${whole}.${frac}`;
 }
 
@@ -71,7 +82,7 @@ function showAssetTab(tab) {
 // Sepolia ETH, so it's just labeled "ETH" everywhere on this page
 // (the internal symbol/API calls still use "ETHB", only the on-screen
 // text changes).
-const displaySymbol = symbol === "ETHB" ? "ETH" : symbol;
+const displaySymbol = symbol === "ETHB" ? "ETH" : symbol === "BTCB" ? "BTC" : symbol;
 
 async function loadHero() {
     document.getElementById("assetSymbol").innerText = displaySymbol;
@@ -107,7 +118,7 @@ async function loadHero() {
         // the user) - cross-linked so the two aren't confused for one
         // account.
         document.getElementById("ovOtherNetworksList").innerHTML =
-            `<a href="defi.html" style="color:#8ef;">This account can send directly. DeFi Corner also has a separate, KMS-custodial Sepolia ETH account.</a>`;
+            `<a href="defi.html" style="color:var(--cc-accent-gold, #c9a227);">This account can send directly. DeFi Corner also has a separate, KMS-custodial Sepolia ETH account.</a>`;
         document.getElementById("ovOtherNetworks").style.display = "block";
         return;
     }
@@ -128,13 +139,61 @@ async function loadHero() {
         }
 
         document.getElementById("ovOtherNetworksList").innerHTML =
-            `<a href="send-bridged-eth.html" style="color:#8ef;">Sending picks CCT or ERC network on the send page - no separate bridge step.</a>`;
+            `<a href="send-bridged-eth.html" style="color:var(--cc-accent-gold, #c9a227);">Send</a>`;
+        document.getElementById("ovOtherNetworks").style.display = "block";
+        return;
+    }
+
+    if (symbol === "BTCB") {
+        const address = await assetAddress();
+        document.getElementById("ovAddress").innerText = formatAddress(address);
+
+        try {
+            const info = await apiGet(`/btcb/balance?address=${address}`);
+            const btcStr = `${satsToBtcAsset(info.balance)} BTC`;
+            document.getElementById("assetBalance").innerText = btcStr;
+            document.getElementById("ovBalance").innerText = btcStr;
+        } catch (e) {
+            console.error(e);
+            document.getElementById("assetBalance").innerText = "Couldn't load balance";
+            document.getElementById("ovBalance").innerText = "-";
+        }
+
+        document.getElementById("ovOtherNetworksList").innerHTML =
+            `<a href="send-bridged-btc.html" style="color:var(--cc-accent-gold, #c9a227);">Send</a>`;
         document.getElementById("ovOtherNetworks").style.display = "block";
         return;
     }
 
     if (EXTERNAL_CHAIN_SYMBOLS[symbol]) {
-        // BTC stays exactly receive-only (Phase C, not yet built).
+        if (symbol === "BTC") {
+            // Real self-custodial testnet BTC balance - now spendable
+            // (see send-bridged-btc.html's "BTC network" mode), so this
+            // is no longer a receive-only placeholder.
+            document.getElementById("assetSendBtn").style.display = "inline-block";
+            const address = await assetAddress();
+            document.getElementById("ovAddress").innerText = address || "No wallet found for this network.";
+
+            try {
+                const utxos = await apiGet(`/btc-bridge/utxos?address=${address}`);
+                const confirmedSats = (utxos || [])
+                    .filter((u) => u.status && u.status.confirmed)
+                    .reduce((sum, u) => sum + Number(u.value || 0), 0);
+                const btcStr = `${satsToBtcAsset(confirmedSats)} BTC`;
+                document.getElementById("assetBalance").innerText = btcStr;
+                document.getElementById("ovBalance").innerText = btcStr;
+            } catch (e) {
+                console.error(e);
+                document.getElementById("assetBalance").innerText = "Couldn't load balance";
+                document.getElementById("ovBalance").innerText = "-";
+            }
+
+            document.getElementById("ovOtherNetworksList").innerHTML =
+                `<a href="asset.html?symbol=BTCB" style="color:var(--cc-accent-gold, #c9a227);">Spend inside CreditChain &rarr;</a>`;
+            document.getElementById("ovOtherNetworks").style.display = "block";
+            return;
+        }
+
         document.getElementById("assetBalance").innerText = `Phase A: receive-only, balance display not yet available`;
         document.getElementById("ovBalance").innerText = "-";
         document.getElementById("assetSendBtn").style.display = "none";
@@ -142,7 +201,7 @@ async function loadHero() {
         document.getElementById("ovAddress").innerText = address || "No wallet found for this network.";
 
         document.getElementById("ovOtherNetworksList").innerHTML =
-            `<a href="defi.html" style="color:#8ef;">Look up this address's real balance/activity in DeFi Corner. &rarr;</a>`;
+            `<a href="defi.html" style="color:var(--cc-accent-gold, #c9a227);">Look up this address's real balance/activity in DeFi Corner. &rarr;</a>`;
         document.getElementById("ovOtherNetworks").style.display = "block";
         return;
     }
@@ -169,7 +228,7 @@ async function loadHero() {
     // Wallet plan's §A.6 unified-asset UX.
     if (symbol === "ETHTEST" && externalChainAddress("ETH")) {
         document.getElementById("ovOtherNetworksList").innerHTML =
-            `<a href="asset.html?symbol=ETH" style="color:#8ef;">Ethereum (self-custodial, receive-only) &rarr;</a>`;
+            `<a href="asset.html?symbol=ETH" style="color:var(--cc-accent-gold, #c9a227);">Ethereum (self-custodial, receive-only) &rarr;</a>`;
         document.getElementById("ovOtherNetworks").style.display = "block";
     }
 }
@@ -300,6 +359,28 @@ async function toggleReceivePanel() {
         return;
     }
 
+    // BTCB has only ONE real deposit address, unlike ETHB - the user's
+    // own self-custodial Bitcoin (testnet) address (see
+    // core/btc_address.go's doc comment: CreditChain never holds a BTC
+    // key, it only watches this address for real deposits). Register
+    // it for watching here (idempotent - btcAddressStore.Set is a
+    // no-op if this address is already registered) so a fresh wallet
+    // that's never opened send-bridged-btc.html yet still gets its
+    // deposits detected.
+    if (symbol === "BTCB") {
+        const btcAddress = externalChainAddress("BTC");
+        if (!btcAddress) {
+            document.getElementById("assetReceiveAddress").innerText = "No Bitcoin account derived for this wallet.";
+            panel.style.display = "block";
+            return;
+        }
+        document.getElementById("assetReceiveAddress").innerText = btcAddress;
+        QR.renderToCanvas(document.getElementById("assetQrCanvas"), btcAddress, 6);
+        panel.style.display = "block";
+        apiPostSigned("/btc-bridge/register-address", { btcAddress }).catch((e) => console.error(e));
+        return;
+    }
+
     const rawAddress = await assetAddress();
     const address = EXTERNAL_CHAIN_SYMBOLS[symbol] ? rawAddress : formatAddress(rawAddress);
     document.getElementById("assetReceiveAddress").innerText = address;
@@ -362,6 +443,10 @@ document.getElementById("assetSendBtn").addEventListener("click", () => {
     }
     if (symbol === "ETHB") {
         location.href = "send-bridged-eth.html";
+        return;
+    }
+    if (symbol === "BTCB" || symbol === "BTC") {
+        location.href = "send-bridged-btc.html";
         return;
     }
     location.href = `send.html?symbol=${symbol}`;

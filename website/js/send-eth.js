@@ -133,7 +133,7 @@ async function confirmSend() {
         statusEl.innerText = "Broadcasting...";
         const result = await apiPost("/eth-selfcustody/broadcast", { rawTxHex });
 
-        statusEl.innerHTML = `Sent - <a href="https://sepolia.etherscan.io/tx/${result.txHash}" target="_blank" rel="noopener" style="color:#8ef;">view on Sepolia Etherscan</a>`;
+        statusEl.innerHTML = `Sent - <a href="https://sepolia.etherscan.io/tx/${result.txHash}" target="_blank" rel="noopener" style="color:var(--cc-accent-gold, #c9a227);">view on Sepolia Etherscan</a>`;
 
         // Sepolia confirmation times vary more than CreditChain's own
         // block time - poll a few times over ~30s rather than a single
