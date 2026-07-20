@@ -1,23 +1,19 @@
 package core
 
-func BorrowLimit(
-	score uint64,
-) uint64 {
-
-	switch {
-	case score >= 1000:
+// BorrowLimit is keyed off Wallet.Reputation (1-100 scale), aligned
+// with the CreditTier breakpoints in credit_score.go so a user's
+// borrowing power always matches the tier they see in the UI.
+func BorrowLimit(reputation uint64) uint64 {
+	switch TierForReputation(reputation) {
+	case TierGenesis:
 		return 100000
-
-	case score >= 800:
+	case TierDiamond:
 		return 50000
-
-	case score >= 700:
+	case TierGold:
 		return 25000
-
-	case score >= 600:
+	case TierSilver:
 		return 10000
-
-	default:
+	default: // TierBronze
 		return 1000
 	}
 }

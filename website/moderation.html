@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OUTERNET Moderation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<h1>Moderation</h1>
+
+<div class="card">
+
+    <h2>What This Is</h2>
+
+    <p>
+        Registered moderators are automatically assigned to observe new
+        trade agreements (peer-funded loan negotiations and P2P offers)
+        and attest on chain whether they concluded successfully.
+    </p>
+
+    <p style="opacity:0.75;font-size:12px;">
+        This is a disclosed, human-trust-based attestation, not a
+        cryptographic guarantee that any off-app payment actually
+        happened - a moderator's confirmation is their own judgment
+        call, recorded transparently, never an automatic release or
+        reversal of funds. Trades already settle on their own (a
+        negotiation executes when the lender confirms, a P2P offer
+        settles atomically on accept) - moderation adds an extra trust
+        layer on top, it doesn't gate the trade itself.
+    </p>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Your Moderator Status</h2>
+
+    <p>
+        Status:
+        <span id="moderatorStatus">Not registered</span>
+    </p>
+
+    <p>
+        Confirmations:
+        <span id="moderatorConfirmations">0</span>
+    </p>
+
+    <p>
+        Disputes:
+        <span id="moderatorDisputes">0</span>
+    </p>
+
+    <p style="opacity:0.75;font-size:12px;">
+        Requires reputation ≥ 50 (same floor as becoming a validator) and a flat 10 CCT registration fee, charged
+        when the registration confirms. Registering grants a one-time reputation bump, which also
+        raises your validator selection weight (reputation is 55% of
+        it).
+    </p>
+
+    <button onclick="registerModerator()">
+        Register As Moderator
+    </button>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Trades Assigned To You</h2>
+
+    <p style="opacity:0.75;font-size:12px;">
+        Only shown here once you're a registered moderator and at
+        least one negotiation or P2P offer has been assigned to you.
+    </p>
+
+    <div id="assignedTrades">
+        Loading...
+    </div>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Company Verification Applications Assigned To You</h2>
+
+    <p style="opacity:0.75;font-size:12px;">
+        Testnet placeholder - see <a href="companies.html" style="color:var(--cc-accent-gold, #c9a227);">Trading Hub</a>
+        for what "Verified" does and doesn't mean here.
+    </p>
+
+    <div id="assignedCompanies">
+        Loading...
+    </div>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Unclaimed / Stuck Pending Applications</h2>
+
+    <p style="opacity:0.75;font-size:12px;">
+        Applications still awaiting review that aren't assigned to you - normally you'd leave
+        these alone, but if the originally-assigned moderator's key is lost or unreachable, any
+        registered moderator can claim it here so it isn't stuck forever.
+    </p>
+
+    <div id="unclaimedCompanies">
+        Loading...
+    </div>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>All Registered Moderators</h2>
+
+    <div id="moderatorList">
+        Loading...
+    </div>
+
+</div>
+
+<br>
+
+<button
+    onclick="location.href='outernet.html'">
+    Back To Dashboard
+</button>
+
+<script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
+<script src="js/moderation.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OUTERNET Trading Hub</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<h1>Trading Hub</h1>
+
+<div class="card">
+
+    <h2>What This Is</h2>
+
+    <p>
+        A directory of sellers who applied for a "Verified" badge and were
+        reviewed by a registered moderator.
+    </p>
+
+    <p style="opacity:0.75;font-size:12px;">
+        <strong>Testnet placeholder - not real KYC/AML.</strong> This is a
+        stand-in for a real identity-verification and compliance system that
+        will be built before mainnet (real licensing, a real KYC/AML vendor,
+        legal review). Right now, "Verified" means a moderator read what an
+        applicant wrote and vouched for it - nothing here is independently
+        verified, no real documents are collected, and no real-world fiat
+        moves through this app. Do not treat a badge here as a real
+        compliance guarantee.
+    </p>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Apply For A Verified Badge</h2>
+
+    <p style="opacity:0.75;font-size:13px;">Applying costs a flat 25 CCT fee, charged when the application confirms.</p>
+
+    <div class="explorer-search" style="display:flex;flex-direction:column;gap:10px;">
+        <input id="companyName" type="text" placeholder="Company / trading name" maxlength="200">
+        <textarea id="companyDescription" placeholder="Description - what do you trade, how long have you operated, etc." maxlength="2000" rows="3"></textarea>
+        <textarea id="companyDocumentNote" placeholder="Optional: describe any certificate/registration you hold (free text only - do not paste real ID numbers or sensitive personal data here)" maxlength="2000" rows="3"></textarea>
+        <input id="companyContactEmail" type="email" placeholder="Optional: contact email for trade-attention alerts (e.g. a trade needing your response)" maxlength="200">
+    </div>
+
+    <button onclick="applyCompany()">Submit Application</button>
+    <p id="companyApplyStatus"></p>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Update Contact Email</h2>
+    <p style="opacity:0.7;font-size:13px;">Already applied? Change where trade-attention alerts get sent (only used if you've already applied - a fresh application isn't required).</p>
+
+    <div class="explorer-search" style="display:flex;flex-direction:column;gap:10px;">
+        <input id="companyUpdateContactEmail" type="email" placeholder="Contact email" maxlength="200">
+    </div>
+
+    <button onclick="updateContactEmail()">Save</button>
+    <p id="companyUpdateContactStatus"></p>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Directory</h2>
+
+    <div id="companyList" class="explorer-empty">
+        Loading...
+    </div>
+
+</div>
+
+<br>
+
+<button
+    onclick="location.href='outernet.html'">
+    Back To Dashboard
+</button>
+&nbsp;|&nbsp;
+<button
+    onclick="location.href='p2p.html'">
+    Marketplace (P2P)
+</button>
+
+<script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
+<script src="js/companies.js"></script>
+
+</body>
+</html>

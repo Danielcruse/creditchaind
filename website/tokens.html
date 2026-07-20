@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Token Creation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .explorer-search{
+            display:flex;
+            gap:10px;
+            margin-bottom:15px;
+            flex-wrap:wrap;
+        }
+        .explorer-search input{
+            flex:1;
+            min-width:200px;
+            padding:10px 14px;
+            border-radius:10px;
+            border:1px solid rgba(255,255,255,0.15);
+            background:rgba(255,255,255,0.05);
+            color:white;
+            box-sizing:border-box;
+        }
+        .explorer-row{
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            gap:12px;
+            padding:10px 12px;
+            border-bottom:1px solid rgba(255,255,255,0.08);
+            font-family:monospace;
+            font-size:13px;
+            flex-wrap:wrap;
+        }
+        .explorer-row:last-child{
+            border-bottom:none;
+        }
+        .explorer-hash{
+            opacity:0.75;
+        }
+        .explorer-empty{
+            opacity:0.6;
+            padding:10px 0;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Token Creation</h1>
+
+<div class="card">
+    <p style="opacity:0.75;font-size:13px;">
+        Register a new testnet token here. A registered token has no (testnet) price against CCT
+        until liquidity has been seeded for it - that happens automatically behind the scenes as
+        part of the trades and settlements that use it, so there's nothing extra for you to do.
+        Registering requires some test ETH staked first (same "skin in the game" requirement as
+        borrowing) - see <a href="staking.html" style="color:var(--cc-accent-gold, #c9a227);">Stake</a> if you haven't yet -
+        plus a <span id="tkFeeAmount">5</span> ETHTEST creation fee, charged from your ETHTEST
+        address (see your wallet card on OUTERNET).
+    </p>
+
+    <div id="tokensLoggedOut" style="display:none;">
+        <p class="explorer-empty">Log in with a wallet to register a token.</p>
+    </div>
+
+    <div id="tokensNotStaked" style="display:none;">
+        <p class="explorer-empty">
+            You need some test ETH staked before you can register a token -
+            <a href="staking.html" style="color:var(--cc-accent-gold, #c9a227);">stake some here</a> first.
+        </p>
+    </div>
+
+    <div id="tokensNotEnoughFee" style="display:none;">
+        <p class="explorer-empty">
+            You need at least <span id="tkFeeAmount2">5</span> ETHTEST in your ETHTEST address to
+            cover the token creation fee - claim some from the faucet on
+            <a href="outernet.html" style="color:var(--cc-accent-gold, #c9a227);">OUTERNET</a> first.
+        </p>
+    </div>
+
+    <div id="tokensLoggedIn">
+        <h3>Register a Token</h3>
+        <div class="explorer-search">
+            <input id="tkSymbol" placeholder="Symbol (e.g. MYTKN)" maxlength="10">
+            <input id="tkName" placeholder="Name (e.g. My Token)" maxlength="64">
+            <input id="tkSupply" type="number" placeholder="Initial supply" min="1">
+            <button id="tkRegisterBtn">Register</button>
+        </div>
+        <p id="tkRegisterStatus"></p>
+    </div>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Registered Tokens</h2>
+    <div id="tkTokenList" class="explorer-empty">Loading...</div>
+</div>
+
+<p style="margin-top:20px;">
+    <a href="explorer.html">Explorer</a> &nbsp;|&nbsp;
+    <a href="outernet.html">Back to OUTERNET</a>
+</p>
+
+<script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
+<script src="js/tokens.js"></script>
+
+</body>
+</html>

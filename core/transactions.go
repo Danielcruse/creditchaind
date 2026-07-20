@@ -1,27 +1,339 @@
 package core
 
-import "time"
+import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"time"
+)
 
 type TransactionType string
 
 const (
-	TxBorrow         TransactionType = "BORROW"
-	TxLend           TransactionType = "LEND"
-	TxExchange       TransactionType = "EXCHANGE"
-	TxReward         TransactionType = "REWARD"
-	TxGovernance     TransactionType = "GOVERNANCE"
-	TxReputation     TransactionType = "REPUTATION"
+	TxBorrow     TransactionType = "BORROW"
+	TxLend       TransactionType = "LEND"
+	TxExchange   TransactionType = "EXCHANGE"
+	TxReward     TransactionType = "REWARD"
+	TxGovernance TransactionType = "GOVERNANCE"
+	TxReputation TransactionType = "REPUTATION"
 
-	TxStakeETH       TransactionType = "STAKE_ETH"
-	TxUnstakeETH     TransactionType = "UNSTAKE_ETH"
+	TxStakeETH   TransactionType = "STAKE_ETH"
+	TxUnstakeETH TransactionType = "UNSTAKE_ETH"
 
-	TxMintOETH       TransactionType = "MINT_OETH"
-	TxBurnOETH       TransactionType = "BURN_OETH"
+	TxMintOETH TransactionType = "MINT_OETH"
+	TxBurnOETH TransactionType = "BURN_OETH"
 
-	TxClaimReward    TransactionType = "CLAIM_REWARD"
+	TxClaimReward       TransactionType = "CLAIM_REWARD"
+	TxRepay             TransactionType = "REPAY"
+	TxValidatorRegister TransactionType = "VALIDATOR_REGISTER"
+	TxLockCollateral    TransactionType = "LOCK_COLLATERAL"
+	TxSlashReport       TransactionType = "SLASH_REPORT"
+
+	TxValidatorDelegate      TransactionType = "VALIDATOR_DELEGATE"
+	TxValidatorUndelegate    TransactionType = "VALIDATOR_UNDELEGATE"
+	TxValidatorSetCommission TransactionType = "VALIDATOR_SET_COMMISSION"
 
 	TxBridgeDeposit  TransactionType = "BRIDGE_DEPOSIT"
 	TxBridgeWithdraw TransactionType = "BRIDGE_WITHDRAW"
+
+	// TxBridgeBtcDeposit is BTCB's deposit-report counterpart to
+	// TxBridgeDeposit - see api/btc_bridge.go's pollAndReportBtcDeposit.
+	TxBridgeBtcDeposit TransactionType = "BRIDGE_BTC_DEPOSIT"
+
+	TxTokenRegister       TransactionType = "TOKEN_REGISTER"
+	TxPoolAddLiquidity    TransactionType = "POOL_ADD_LIQUIDITY"
+	TxPoolRemoveLiquidity TransactionType = "POOL_REMOVE_LIQUIDITY"
+	TxPoolSwap            TransactionType = "POOL_SWAP"
+
+	// TxSwapViaCCT is a swap between any two tokens (native ETHTEST/
+	// USDCTEST or a developer-registered one) that routes through CCT
+	// as the universal hub currency - a single hop if either side IS
+	// CCT, or two hops (token -> CCT -> token) otherwise. See
+	// api/apply.go's applySwapViaCCT.
+	TxSwapViaCCT TransactionType = "SWAP_VIA_CCT"
+
+	// P2P offers are fixed-price trader-to-trader trades (testnet
+	// tokens only - see core/p2p_offer.go's doc comment for how this
+	// differs from the floating-price AMM pools).
+	TxP2POfferCreate TransactionType = "P2P_OFFER_CREATE"
+	TxP2POfferAccept TransactionType = "P2P_OFFER_ACCEPT"
+	TxP2POfferCancel TransactionType = "P2P_OFFER_CANCEL"
+
+	// TxFaucetClaim replaces the faucet's old instant, node-local mint -
+	// see api/apply.go's applyFaucetClaim doc comment for why an
+	// unreplicated mint let two production nodes' CCT supply drift
+	// apart from each other.
+	TxFaucetClaim TransactionType = "FAUCET_CLAIM"
+
+	// Loan offers are the peer-funded lending marketplace - a lender
+	// posts a standing offer (rate + capital), a borrower discovers it
+	// and draws whatever amount they choose against it (see
+	// core/loan_offer.go's doc comment). Distinct from the older
+	// self-funded TxBorrow, which still mints instantly with no lender.
+	TxLoanOfferCreate TransactionType = "LOAN_OFFER_CREATE"
+	TxLoanOfferDraw   TransactionType = "LOAN_OFFER_DRAW"
+	TxLoanOfferClose  TransactionType = "LOAN_OFFER_CLOSE"
+
+	// Loan requests are the borrower-initiated mirror of loan offers - a
+	// borrower posts what they want to borrow and against what
+	// collateral (see core/loan_request.go's doc comment), and a lender
+	// discovers it and funds it at or below the borrower's stated
+	// maximum rate. Fulfillment reuses the existing negotiation
+	// chat/confirm system rather than a separate direct-fund path - see
+	// core.Negotiation's RequestID field.
+	TxLoanRequestCreate  TransactionType = "LOAN_REQUEST_CREATE"
+	TxLoanRequestCancel  TransactionType = "LOAN_REQUEST_CANCEL"
+	TxLoanRequestFulfill TransactionType = "LOAN_REQUEST_FULFILL"
+
+	// Moderators are reputation-vetted community members automatically
+	// assigned to observe trade agreements (loan negotiations, P2P
+	// offers) and attest on-chain whether they concluded successfully -
+	// see core/moderator.go's doc comment for what this is (and isn't)
+	// a guarantee of.
+	TxModeratorRegister TransactionType = "MODERATOR_REGISTER"
+	TxModeratorConfirm  TransactionType = "MODERATOR_CONFIRM"
+
+	// EXTERNAL-mode P2P offer settlement - see core/p2p_offer.go's
+	// SettlementStatus doc comment for the full state machine these
+	// four transaction types drive.
+	TxP2PExternalAccept    TransactionType = "P2P_EXTERNAL_ACCEPT"
+	TxP2PSellerConfirmPaid TransactionType = "P2P_SELLER_CONFIRM_PAID"
+	// TxP2PBuyerMarkPaid is the buyer's own non-binding "I've sent the
+	// payment" signal, recorded while still AWAITING_PAYMENT - distinct
+	// from TxP2PBuyerConfirmPaid below, which only happens AFTER the
+	// seller has already claimed receipt. See
+	// core.P2POfferStore.MarkBuyerPaid's doc comment.
+	TxP2PBuyerMarkPaid    TransactionType = "P2P_BUYER_MARK_PAID"
+	TxP2PBuyerConfirmPaid TransactionType = "P2P_BUYER_CONFIRM_PAID"
+	TxP2PModeratorResolve TransactionType = "P2P_MODERATOR_RESOLVE"
+	// TxP2PSellerDispute lets the receiving side reject a payment claim
+	// while still AWAITING_PAYMENT, instead of only being able to
+	// disagree after already confirming receipt - see
+	// core.P2POfferStore.DisputeAwaitingPayment's doc comment.
+	TxP2PSellerDispute TransactionType = "P2P_SELLER_DISPUTE"
+
+	// Company verification is a testnet-only placeholder badge - see
+	// core/company.go's doc comment for what it is (and very much
+	// isn't) a guarantee of.
+	TxCompanyApply  TransactionType = "COMPANY_APPLY"
+	TxCompanyReview TransactionType = "COMPANY_REVIEW"
+
+	// TxCompanyUpdateContact lets an applicant/hub change where they
+	// get emailed trade-attention notifications (see api/email.go,
+	// core.CompanyStore.SetContactEmail) - not moderator-gated, since
+	// it's the applicant's own notification preference.
+	TxCompanyUpdateContact TransactionType = "COMPANY_UPDATE_CONTACT"
+
+	// TxCompanyReassignModerator lets any currently-registered moderator
+	// claim a still-PENDING application away from its originally
+	// assigned moderator - see core.CompanyStore.ReassignModerator's doc
+	// comment for why this exists (an application should never be
+	// permanently stuck just because its assigned moderator's key is
+	// lost or otherwise unreachable).
+	TxCompanyReassignModerator TransactionType = "COMPANY_REASSIGN_MODERATOR"
+
+	// BuyRequest is the reverse of a P2P offer - a verified Trading Hub
+	// posting a standing bid to buy crypto for real-world payment. See
+	// core/buy_request.go's doc comment.
+	TxBuyRequestCreate  TransactionType = "BUY_REQUEST_CREATE"
+	TxBuyRequestFulfill TransactionType = "BUY_REQUEST_FULFILL"
+	TxBuyRequestCancel  TransactionType = "BUY_REQUEST_CANCEL"
+
+	// Wallet recovery is a testnet-only migration placeholder - see
+	// core/recovery.go's doc comment for what it actually does (and
+	// doesn't) recover.
+	TxSetRecoveryEmail TransactionType = "SET_RECOVERY_EMAIL"
+	TxRecoverWallet    TransactionType = "RECOVER_WALLET"
+
+	// TxHDWalletMigrate moves a pre-Multi-Chain-HD-Wallet legacy
+	// address's balances/reputation/loans to a new HD-derived address,
+	// signed by the OLD key (unlike TxRecoverWallet, which exists for
+	// when the old key is lost) - see core/recovery.go's MarkMigrated
+	// and api/apply.go's migrateWalletAssets, both reused here.
+	TxHDWalletMigrate TransactionType = "HD_WALLET_MIGRATE"
+
+	// A HubRate is a verified Trading Hub's standing rate quote for an
+	// in-app token against an off-app currency - see core/hub_rate.go's
+	// doc comment. TxHubRateSet posts/updates it; TxHubTradeRequest is
+	// a regular user instantiating an actual trade against that quote
+	// for whatever amount they choose (capped by real-time balance, not
+	// a pre-fixed listing amount). The resulting trade is an ordinary
+	// EXTERNAL-mode P2POffer from that point on, so it settles through
+	// the exact same TxP2PSellerConfirmPaid/TxP2PBuyerConfirmPaid/
+	// TxP2PModeratorResolve machinery as any other hub-created offer or
+	// fulfilled buy request - no new settlement state machine needed.
+	TxHubRateSet      TransactionType = "HUB_RATE_SET"
+	TxHubTradeRequest TransactionType = "HUB_TRADE_REQUEST"
+
+	// TxHubRulesSet posts/updates a hub's preset trading rules text -
+	// see core/hub_rules.go's doc comment. A real block-confirmed
+	// transaction (not a node-local mutation like chat messages),
+	// consistent with every other hub-configuration change (e.g.
+	// TxHubRateSet above), so it replicates identically across nodes.
+	TxHubRulesSet TransactionType = "HUB_RULES_SET"
+
+	// A hub worker is a wallet the hub itself has delegated day-to-day
+	// pricing to - see core/hub_worker.go's doc comment. Only the hub's
+	// own signature can add or remove one; a worker can never act on
+	// this pair itself.
+	TxHubWorkerAdd    TransactionType = "HUB_WORKER_ADD"
+	TxHubWorkerRemove TransactionType = "HUB_WORKER_REMOVE"
+
+	// TxHubStorefrontSet posts/replaces a hub's custom front-page
+	// design - see core/hub_storefront.go's doc comment.
+	TxHubStorefrontSet TransactionType = "HUB_STOREFRONT_SET"
+
+	// TxTokenMint is the operator-only testnet faucet (see
+	// api/token_mint.go's HandleTokenMint) - a system/network action
+	// like TxSlashReport, not a wallet action, but routed through the
+	// same Transaction/gossip/ApplyBlock machinery as everything else
+	// so the mint actually replicates to every node instead of only
+	// ever taking effect on whichever single node received the HTTP
+	// request (the bug this type fixes - a token minted only on the
+	// node an admin happened to call silently diverges every other
+	// node's derived state, like pool reserves, the next time a real
+	// transaction depends on that balance).
+	TxTokenMint TransactionType = "TOKEN_MINT"
+
+	// TxAdminTransfer moves a specific amount of an address's OWN
+	// already-existing balance to another address, admin-triggered
+	// rather than signed by the sending address - node-authored via
+	// selfSignedEnvelope, same trust model as TxTokenMint. Deliberately
+	// narrower than TxTokenMint (which can conjure new supply at any
+	// address): this only ever moves value an address already holds,
+	// never creates any. Built specifically as an emergency recovery
+	// tool for the case a validator's private key is permanently
+	// unreachable but its address still holds real balance that needs
+	// to migrate to a new, key-controlled address - see
+	// api/admin_transfer.go's doc comment.
+	TxAdminTransfer TransactionType = "ADMIN_TRANSFER"
+
+	// TxTreasuryPurchaseRequest is a buyer signaling intent to buy CCT
+	// from the Foundation Treasury at the current sale price - see
+	// core.TreasuryStore's doc comment. No funds move yet; this only
+	// records the request and snapshots the price, so a later admin
+	// price change can't retroactively change what this buyer owes.
+	TxTreasuryPurchaseRequest TransactionType = "TREASURY_PURCHASE_REQUEST"
+
+	// TxTreasuryPurchaseConfirm is an admin-only attestation that the
+	// buyer's off-app payment was received - node-authored via
+	// selfSignedEnvelope, same trust model as TxTokenMint/
+	// TxSlashReport (ADMIN_TOKEN already checked at the HTTP layer;
+	// other nodes trust this node's attestation). Triggers the actual
+	// CCT transfer from the treasury address to the buyer at apply
+	// time.
+	TxTreasuryPurchaseConfirm TransactionType = "TREASURY_PURCHASE_CONFIRM"
+
+	// TxTreasurySetSalePrice/TxTreasurySetPaused/TxTreasurySetAddress
+	// are admin-only Treasury/Sale configuration changes - same
+	// node-authored trust model as TxTreasuryPurchaseConfirm.
+	TxTreasurySetSalePrice TransactionType = "TREASURY_SET_SALE_PRICE"
+	TxTreasurySetPaused    TransactionType = "TREASURY_SET_PAUSED"
+	TxTreasurySetAddress   TransactionType = "TREASURY_SET_ADDRESS"
+
+	// TxAnnouncementCreate is an admin-only site-wide announcement post
+	// - same node-authored, self-signed trust model as
+	// TxTreasurySetSalePrice (ADMIN_TOKEN already checked at the HTTP
+	// layer - see api/announcements.go).
+	TxAnnouncementCreate TransactionType = "ANNOUNCEMENT_CREATE"
+
+	// TxAdminMultisigPropose/TxAdminMultisigApprove replace the
+	// single-key ADMIN_WALLET_ADDRESS model with a real M-of-N
+	// multisig - see api/admin_multisig.go. Propose creates a pending
+	// core.AdminMultisigProposal wrapping one of the admin-only action
+	// types above (TxTokenMint, TxGenesisPoolWithdraw, etc.) and counts
+	// as the proposer's own approval; Approve adds another authorized
+	// signer's approval to an existing proposal. Both are ordinary
+	// wallet-signed transactions (tx.AuthAddress == the signer, checked
+	// against the network's configured signer set), not node-authored -
+	// unlike every other admin transaction type, there's no single
+	// party whose word alone should ever be enough. The underlying
+	// action only actually executes once approvals reach the configured
+	// threshold (see maybeExecuteAdminMultisigProposal).
+	TxAdminMultisigPropose TransactionType = "ADMIN_MULTISIG_PROPOSE"
+	TxAdminMultisigApprove TransactionType = "ADMIN_MULTISIG_APPROVE"
+
+	// TxRatingSubmit is a normal wallet-signed site rating (see
+	// api/rating.go) - ordinary auth (tx.AuthAddress == tx.From), not
+	// node-authored, since this is a real user opinion, not a system
+	// fact.
+	TxRatingSubmit TransactionType = "RATING_SUBMIT"
+
+	// TxHubAutomationSubscribe/TxHubWorkerSetAutomation are the scoped
+	// hub-automation feature (see api/hub_automation.go's doc comment)
+	// - both hub-only, ordinary wallet-signed auth just like
+	// TxHubWorkerAdd/TxHubRulesSet.
+	TxHubAutomationSubscribe TransactionType = "HUB_AUTOMATION_SUBSCRIBE"
+	TxHubWorkerSetAutomation TransactionType = "HUB_WORKER_SET_AUTOMATION"
+
+	// TxValidatorApplicationCreate/Support/Confirm are the staged
+	// validator-onboarding pipeline (see
+	// api/validator_application.go's doc comment) - all ordinary
+	// wallet-signed transactions like every other user-originated
+	// action, so every node converges on identical application state.
+	TxValidatorApplicationCreate  TransactionType = "VALIDATOR_APPLICATION_CREATE"
+	TxValidatorApplicationSupport TransactionType = "VALIDATOR_APPLICATION_SUPPORT"
+	TxValidatorApplicationConfirm TransactionType = "VALIDATOR_APPLICATION_CONFIRM"
+
+	// TxGenesisPoolAllocation is PoSR's one-time admin-triggered mint
+	// into the 5 named genesis pools (Foundation Treasury, Validator
+	// Reward Pool, Ecosystem Development, Governance Treasury,
+	// Community Incentives) - node-authored via selfSignedEnvelope,
+	// same trust model as TxTokenMint/TxTreasuryPurchaseConfirm.
+	// Guarded idempotent by core.Treasury.GenesisPoolsAllocated (see
+	// api/apply.go's applyGenesisPoolAllocation) so it can only ever
+	// fire once, since this chain has been running for a long time
+	// already and has no true "genesis" moment to hook into.
+	TxGenesisPoolAllocation TransactionType = "GENESIS_POOL_ALLOCATION"
+
+	// TxGenesisPoolWithdraw moves funds out of one of the 4 genesis
+	// pools that have no controlling keypair of their own (Validator
+	// Reward, Ecosystem Development, Governance Treasury, Community
+	// Incentives - NOT Foundation Treasury, which already has its own
+	// real address and its own admin controls) - see
+	// api/genesis_pool_withdraw.go. Admin-key-gated for now (verified
+	// via verifyAdminTxAuth, same as every other admin-only
+	// transaction type in api/apply.go); a real governance-vote-gated
+	// disbursement mechanism for these pools is disclosed future work
+	// in audit/KNOWN_GAPS.md, not attempted here.
+	TxGenesisPoolWithdraw TransactionType = "GENESIS_POOL_WITHDRAW"
+
+	// TxKYCSubmit is a self-attested KYC submission gating access to
+	// the peer-lending marketplace (Lend/Marketplace/Your Negotiations)
+	// - see core/kyc.go's doc comment for what this is (and very much
+	// isn't - no real document verification) a guarantee of.
+	TxKYCSubmit TransactionType = "KYC_SUBMIT"
+
+	// The CCT order book (see core/order_book.go's doc comment) - real
+	// bid/ask limit orders matched by price-time priority, replacing
+	// the AMM's reserve-ratio pricing for CCT-vs-ETHTEST/USDCTEST.
+	// TxOrderPlace escrows funds and attempts an immediate match (any
+	// unfilled remainder rests in the book); TxOrderCancel releases
+	// whatever's left of a still-open order's escrow back to its owner.
+	TxOrderPlace  TransactionType = "ORDER_PLACE"
+	TxOrderCancel TransactionType = "ORDER_CANCEL"
+
+	// TxLoanAddCollateral lets a borrower top up an existing FUNDED
+	// loan's earmarked collateral (see core.Loan.CollateralAmount's doc
+	// comment - it's fixed at draw time and tied to one specific loan,
+	// not a shared wallet-level pool, so "add more collateral" needs
+	// its own transaction rather than just staking more). Releases from
+	// the borrower's already-locked collateral pool (see
+	// api/apply.go's reserveCollateralForLoan) into that specific
+	// loan's CollateralAmount - see api/loan_collateral.go.
+	TxLoanAddCollateral TransactionType = "LOAN_ADD_COLLATERAL"
+
+	// TxLoanRedeemShortfall lets a borrower pay off exactly
+	// Loan.LiquidatedShortfall during the Final Redemption window
+	// (RiskStage==AwaitingFinalRedemption) to keep their Mining Power -
+	// deliberately NOT TxRepay, which computes a full repayAmountFor(loan)
+	// assuming collateral is still intact; here collateral is already
+	// gone, only the frozen shortfall is still owed. See
+	// api/loan_redemption.go.
+	TxLoanRedeemShortfall TransactionType = "LOAN_REDEEM_SHORTFALL"
 )
 
 type Transaction struct {
@@ -38,9 +350,50 @@ type Transaction struct {
 
 	Data string
 
-	Signature []byte
+	// Auth carries the original signed-request proof this transaction
+	// was built from - a self-contained copy of the SignedEnvelope
+	// (see request_auth.go) that authorized it. Without this, a
+	// transaction inside a block is just trusted data: whichever node
+	// produced the block controls its own mempool directly and could
+	// otherwise insert an arbitrary forged transaction (fake stake,
+	// transfer, unstake, claiming any From address) that every other
+	// node would apply with no way to detect the forgery, since a
+	// block's own signature only proves who produced the block, not
+	// that its contents are individually authentic. With Auth
+	// populated, ANY node - not just the one that first received the
+	// HTTP request - can independently re-verify the transaction via
+	// VerifyTransactionAuth before applying it. AuthAddress is the
+	// actual authenticated actor, which is not always From/To (e.g. a
+	// TxBorrow's authenticated actor is the borrower, stored in To,
+	// since From is left empty to represent the lending pool).
+	AuthAddress   string          `json:"authAddress"`
+	AuthPublicKey string          `json:"authPublicKey"`
+	AuthTimestamp int64           `json:"authTimestamp"`
+	AuthPayload   json.RawMessage `json:"authPayload"`
+	AuthSignature string          `json:"authSignature"`
 }
 
+// newTxID derives a unique id from the transaction's own content plus
+// a random nonce, so gossiped/replayed copies of the same logical
+// transaction can be recognized and de-duplicated by every node.
+func newTxID(from, to string, amount uint64, txType TransactionType, timestamp int64, data string) string {
+	nonce := make([]byte, 8)
+	_, _ = rand.Read(nonce)
+
+	sum := sha256.Sum256([]byte(fmt.Sprintf(
+		"%s|%s|%d|%s|%d|%s|%s",
+		from, to, amount, txType, timestamp, data, hex.EncodeToString(nonce),
+	)))
+
+	return hex.EncodeToString(sum[:16])
+}
+
+// NewTransaction builds an unauthenticated transaction skeleton - see
+// NewAuthenticatedTransaction for the version that also embeds the
+// proof every mutating action actually needs. This bare constructor
+// still exists for transaction types with no external signer (block
+// rewards are applied directly in api/apply.go's applyBlockReward,
+// never go through here at all).
 func NewTransaction(
 	from string,
 	to string,
@@ -49,13 +402,62 @@ func NewTransaction(
 	data string,
 ) Transaction {
 
+	timestamp := time.Now().Unix()
+
 	return Transaction{
-		ID:        "",
+		ID:        newTxID(from, to, amount, txType, timestamp, data),
 		From:      from,
 		To:        to,
 		Amount:    amount,
 		Type:      txType,
-		Timestamp: time.Now().Unix(),
+		Timestamp: timestamp,
 		Data:      data,
 	}
+}
+
+// NewAuthenticatedTransaction builds a transaction and embeds the
+// SignedEnvelope that authorized it, so any node can independently
+// re-verify authenticity later via VerifyTransactionAuth - see
+// Transaction.Auth* fields' doc comment for why this matters.
+func NewAuthenticatedTransaction(
+	auth SignedEnvelope,
+	from string,
+	to string,
+	amount uint64,
+	txType TransactionType,
+	data string,
+) Transaction {
+	tx := NewTransaction(from, to, amount, txType, data)
+
+	tx.AuthAddress = auth.Address
+	tx.AuthPublicKey = auth.PublicKey
+	tx.AuthTimestamp = auth.Timestamp
+	tx.AuthPayload = auth.Payload
+	tx.AuthSignature = auth.Signature
+
+	return tx
+}
+
+// VerifyTransactionAuth independently confirms a transaction really
+// was authorized by its AuthAddress's key-holder - the check every
+// node applying this transaction runs, not just the one that
+// originally received the HTTP request that created it. Uses
+// VerifySignatureOnly (not Verify), since by the time another node
+// applies this transaction it may be arbitrarily old - staleness was
+// already the originating node's concern at submission time, not a
+// re-application concern here.
+func VerifyTransactionAuth(tx Transaction) error {
+	if tx.AuthAddress == "" || tx.AuthSignature == "" {
+		return errors.New("transaction has no authentication data")
+	}
+
+	env := SignedEnvelope{
+		Address:   tx.AuthAddress,
+		PublicKey: tx.AuthPublicKey,
+		Timestamp: tx.AuthTimestamp,
+		Payload:   tx.AuthPayload,
+		Signature: tx.AuthSignature,
+	}
+
+	return env.VerifySignatureOnly()
 }

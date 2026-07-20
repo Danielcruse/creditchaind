@@ -36,17 +36,3 @@ func (bc *Blockchain) AddBlock(
 		block,
 	)
 }
-
-func (bc *Blockchain) AddBlockByValidator(
-	validator *Validator,
-	txs []Transaction,
-) {
-	bc.AddBlock(
-		validator.Wallet.Address,
-		txs,
-	)
-
-	validator.Rewards += 10
-	validator.BlocksProduced++
-	validator.VotingPower++
-}

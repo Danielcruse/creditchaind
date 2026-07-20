@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Order Book</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
+    <link rel="stylesheet" href="css/pool-light.css">
+</head>
+<body class="pool-light">
+
+<div class="pool-topbar">
+    <a class="pool-topbar-brand" href="pool.html">Pool</a>
+    <div class="pool-topbar-links">
+        <a href="liquidity.html">Liquidity Pool</a>
+        <a href="outernet.html">Back to OUTERNET</a>
+    </div>
+</div>
+
+<div class="pool-wrap">
+    <a class="pool-back-link" href="pool.html">&larr; Pool</a>
+
+    <div class="pool-card">
+        <h2>CCT Order Book</h2>
+        <p class="pool-muted">
+            CCT's price against ETHTEST and USDCTEST is set here, not by a pool's reserve ratio - post a
+            buy or sell limit order, and the market price is whatever the last completed trade agreed on.
+            There is no central pool for CCT; every trade is between two real orders.
+        </p>
+
+        <div class="pool-row">
+            <select id="obSymbol">
+                <option value="ETHTEST">ETHTEST</option>
+                <option value="USDCTEST">USDCTEST</option>
+            </select>
+        </div>
+
+        <div id="obChartContainer"><p class="pool-empty">Loading...</p></div>
+    </div>
+
+    <div id="obLoggedOut" class="pool-card" style="display:none;">
+        <p class="pool-empty">Log in with a wallet to place orders.</p>
+    </div>
+
+    <div id="obLoggedIn">
+        <div class="pool-card">
+            <h2>Place Order</h2>
+            <div class="pool-row">
+                <select id="obSide">
+                    <option value="BUY">Buy (pay CCT, receive token)</option>
+                    <option value="SELL">Sell (give up token, receive CCT)</option>
+                </select>
+            </div>
+            <div class="pool-row">
+                <input id="obPrice" type="number" placeholder="Limit price (CCT per unit)" min="0" step="0.000001">
+                <input id="obAmount" type="number" placeholder="Amount" min="0">
+                <button class="pool-btn" id="obPlaceBtn">Place Order</button>
+            </div>
+            <p class="pool-muted" id="obBalance"></p>
+            <p class="pool-status" id="obPlaceStatus"></p>
+        </div>
+
+        <div class="pool-card">
+            <h3>My Open Orders</h3>
+            <div id="obMyOrders"><p class="pool-empty">Loading...</p></div>
+            <p class="pool-status" id="obCancelStatus"></p>
+        </div>
+    </div>
+
+    <div class="pool-card">
+        <h3>Order Book</h3>
+        <div class="pool-row" style="gap:24px;">
+            <div style="flex:1;min-width:220px;">
+                <p class="pool-muted" style="margin:0 0 6px;color:#059669;font-weight:700;">Bids (buy)</p>
+                <div id="obBids"><p class="pool-empty">Loading...</p></div>
+            </div>
+            <div style="flex:1;min-width:220px;">
+                <p class="pool-muted" style="margin:0 0 6px;color:#dc2626;font-weight:700;">Asks (sell)</p>
+                <div id="obAsks"><p class="pool-empty">Loading...</p></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="pool-card">
+        <h3>Recent Trades</h3>
+        <div id="obTrades"><p class="pool-empty">Loading...</p></div>
+    </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
+<script src="js/price-chart.js"></script>
+<script src="js/order-book.js"></script>
+
+</body>
+</html>

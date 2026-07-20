@@ -2,37 +2,27 @@
 <html>
 <head>
     <title>OUTERNET Staking</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
-<h1>ETH Staking Vault</h1>
+<h1>Staking Vault</h1>
+
+<p style="opacity:0.8; font-size:13px;">
+    CCT/ETHTEST/USDCTEST staked here are test/demo amounts only, with no
+    guaranteed monetary value. CCT earned as a staking reward is a
+    testnet participation reward, not real money.
+</p>
 
 <div class="card">
 
-    <h2>Your Position</h2>
+    <h2>Your Positions</h2>
 
-    <p>
-        ETH Staked:
-        <span id="stakedEth">
-            0
-        </span>
-    </p>
-
-    <p>
-        oETH:
-        <span id="oethBalance">
-            0
-        </span>
-    </p>
-
-    <p>
-        Rewards:
-        <span id="rewardBalance">
-            0
-        </span>
-        CCT
-    </p>
+    <div id="positions">
+        Loading...
+    </div>
 
 </div>
 
@@ -40,18 +30,28 @@
 
 <div class="card">
 
-    <h2>Stake ETH</h2>
+    <h2>Stake</h2>
+
+    <select id="stakeSymbol">
+        <option value="CCT">CCT</option>
+        <option value="ETHTEST">ETHTEST</option>
+        <option value="USDCTEST">USDCTEST</option>
+    </select>
+
+    <br><br>
 
     <input
         type="number"
         id="stakeAmount"
-        placeholder="ETH Amount">
+        placeholder="Amount">
 
     <br><br>
 
-    <button onclick="stakeETH()">
+    <button onclick="stakeToken()">
         Stake
     </button>
+
+    <p id="pendingStatus"></p>
 
 </div>
 
@@ -59,18 +59,46 @@
 
 <div class="card">
 
-    <h2>Unstake ETH</h2>
+    <h2>Unstake</h2>
+
+    <select id="unstakeSymbol">
+        <option value="CCT">CCT</option>
+        <option value="ETHTEST">ETHTEST</option>
+        <option value="USDCTEST">USDCTEST</option>
+    </select>
+
+    <br><br>
 
     <input
         type="number"
         id="unstakeAmount"
-        placeholder="ETH Amount">
+        placeholder="Amount">
 
     <br><br>
 
-    <button onclick="unstakeETH()">
+    <button onclick="unstakeToken()">
         Request Unstake
     </button>
+
+    <p id="unstakeStatus"></p>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Unbonding</h2>
+
+    <p>
+        Unstaked balance stays bonded (still counted, still slashable) for a
+        cooldown period before it's actually released back to your CCT/
+        ETHTEST/USDCTEST balance.
+    </p>
+
+    <div id="unbondingList">
+        No pending unbonds.
+    </div>
 
 </div>
 
@@ -89,10 +117,12 @@
 <br>
 
 <button
-    onclick="location.href='wallet.html'">
+    onclick="location.href='outernet.html'">
     Back To Wallet
 </button>
 
+<script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
 <script src="js/staking.js"></script>
 
 </body>

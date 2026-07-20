@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Liquidity Pool</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
+    <link rel="stylesheet" href="css/pool-light.css">
+</head>
+<body class="pool-light">
+
+<div class="pool-topbar">
+    <a class="pool-topbar-brand" href="pool.html">Pool</a>
+    <div class="pool-topbar-links">
+        <a href="swap.html">Swap</a>
+        <a href="price-chart.html">Price Chart</a>
+        <a href="order-book.html">Order Book</a>
+        <a href="outernet.html">Back to OUTERNET</a>
+    </div>
+</div>
+
+<div class="pool-wrap">
+    <a class="pool-back-link" href="pool.html">&larr; Pool</a>
+
+    <div class="pool-card">
+        <h2>Liquidity Pool</h2>
+        <p class="pool-muted">
+            Deposit CCT + a token to earn LP shares from swap fees, or withdraw your share back out.
+            Registering a token doesn't make it tradeable by itself - a real deposit here does.
+        </p>
+
+        <div id="liqLoggedOut" style="display:none;">
+            <p class="pool-empty">Log in with a wallet to use pools.</p>
+        </div>
+
+        <div id="liqLoggedIn">
+            <h3>Select a Pool</h3>
+            <div class="pool-row">
+                <select id="liqPoolSymbol"></select>
+            </div>
+            <div id="liqPoolInfo"></div>
+        </div>
+    </div>
+
+    <div class="pool-card" id="liqActionsCard" style="display:none;">
+        <h3>Add Liquidity</h3>
+        <p class="pool-muted" id="liqAddDisabledNote" style="display:none;">
+            ETHTEST and USDCTEST no longer price off this pool - trade them against CCT on the
+            <a href="order-book.html">Order Book</a> instead. Existing liquidity here can still be removed below.
+        </p>
+        <div class="pool-row" id="liqAddRow">
+            <input id="liqAddCCT" type="number" placeholder="CCT amount" min="0">
+            <input id="liqAddToken" type="number" placeholder="Token amount" min="0">
+            <button class="pool-btn" id="liqAddLiquidityBtn">Add Liquidity</button>
+        </div>
+
+        <h3>Remove Liquidity</h3>
+        <div class="pool-row">
+            <input id="liqRemoveShares" type="number" placeholder="LP shares to remove" min="0">
+            <button class="pool-btn pool-btn-secondary" id="liqRemoveLiquidityBtn">Remove Liquidity</button>
+        </div>
+        <p class="pool-status" id="liqPoolStatus"></p>
+    </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
+<script src="js/liquidity.js"></script>
+
+</body>
+</html>

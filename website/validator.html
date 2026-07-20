@@ -1,51 +1,301 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>OUTERNET Validator</title>
+    <title>OUTERNET Validator Pools</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
     <link rel="stylesheet" href="css/style.css">
+    <style>
+        .explorer-search{
+            display:flex;
+            gap:10px;
+            margin-bottom:15px;
+            flex-wrap:wrap;
+        }
+        .explorer-search input, .explorer-search select{
+            flex:1;
+            min-width:160px;
+            padding:10px 14px;
+            border-radius:10px;
+            border:1px solid rgba(255,255,255,0.15);
+            background:rgba(255,255,255,0.05);
+            color:white;
+            box-sizing:border-box;
+        }
+        .explorer-row{
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            gap:12px;
+            padding:10px 12px;
+            border-bottom:1px solid rgba(255,255,255,0.08);
+            font-family:monospace;
+            font-size:13px;
+            flex-wrap:wrap;
+        }
+        .explorer-row:last-child{
+            border-bottom:none;
+        }
+        .explorer-hash{
+            opacity:0.75;
+        }
+        .explorer-empty{
+            opacity:0.6;
+            padding:10px 0;
+        }
+
+        .validator-table{
+            width:100%;
+            border-collapse:collapse;
+            font-size:13px;
+        }
+        .validator-table th{
+            text-align:left;
+            font-size:11px;
+            text-transform:uppercase;
+            letter-spacing:0.5px;
+            opacity:0.55;
+            font-weight:600;
+            padding:8px 10px;
+            border-bottom:1px solid rgba(255,255,255,0.12);
+        }
+        .validator-table td{
+            padding:10px;
+            border-bottom:1px solid rgba(255,255,255,0.06);
+            font-family:monospace;
+            vertical-align:top;
+        }
+        .validator-table tbody tr{
+            cursor:pointer;
+        }
+        .validator-table tbody tr:hover td{
+            background:rgba(255,255,255,0.05);
+        }
+        .validator-badge{
+            display:inline-block;
+            font-size:10px;
+            text-transform:uppercase;
+            letter-spacing:0.5px;
+            padding:2px 8px;
+            border-radius:8px;
+            border:1px solid rgba(255,255,255,0.2);
+        }
+        .validator-badge.active{
+            color:#00ff95;
+            border-color:#00ff95;
+        }
+        .validator-badge.inactive{
+            color:#888;
+            border-color:#666;
+        }
+        .validator-badge.leader{
+            color:#ffd166;
+            border-color:#ffd166;
+            margin-left:6px;
+        }
+
+        @media (max-width:700px){
+            .validator-table thead{
+                display:none;
+            }
+            .validator-table, .validator-table tbody, .validator-table tr, .validator-table td{
+                display:block;
+                width:100%;
+            }
+            .validator-table tr{
+                border-bottom:1px solid rgba(255,255,255,0.12);
+                padding:10px 0;
+            }
+            .validator-table td{
+                border-bottom:none;
+                padding:4px 0;
+            }
+            .validator-table td::before{
+                content:attr(data-label);
+                display:block;
+                font-size:10px;
+                text-transform:uppercase;
+                letter-spacing:0.5px;
+                opacity:0.5;
+                margin-bottom:2px;
+            }
+        }
+    </style>
 </head>
 <body>
 
-<h1>Validator Dashboard</h1>
+<h1>Validator Pools</h1>
+
+<p style="opacity:0.7;font-size:13px;">
+    Every registered validator's pool - delegate CCT to one to back its PoSR selection weight and share in
+    its block rewards (net of its own commission), without running a node yourself. See
+    <a href="reputation.html#math" style="color:var(--cc-accent-gold, #c9a227);">how PoSR selection actually works</a> for what really
+    drives who gets picked (stake is only 25% of it).
+</p>
+
+<!-- ================= Validator Application (staged onboarding) ================= -->
+<div class="card" id="validatorApplicationCard">
+    <h2>Validator Application</h2>
+    <div id="unapprovedContent">
+        <p style="opacity:0.75;font-size:13px;">
+            Becoming a validator here is a staged process, not a one-click signup: first your application needs
+            real community support (1% of total governance voting weight), then a confirmation link emailed to
+            your recovery address, then real node registration and stake lock. This is deliberate - a validator
+            holds real trust over block production.
+        </p>
+        <p id="myApplicationStatus">Loading...</p>
+        <div id="applicationCreateBox">
+            <button onclick="createValidatorApplication()">Start My Application</button>
+        </div>
+        <div id="applicationSupportBox" style="display:none;">
+            <p style="opacity:0.7;font-size:12px;">Support weight so far: <span id="appSupportWeight">0</span> / <span id="appRequiredWeight">0</span> needed.</p>
+            <p style="opacity:0.7;font-size:12px;">Share your address with other activated-governance wallets so they can support your application below.</p>
+        </div>
+        <div id="applicationPendingBox" style="display:none;">
+            <p style="opacity:0.7;font-size:12px;">
+                You've reached the required support - check your recovery email for a confirmation link, or paste
+                the link's page here: <a href="validator-confirm.html">validator-confirm.html</a>.
+            </p>
+        </div>
+
+        <h3>Support Someone Else's Application</h3>
+        <p style="opacity:0.7;font-size:12px;">Requires your own governance to be activated (see the Governance page).</p>
+        <div class="explorer-search">
+            <input id="supportAddress" placeholder="Applicant's wallet address">
+            <button onclick="supportValidatorApplication()">Support</button>
+        </div>
+        <p id="supportStatus"></p>
+
+        <h3>Community Ratings</h3>
+        <div id="validatorPageRatings" class="explorer-empty">Loading...</div>
+
+        <h3>Verified Trading Hubs</h3>
+        <p style="opacity:0.7;font-size:12px;">Real, verified hubs on this network - a preview of the wider community while your application is pending.</p>
+        <div id="validatorPageHubAds" class="explorer-empty">Loading...</div>
+    </div>
+    <div id="approvedApplicationNote" style="display:none;">
+        <p style="opacity:0.75;font-size:13px;">Your application is approved - see "Become Validator" below to complete registration.</p>
+    </div>
+</div>
+
+<br>
+
+<div id="approvedOnlyContent" style="display:none;">
+
+<!-- ================= Leaderboard ================= -->
+<div class="card" id="leaderboardCard">
+    <h2>Leaderboard</h2>
+    <div class="explorer-search">
+        <select id="sortSelect" onchange="loadLeaderboard()">
+            <option value="stake">Sort: Effective Stake</option>
+            <option value="uptime">Sort: Uptime</option>
+            <option value="blocks">Sort: Blocks Produced</option>
+            <option value="reputation">Sort: Reputation</option>
+            <option value="delegated">Sort: Total Delegated</option>
+        </select>
+    </div>
+    <table class="validator-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Validator</th>
+                <th>Status</th>
+                <th>Commission</th>
+                <th>Effective Stake</th>
+                <th>Delegators</th>
+                <th>Uptime</th>
+                <th>Blocks</th>
+                <th>Est. APY</th>
+            </tr>
+        </thead>
+        <tbody id="leaderboardBody">
+            <tr><td colspan="9" class="explorer-empty">Loading...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- ================= My Delegations ================= -->
+<div class="card" id="myDelegationsCard" style="display:none;">
+    <h2>My Delegations</h2>
+    <p style="opacity:0.7;font-size:12px;">Every validator you're currently backing, across this whole network.</p>
+    <div id="myDelegationsList" class="explorer-empty">Loading...</div>
+</div>
+
+<!-- ================= Validator Detail ================= -->
+<div class="card" id="validatorDetailCard" style="display:none;">
+    <button onclick="closeValidatorDetail()">&larr; Back to Leaderboard</button>
+    <h2 id="detailAddress" style="word-break:break-all;margin-bottom:2px;"></h2>
+
+    <div id="detailStats" style="margin:14px 0;"></div>
+
+    <div id="detailCommissionEditor" style="display:none;margin-bottom:20px;">
+        <h3>Your Commission Rate</h3>
+        <p style="opacity:0.7;font-size:12px;">
+            Your cut of pool block rewards, taken off the top before the rest splits pro-rata across your
+            delegators. Only applies once you actually have delegators - capped at 50%.
+        </p>
+        <div class="explorer-search">
+            <input id="commissionInput" type="number" min="0" max="50" step="0.1" placeholder="Commission %">
+            <button onclick="setCommission()">Update Commission</button>
+        </div>
+        <p id="commissionStatus"></p>
+    </div>
+
+    <h3>Delegate CCT to this Validator</h3>
+    <div class="explorer-search">
+        <input id="delegateAmount" type="number" min="0" placeholder="Amount of CCT" oninput="updateDelegateEstimate()">
+        <button onclick="delegateToValidator()">Delegate</button>
+    </div>
+    <p id="delegateEstimate" style="opacity:0.75;font-size:12px;"></p>
+    <p id="delegateStatus"></p>
+
+    <h3>Delegators</h3>
+    <div id="delegatorsList" class="explorer-empty">Loading...</div>
+</div>
+
+<br>
+
+<!-- ================= My Validator ================= -->
+<div class="card" id="myValidatorCard" style="display:none;">
+
+    <h2>My Validator</h2>
+
+    <p id="myBannedWarning" style="display:none;color:#c0392b;font-weight:bold;">
+        Permanently removed from validation for repeated protocol violations (PoSR).
+    </p>
+    <p>Status: <span id="myValidatorStatus">Inactive</span></p>
+    <p>Authorized Node: <span id="myAuthorizedNode">-</span></p>
+    <p>CCT Staked: <span id="myStake">0</span> / <span id="myMinStakeRequired">0</span> required (PoSR)</p>
+    <p>Reputation: <span id="myReputation">0</span></p>
+    <p>Voting Power: <span id="myVotingPower">0</span></p>
+    <p>Blocks Produced: <span id="myBlocksProduced">0</span></p>
+    <p>Current Block Reward: <span id="myCurrentBlockReward">0</span> CCT (controlled inflation)</p>
+    <p>Rewards: <span id="myRewards">0</span></p>
+    <p>Blocks Missed: <span id="myMissedBlocks">0</span></p>
+    <p>Slash Count: <span id="mySlashCount">0</span></p>
+    <p>Uptime: <span id="myUptime">100</span>%</p>
+    <p>Commission: <span id="myCommission">0</span>%</p>
+    <p>Total Delegated to Me: <span id="myTotalDelegated">0</span> CCT (<span id="myDelegatorCount">0</span> delegators)</p>
+
+</div>
+
+<br>
 
 <div class="card">
 
-    <h2>Validator Status</h2>
+    <h2>Consensus Status</h2>
 
     <p>
-        Status:
-        <span id="validatorStatus">
-            Inactive
-        </span>
+        Block production is automatic - the network elects a leader
+        by weighted stake + reputation + uptime every round.
     </p>
 
-    <p>
-        Reputation:
-        <span id="validatorReputation">
-            0
-        </span>
-    </p>
+    <p>Chain height: <span id="blockHeight">0</span></p>
+    <p>Round length: <span id="tickInterval">-</span>s</p>
+    <p>Current elected leader: <span id="currentLeader">-</span></p>
 
-    <p>
-        Voting Power:
-        <span id="validatorVotingPower">
-            0
-        </span>
-    </p>
-
-    <p>
-        Blocks Produced:
-        <span id="blocksProduced">
-            0
-        </span>
-    </p>
-
-    <p>
-        Rewards:
-        <span id="validatorRewards">
-            0
-        </span>
-    </p>
+    <p id="yourTurn"></p>
+    <p id="fallbackNotice" style="opacity:0.8;font-size:13px;color:#ffd166;"></p>
 
 </div>
 
@@ -55,18 +305,18 @@
 
     <h2>Become Validator</h2>
 
-    <p>
-        Requirements:
+    <p>Requirements (increase as the network grows - see current numbers below):</p>
+    <ul>
+        <li>Reputation &ge; 50</li>
+        <li>Stake at least <span id="becomeValidatorMinStake">1,000</span> CCT</li>
+        <li><span id="becomeValidatorFee">50</span> CCT registration fee, charged when registration confirms</li>
+    </ul>
+    <p style="opacity:0.7;font-size:12px;">
+        You start at a 10% commission rate - adjust it any time from your validator's detail page above,
+        once you have one.
     </p>
 
-    <ul>
-        <li>Reputation ≥ 50</li>
-        <li>Stake ETH or CCT</li>
-    </ul>
-
-    <button onclick="becomeValidator()">
-        Become Validator
-    </button>
+    <button onclick="becomeValidator()">Become Validator</button>
 
 </div>
 
@@ -74,21 +324,25 @@
 
 <div class="card">
 
-    <h2>Produce Test Block</h2>
+    <h2>Manual Nudge</h2>
 
-    <button onclick="produceBlock()">
-        Produce Block
-    </button>
+    <p>
+        Only works if you are currently the elected leader - otherwise
+        block production happens automatically on its own.
+    </p>
+
+    <button onclick="produceBlock()">Produce Block Now</button>
+
+</div>
 
 </div>
 
 <br>
 
-<button
-    onclick="location.href='wallet.html'">
-    Back To Wallet
-</button>
+<button onclick="location.href='outernet.html'">Back To Wallet</button>
 
+<script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
 <script src="js/validator.js"></script>
 
 </body>

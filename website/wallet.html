@@ -1,123 +1,121 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>OUTERNET Wallet</title>
-    <link rel="stylesheet" href="css/style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wallet - OUTERNET</title>
+<link rel="stylesheet" href="css/theme.css">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/outernet.css">
 </head>
-<body>
+<body class="outernet-light">
 
-<h1>OUTERNET Wallet</h1>
+<div class="main" style="max-width:640px;margin:0 auto;padding:24px 16px;">
 
-<div class="card">
+    <p><a href="outernet.html" style="color:var(--cc-accent-gold, #c9a227);">&larr; OUTERNET</a></p>
 
-    <h2>Profile</h2>
+    <section class="wallet-hero dash-panel">
 
-    <p>
-        Wallet:
-        <span id="walletAddress">
-            Loading...
-        </span>
-    </p>
+        <div class="wallet-hero-top">
+            <div>
+                <p class="wallet-greeting">
+                    Welcome back, <span id="username">User</span>
+                </p>
+                <p class="network-live">
+                    ● Network Live
+                </p>
+            </div>
 
-    <p>
-        Reputation:
-        <span id="reputation">
-            0
-        </span>
-    </p>
+            <span class="wallet-address-chip">
+                <button
+                onclick="showReceiveAddress()"
+                title="Show QR code for your address"
+                style="background:none;border:none;color:inherit;font:inherit;cursor:pointer;padding:0;">
+                    <span id="wallet">-</span>
+                    <span class="wallet-address-chip-icon">&#9642;&#9642;&#9642;</span>
+                </button>
+                <button type="button" class="copy-icon" id="walletCopyIcon" title="Copy address" onclick="event.stopPropagation();copyToClipboard(formatAddress(wallet.address),'walletCopyIcon')">&#128203;</button>
+            </span>
+        </div>
 
-    <p>
-        Voting Power:
-        <span id="votingPower">
-            0
-        </span>
-    </p>
+        <div class="wallet-balance-block">
+            <div class="wallet-balance-label">Total Balance</div>
+            <div class="wallet-balance-amount" id="balance">TODO</div>
+            <p class="wallet-custody-note">
+                Self-custody - only this device holds your wallet's private key. CreditChain never sees it.
+            </p>
+        </div>
 
-    <p>
-        Credit Score:
-        <span id="creditScore">
-            0
-        </span>
-    </p>
+        <div class="quick-actions">
+            <button onclick="location.href='send.html'">
+                <span class="qa-icon">&#8593;</span>
+                Send
+            </button>
+            <button onclick="showReceiveAddress()">
+                <span class="qa-icon">&#8595;</span>
+                Receive
+            </button>
+            <button onclick="location.href='staking.html'">
+                <span class="qa-icon">%</span>
+                Stake
+            </button>
+            <button onclick="claimFaucet()">
+                <span class="qa-icon">&#128167;</span>
+                Faucet
+            </button>
+        </div>
+        <p id="faucetStatus"></p>
 
-</div>
+    </section>
 
-<br>
-
-<div class="card">
-
-    <h2>Balances</h2>
-
-    <p>
-        ETH:
-        <span id="ethBalance">
-            0
-        </span>
-    </p>
-
-    <p>
-        oETH:
-        <span id="oethBalance">
-            0
-        </span>
-    </p>
-
-    <p>
-        CCT:
-        <span id="cctBalance">
-            0
-        </span>
-    </p>
-
-    <p>
-        Rewards:
-        <span id="rewardBalance">
-            0
-        </span>
-    </p>
-
-</div>
-
-<br>
-
-<div class="card">
-
-    <h2>Actions</h2>
-
-    <button
-        onclick="
-            location.href='staking.html'
-        ">
-        Stake
-    </button>
-
-    <button>
-        Send
-    </button>
-
-    <button>
-        Receive
-    </button>
-
-    <button>
-        Claim Rewards
-    </button>
-
-</div>
-
-<br>
-
-<div class="card">
-
-    <h2>Recent Transactions</h2>
-
-    <div id="transactions">
-        No Transactions
+    <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <h2 style="margin:0;">Assets</h2>
+            <a href="assets.html" style="color:var(--cc-accent-gold, #c9a227);font-size:12px;">View All &rarr;</a>
+        </div>
+        <div id="assetsList">
+            <p class="explorer-empty" style="opacity:0.6;">Loading...</p>
+        </div>
     </div>
 
+    <div class="card">
+        <h2 style="margin:0 0 8px;">Your Referral Link</h2>
+        <p style="opacity:0.75;font-size:12px;margin:0 0 10px;">
+            Share this link - people who register through it count toward your referral total,
+            which boosts your <a href="governance.html" style="color:var(--cc-accent-gold, #c9a227);">governance voting weight</a>
+            and <a href="borrow.html" style="color:var(--cc-accent-gold, #c9a227);">borrowing power</a>.
+        </p>
+        <p style="word-break:break-all;font-family:monospace;font-size:12px;background:rgba(15,157,88,0.08);border-radius:8px;padding:10px;" id="referralLink">-</p>
+        <button type="button" class="copy-icon" id="referralCopyIcon" title="Copy link" onclick="copyReferralLink()">&#128203; Copy</button>
+        <p style="margin-top:10px;font-size:13px;">Referred so far: <strong id="referralCount">-</strong></p>
+    </div>
+
+    <p style="margin-top:20px;">
+        <a href="profile.html">Profile</a> &nbsp;|&nbsp;
+        <a href="network.html">Network</a> &nbsp;|&nbsp;
+        <a href="explorer.html">Explorer</a> &nbsp;|&nbsp;
+        <a href="outernet.html">Back to OUTERNET</a>
+    </p>
+
 </div>
 
-<script src="js/wallet.js"></script>
+<div
+id="qrModalOverlay"
+style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;z-index:10000;">
+    <div style="background:var(--cc-bg-2, #082616);border-radius:16px;padding:25px;max-width:90vw;text-align:center;">
+        <h3 style="margin-top:0;">Your Receive Address</h3>
+        <canvas id="qrCanvas" style="max-width:80vw;height:auto;border-radius:8px;"></canvas>
+        <p id="qrAddressText" style="word-break:break-all;font-family:monospace;font-size:13px;margin:15px 0;"></p>
+        <p style="opacity:0.75;font-size:12px;">Copied to clipboard if supported. Anyone can send you test tokens by scanning this or entering the address on the Send page.</p>
+        <button onclick="closeQrModal()">Close</button>
+    </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
+<script src="js/qrcode.js"></script>
+<script src="js/assets.js"></script>
+<script src="js/wallet-page.js"></script>
 
 </body>
 </html>

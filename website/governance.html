@@ -2,11 +2,83 @@
 <html>
 <head>
     <title>OUTERNET Governance</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
 <h1>Governance</h1>
+
+<div class="card" id="announcementsCard" style="display:none;">
+
+    <h2>Announcements</h2>
+
+    <div id="announcementsList"></div>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Voting Rights</h2>
+
+    <div id="govNotActivated" style="display:none;">
+        <p style="opacity:0.75;font-size:13px;">
+            Activate governance to unlock voting weight and post community status updates that
+            appear live on the CreditChain landing page.
+        </p>
+        <button onclick="activateGovernance()">Activate Governance</button>
+        <p id="activateStatus"></p>
+    </div>
+
+    <div id="govActivated" style="display:none;">
+        <p style="opacity:0.75;font-size:13px;">Governance activated - your votes now carry weight, and you can post status updates below.</p>
+        <p style="opacity:0.75;font-size:13px;">
+            Your current voting weight: <b id="myVotingWeight">-</b> -
+            weighted by your staked CCT and Trust Score, not just by having a wallet
+            (see the <a href="reputation.html" style="color:inherit;">PoSR explainer</a>).
+        </p>
+
+        <textarea id="statusText" placeholder="Post a status update or news for the community..." maxlength="500" rows="3" style="width:100%;box-sizing:border-box;"></textarea>
+        <br><br>
+        <button onclick="postGovernanceStatus()">Post Status</button>
+        <p id="statusPostResult"></p>
+    </div>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Community Updates</h2>
+
+    <div id="statusFeed">Loading...</div>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Community User Log</h2>
+
+    <p style="opacity:0.75;font-size:13px;">
+        Look up any wallet's public status history and vote record - governance here is a
+        social record, not a private ballot. Votes are never punished, but they're
+        permanently remembered.
+    </p>
+
+    <input id="userLogAddress" placeholder="Wallet address (defaults to yours)">
+    <button onclick="loadUserLog()">View Log</button>
+
+    <div id="userLogResult" style="margin-top:12px;"></div>
+
+</div>
+
+<br>
 
 <div class="card">
 
@@ -25,9 +97,39 @@
 
     <br><br>
 
+    <label style="font-size:13px;opacity:0.75;">Kind</label><br>
+    <select id="proposalKind" onchange="onProposalKindChange()">
+        <option value="">Plain (informational)</option>
+        <option value="PARAM_CHANGE">Parameter Change</option>
+        <option value="VERSION_ACTIVATION">Version Activation</option>
+    </select>
+
+    <div id="paramChangeFields" style="display:none;margin-top:8px;">
+        <select id="paramKey">
+            <option value="ValidatorRegisterFeeCCT">ValidatorRegisterFeeCCT</option>
+            <option value="CCTTransferFee">CCTTransferFee</option>
+        </select>
+        <input id="paramValue" type="number" min="0" placeholder="New value">
+    </div>
+
+    <div id="versionActivationFields" style="display:none;margin-top:8px;">
+        <input id="targetVersion" placeholder="Target version (e.g. v2)">
+    </div>
+
+    <p style="opacity:0.6;font-size:12px;margin-top:8px;">
+        A proposal only takes effect if it reaches quorum (500 total voting weight) and passes
+        with more Yes than No within its 7-day voting window - this is what makes a vote
+        actually gate a critical decision, not just a poll. Proposing stays open to any
+        activated wallet; the vote itself is the real gate.
+    </p>
+
+    <br>
+
     <button onclick="createProposal()">
         Submit Proposal
     </button>
+
+    <p id="pendingStatus"></p>
 
 </div>
 
@@ -50,6 +152,8 @@
     Back To Wallet
 </button>
 
+<script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
 <script src="js/governance.js"></script>
 
 </body>

@@ -3,7 +3,8 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-"github.com/creditchain/creditchaind/core"
+
+	"github.com/creditchain/creditchaind/core"
 )
 
 func HandleRepay(
@@ -18,19 +19,9 @@ func HandleRepay(
 
 	var req Request
 
-	err :=
-		json.NewDecoder(
-			r.Body,
-		).Decode(
-			&req,
-		)
-
+	auth, address, err := requireSignedRequest(r, &req)
 	if err != nil {
-		http.Error(
-			w,
-			err.Error(),
-			http.StatusBadRequest,
-		)
+		writeUnauthorized(w, err)
 		return
 	}
 
@@ -49,33 +40,35 @@ func HandleRepay(
 		return
 	}
 
-	loan.Status=
-		core.LoanRepaid
+	if loan.Borrower != address {
+		http.Error(w, "only the borrower can repay this loan", http.StatusForbidden)
+		return
+	}
+	if loan.Status != core.LoanFunded {
+		http.Error(w, "this loan is not open to repay", http.StatusBadRequest)
+		return
+	}
 
-	collateralStore.Unlock(
-		loan.Borrower,
-		loan.Amount,
-		tokenStore,
-	)
+	symbol := loanSymbol(loan)
+	store, err := resolveTokenStore(symbol)
+	if err != nil {
+		http.Error(w, "unknown loan symbol", http.StatusInternalServerError)
+		return
+	}
+	borrowerSide := resolveBalanceAddress(address, auth.PublicKey, symbol)
+	if store.BalanceOf(borrowerSide) < repayAmountFor(loan) {
+		http.Error(w, "insufficient balance to repay principal plus interest", http.StatusBadRequest)
+		return
+	}
+
+	data, _ := json.Marshal(repayData{LoanID: loan.ID, Mode: "direct"})
+
+	tx := recordTx(auth, loan.Borrower, "", loan.Amount, core.TxRepay, string(data))
 
 	json.NewEncoder(w).Encode(
-		map[string]bool{
-			"success": true,
+		map[string]any{
+			"status": "pending",
+			"txId":   tx.ID,
 		},
 	)
-profile :=
-	creditStore.Get(
-		loan.Borrower,
-	)
-
-core.RecordLoanRepaid(
-	profile,
-)
-creditHistory.Add(
-	loan.Borrower,
-	core.CreditEvent{
-		Type:   "REPAY",
-		Amount: loan.Amount,
-	},
-)
 }

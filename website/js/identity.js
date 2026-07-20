@@ -1,29 +1,22 @@
-let wallet =
-    JSON.parse(
-        localStorage.getItem(
-            "wallet"
-        )
-    );
+const wallet = requireWallet();
 
-if (wallet) {
+async function loadIdentity() {
+    if (!wallet) return;
 
-    document.getElementById(
-        "address"
-    ).innerText =
-        wallet.address;
+    document.getElementById("address").innerText = formatAddress(wallet.address);
 
-    document.getElementById(
-        "rep"
-    ).innerText =
-        wallet.reputation;
+    try {
+        const [w, reputation] = await Promise.all([
+            apiGet(`/wallet?address=${wallet.address}`),
+            apiGet(`/reputation?address=${wallet.address}`),
+        ]);
 
-    document.getElementById(
-        "credit"
-    ).innerText =
-        wallet.creditScore;
-
-    document.getElementById(
-        "vote"
-    ).innerText =
-        wallet.votingPower;
+        document.getElementById("rep").innerText = `${reputation.score} (${reputation.creditTier})`;
+        document.getElementById("credit").innerText = reputation.score;
+        document.getElementById("vote").innerText = w.votingPower;
+    } catch (e) {
+        console.error(e);
+    }
 }
+
+loadIdentity();

@@ -28,16 +28,29 @@ func HandleNetwork(
 		NetworkName:       "OUTERNET",
 		BlockHeight:       len(blockchain.Blocks),
 		LatestBlockHash:   latestHash(),
-		PeerCount:         1,       // TODO: read from network package
-		ActiveValidators:  1,       // TODO: read from validator manager
-		TPS:               0,       // TODO: calculate from recent blocks
-		GasPrice:          1,       // TODO: dynamic gas engine
-		TotalSupply:       1000000000,
-		CirculatingSupply: 1000000000,
+		PeerCount:         len(peerStore.List()),
+		ActiveValidators:  countActiveValidators(),
+		TPS:               0, // TODO: calculate from recent blocks
+		GasPrice:          1, // TODO: dynamic gas engine
+		TotalSupply:       tokenStore.Token.TotalSupply,
+		CirculatingSupply: tokenStore.Token.TotalSupply,
 		Status:            "LIVE",
 	}
 
 	json.NewEncoder(w).Encode(info)
+}
+
+// countActiveValidators is shared by HandleNetwork and
+// HandleProtocolStats - a single real computation over
+// validatorStore.List(), not duplicated logic.
+func countActiveValidators() int {
+	count := 0
+	for _, v := range validatorStore.List() {
+		if v.Active {
+			count++
+		}
+	}
+	return count
 }
 
 func latestHash() string {
@@ -50,9 +63,8 @@ func latestHash() string {
 	}
 
 	return blockchain.
-		Blocks[
-		len(
-			blockchain.Blocks,
-		)-1].
+		Blocks[len(
+		blockchain.Blocks,
+	)-1].
 		Hash
 }

@@ -25,12 +25,13 @@ func HandleMine(
 		"creditchain-validator",
 		mempool.Transactions,
 	)
-      
+
+	ApplyBlock(blockchain.LatestBlock())
 
 	mempool.Transactions = []core.Transaction{}
 
 	err := blockchain.Save(
-		"blockchain.json",
+		dataPath("blockchain.json"),
 	)
 
 	if err != nil {
