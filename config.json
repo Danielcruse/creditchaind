@@ -1,8 +1,0 @@
-
-{
-  "chainId": 1001,
-  "network": "CreditChain Testnet",
-  "version": "0.1.0-alpha",
-  "port": "8080",
-  "nodeId": "node-001"
-}
