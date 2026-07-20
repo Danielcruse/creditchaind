@@ -33,7 +33,7 @@ func HandleAdminTransfer(
 	enableCors(&w)
 
 	var req adminTransferData
-	signedAuth, legacy, err := requireAdminAuthed(r, &req)
+	signedAuth, mode, err := requireAdminAuthed(r, &req)
 	if err != nil {
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -59,7 +59,7 @@ func HandleAdminTransfer(
 	}
 
 	data, _ := json.Marshal(req)
-	tx := recordAdminTx(signedAuth, legacy, "", 0, core.TxAdminTransfer, string(data))
+	tx := recordAdminTx(signedAuth, mode, "", 0, core.TxAdminTransfer, string(data))
 
 	json.NewEncoder(w).Encode(
 		map[string]string{

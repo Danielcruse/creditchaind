@@ -365,6 +365,71 @@ as a pointer to re-verify — line numbers drift as the code changes.
   stored/managed) — real hardware/multisig/KMS-backed custody for that
   key is still the user's/operator's responsibility, not something this
   codebase can enforce.
+- **RESOLVED (2026-07-20): the "key custody" gap immediately above is
+  now closed by an on-chain M-of-N multisig, replacing the single admin
+  wallet key for all 9 admin actions (mint, treasury controls, genesis
+  pool allocation/withdraw, admin transfer, announcements) — no single
+  stolen/compromised key can act alone anymore.** `api/admin.go`/
+  `api/admin_multisig.go`: set `ADMIN_MULTISIG_ADDRESSES` (comma-
+  separated signer addresses) and `ADMIN_MULTISIG_THRESHOLD` (M) to
+  enable — once configured (and only if `threshold <= len(signers)`,
+  otherwise multisig refuses to enable rather than silently making every
+  admin action permanently unexecutable), it supersedes
+  `ADMIN_WALLET_ADDRESS` entirely, the same "coexistence window, not a
+  permanent second door" pattern the original admin-wallet work
+  established — `verifyAdminTxAuth` unconditionally rejects a direct,
+  unwrapped admin transaction once multisig is enabled, closing the
+  parallel-bypass class of bug this project has fixed before.
+  **Client-transparent design**: the HTTP client for all 9 endpoints is
+  unchanged — it still signs the same plain payload shape it always did
+  (e.g. `{address, amount, symbol}` for `/token/mint`); `recordAdminTx`
+  is the one server-side chokepoint that decides, per the matched auth
+  tier, whether to wrap the action into a `TxAdminMultisigPropose`
+  transaction instead of applying it directly. The first signer's
+  action counts as approval #1 (a `TxAdminMultisigPropose`); each
+  further signer submits an independent `TxAdminMultisigApprove`
+  (`POST /admin/multisig/approve`); the underlying action executes
+  exactly once, only when approvals reach the configured threshold, via
+  a single chokepoint (`executeAdminMultisigAction`) guarded by a
+  `Status != Pending` check. Execution synthesizes an unsigned
+  `core.Transaction` and calls the target `apply*` function directly,
+  bypassing the normal signature re-check — deliberately, since
+  authorization was already independently established through the real,
+  cryptographically-verified propose/approve signature chain; this was
+  only safe to do after confirming none of the 9 target `apply*`
+  functions depend on `tx.AuthAddress`/`tx.From`/`tx.To`/`tx.Amount`,
+  only `tx.Data`/`tx.ID`/`tx.Timestamp`.
+  **Bug found and fixed during this work, not merely inherited**: the
+  pre-existing `adminWalletAddress()` unconditionally stripped a leading
+  "cc" from any configured address (meant only to undo the website's
+  cosmetic 42-char display-prefix, task #267) — this silently corrupted
+  any *raw* 40-char address whose own genuine first byte happened to be
+  0xcc (~1-in-256 probability, confirmed to actually occur with a live
+  randomly-generated test address during this session's verification).
+  Fixed via a shared `normalizeAdminAddress` helper that only strips
+  "cc" when the input is exactly 42 characters; applied consistently to
+  `adminWalletAddress()`, `adminMultisigSigners()`, and
+  `isAdminMultisigSigner()`. Verified end-to-end this session via a
+  throwaway HTTP smoke-test client (3 independent signers, real signed
+  propose/approve requests against a live server): a 2-of-3 proposal
+  correctly stays unexecuted at 1 approval, executes exactly once at 2
+  approvals, a late 3rd approval is a harmless no-op (rejected, already-
+  resolved), and a direct legacy `ADMIN_TOKEN` submission is rejected
+  outright once multisig is configured.
+  **Disclosed limitations, not solved by this change**: (1)
+  `ADMIN_MULTISIG_ADDRESSES`/`ADMIN_MULTISIG_THRESHOLD` must be
+  configured identically on every node, the same operational requirement
+  `NETWORK_SECRET`/`ADMIN_WALLET_ADDRESS` already carry — a node with a
+  different configuration would disagree with the rest of the network
+  about which admin transactions are valid; (2) key custody for each
+  individual signer's own private key is still that signer's own
+  responsibility — multisig removes the single-point-of-failure risk of
+  one compromised key acting alone, it does not make any individual
+  signer's key itself unstealable; (3) there is no mechanism in this
+  pass for rotating signers or the threshold without redeploying every
+  node's environment configuration — a live, on-chain-governed
+  signer-set-change is a natural follow-up, not built here. See
+  `ops/NODE_OPERATOR.md`'s env-var table for setup.
 - **RESOLVED: validator min-stake mismatch.** `HandleRegisterValidator`
   (`api/validators.go`) now rejects registration below `core.MinValidatorStake`
   (1,000) with a clear error, matching the actual leader-selection threshold

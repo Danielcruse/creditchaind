@@ -133,7 +133,7 @@ const (
 func HandleAllocateGenesisPools(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w)
 
-	signedAuth, legacy, err := requireAdminAuthed(r, nil)
+	signedAuth, mode, err := requireAdminAuthed(r, nil)
 	if err != nil {
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -146,7 +146,7 @@ func HandleAllocateGenesisPools(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := []byte("{}")
-	tx := recordAdminTx(signedAuth, legacy, "", 0, core.TxGenesisPoolAllocation, string(data))
+	tx := recordAdminTx(signedAuth, mode, "", 0, core.TxGenesisPoolAllocation, string(data))
 
 	json.NewEncoder(w).Encode(
 		map[string]string{

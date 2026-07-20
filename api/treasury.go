@@ -109,7 +109,7 @@ func HandleAdminConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req treasuryPurchaseConfirmData
-	signedAuth, legacy, err := requireAdminAuthed(r, &req)
+	signedAuth, mode, err := requireAdminAuthed(r, &req)
 	if err != nil {
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -123,7 +123,7 @@ func HandleAdminConfirmPurchase(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data, _ := json.Marshal(req)
-	tx := recordAdminTx(signedAuth, legacy, "", 0, core.TxTreasuryPurchaseConfirm, string(data))
+	tx := recordAdminTx(signedAuth, mode, "", 0, core.TxTreasuryPurchaseConfirm, string(data))
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "pending",
@@ -145,7 +145,7 @@ func HandleAdminSetSalePrice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req treasurySetSalePriceData
-	signedAuth, legacy, err := requireAdminAuthed(r, &req)
+	signedAuth, mode, err := requireAdminAuthed(r, &req)
 	if err != nil {
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -153,7 +153,7 @@ func HandleAdminSetSalePrice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data, _ := json.Marshal(req)
-	tx := recordAdminTx(signedAuth, legacy, "", 0, core.TxTreasurySetSalePrice, string(data))
+	tx := recordAdminTx(signedAuth, mode, "", 0, core.TxTreasurySetSalePrice, string(data))
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "pending",
@@ -170,7 +170,7 @@ func HandleAdminSetPaused(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req treasurySetPausedData
-	signedAuth, legacy, err := requireAdminAuthed(r, &req)
+	signedAuth, mode, err := requireAdminAuthed(r, &req)
 	if err != nil {
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -178,7 +178,7 @@ func HandleAdminSetPaused(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data, _ := json.Marshal(req)
-	tx := recordAdminTx(signedAuth, legacy, "", 0, core.TxTreasurySetPaused, string(data))
+	tx := recordAdminTx(signedAuth, mode, "", 0, core.TxTreasurySetPaused, string(data))
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "pending",
@@ -195,7 +195,7 @@ func HandleAdminSetTreasuryAddress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req treasurySetAddressData
-	signedAuth, legacy, err := requireAdminAuthed(r, &req)
+	signedAuth, mode, err := requireAdminAuthed(r, &req)
 	if err != nil {
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -207,7 +207,7 @@ func HandleAdminSetTreasuryAddress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data, _ := json.Marshal(req)
-	tx := recordAdminTx(signedAuth, legacy, "", 0, core.TxTreasurySetAddress, string(data))
+	tx := recordAdminTx(signedAuth, mode, "", 0, core.TxTreasurySetAddress, string(data))
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "pending",

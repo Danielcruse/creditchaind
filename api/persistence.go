@@ -118,6 +118,15 @@ type persistedState struct {
 	// earlier in the same epoch.
 	ReputationMiningSweep reputationMiningSweepSnapshot `json:"reputationMiningSweep"`
 
+	// AdminMultisigProposals persists every admin multisig proposal
+	// ever created (pending or executed) - kept as a full audit trail,
+	// same "never delete a record" convention as LoanOfferStore/
+	// ProposalStore, and required for correctness too: an in-flight
+	// PENDING proposal's approvals would otherwise be lost on restart,
+	// silently resetting an almost-approved action back to needing
+	// every signer to re-approve from scratch.
+	AdminMultisigProposals map[string]*core.AdminMultisigProposal `json:"adminMultisigProposals"`
+
 	// Mempool persists pending (not-yet-confirmed) transactions. Without
 	// this, a crash loses anything submitted but not yet swept into a
 	// block, silently dropping the user's stake/borrow/vote/etc. with
@@ -265,6 +274,7 @@ func SaveState() error {
 		SlashDedupKeys:           snapshotSlashDedup(),
 		MissedBlockReporters:     snapshotMissedBlockReporters(),
 		ReputationMiningSweep:    snapshotReputationMiningSweep(),
+		AdminMultisigProposals:   adminMultisigStore.Proposals,
 		Mempool:                  mempool.Transactions,
 		FaucetClaims:             snapshotFaucetClaims(),
 		YenBalances:              yenStore.Balances,
@@ -534,6 +544,10 @@ func LoadState() {
 	restoreSlashDedup(snapshot.SlashDedupKeys)
 	restoreMissedBlockReporters(snapshot.MissedBlockReporters)
 	restoreReputationMiningSweep(snapshot.ReputationMiningSweep)
+
+	if snapshot.AdminMultisigProposals != nil {
+		adminMultisigStore.Proposals = snapshot.AdminMultisigProposals
+	}
 
 	if snapshot.Mempool != nil {
 		mempool.Transactions = snapshot.Mempool

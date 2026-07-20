@@ -49,6 +49,7 @@ func resetApplyTestState() {
 	slashDedup.mu.Unlock()
 	resetMissedBlockReportersForTest()
 	resetReputationMiningSweepForTest()
+	adminMultisigStore = core.NewAdminMultisigStore()
 	bridgeWithdrawReserved.mu.Lock()
 	bridgeWithdrawReserved.wei = make(map[string]uint64)
 	bridgeWithdrawReserved.mu.Unlock()

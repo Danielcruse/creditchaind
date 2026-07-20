@@ -63,6 +63,18 @@
 
 <br>
 
+<div class="card" id="multisigCard" style="display:none;">
+    <h2>Multisig Approvals</h2>
+    <p style="opacity:0.7;font-size:12px;">
+        This network requires <span id="multisigThresholdDisplay">-</span> of <span id="multisigSignerCountDisplay">-</span>
+        configured signers to approve an admin action before it takes effect - no single key, however it's stored,
+        can act alone. Configured signers: <span id="multisigSignersDisplay" style="font-family:monospace;font-size:11px;">-</span>
+    </p>
+    <div id="multisigProposalsList" class="explorer-empty">No pending proposals.</div>
+</div>
+
+<br>
+
 <div class="card" id="tokenCard">
     <h2>Admin Token (legacy)</h2>
     <p style="opacity:0.7;font-size:12px;">

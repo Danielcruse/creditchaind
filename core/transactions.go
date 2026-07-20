@@ -240,6 +240,22 @@ const (
 	// layer - see api/announcements.go).
 	TxAnnouncementCreate TransactionType = "ANNOUNCEMENT_CREATE"
 
+	// TxAdminMultisigPropose/TxAdminMultisigApprove replace the
+	// single-key ADMIN_WALLET_ADDRESS model with a real M-of-N
+	// multisig - see api/admin_multisig.go. Propose creates a pending
+	// core.AdminMultisigProposal wrapping one of the admin-only action
+	// types above (TxTokenMint, TxGenesisPoolWithdraw, etc.) and counts
+	// as the proposer's own approval; Approve adds another authorized
+	// signer's approval to an existing proposal. Both are ordinary
+	// wallet-signed transactions (tx.AuthAddress == the signer, checked
+	// against the network's configured signer set), not node-authored -
+	// unlike every other admin transaction type, there's no single
+	// party whose word alone should ever be enough. The underlying
+	// action only actually executes once approvals reach the configured
+	// threshold (see maybeExecuteAdminMultisigProposal).
+	TxAdminMultisigPropose TransactionType = "ADMIN_MULTISIG_PROPOSE"
+	TxAdminMultisigApprove TransactionType = "ADMIN_MULTISIG_APPROVE"
+
 	// TxRatingSubmit is a normal wallet-signed site rating (see
 	// api/rating.go) - ordinary auth (tx.AuthAddress == tx.From), not
 	// node-authored, since this is a real user opinion, not a system

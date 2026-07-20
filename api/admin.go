@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/creditchain/creditchaind/core"
@@ -18,10 +19,93 @@ import (
 // on-chain), so there's no confidentiality lost in letting the
 // frontend ask "which wallet is the admin" up front, before an
 // operator tries an action and gets a confusing 403 for being logged
-// in as the wrong wallet.
+// in as the wrong wallet. Also surfaces multisig configuration, once
+// set, for the same reason.
 func HandleAdminWhoAmI(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w)
-	json.NewEncoder(w).Encode(map[string]string{"adminWalletAddress": adminWalletAddress()})
+	json.NewEncoder(w).Encode(map[string]any{
+		"adminWalletAddress": adminWalletAddress(),
+		"multisigEnabled":    adminMultisigEnabled(),
+		"multisigSigners":    adminMultisigSigners(),
+		"multisigThreshold":  adminMultisigThreshold(),
+	})
+}
+
+// normalizeAdminAddress converts a user/operator-supplied admin
+// address string into the raw form core.GenerateAddress produces (40
+// lowercase hex characters, no prefix) - handles both that raw form
+// and the "cc"-prefixed display form the website shows (see task
+// #267's cosmetic address prefix). Critically, this only strips a
+// leading "cc" when doing so leaves exactly 40 characters behind - a
+// raw address whose own first real byte happens to be 0xcc (roughly
+// 1 in 256 addresses - confirmed to actually occur, not just a
+// theoretical edge case, while testing this feature) must NOT have
+// those two genuine hex characters stripped, or it would silently
+// resolve to the wrong 20-byte address and lock out a legitimate
+// signer/admin wallet with no obvious error message pointing at why.
+func normalizeAdminAddress(raw string) string {
+	addr := strings.ToLower(strings.TrimSpace(raw))
+	if len(addr) == 42 && strings.HasPrefix(addr, "cc") {
+		addr = addr[2:]
+	}
+	return addr
+}
+
+// adminMultisigSigners/adminMultisigThreshold/adminMultisigEnabled/
+// isAdminMultisigSigner are the multisig counterpart to
+// adminWalletAddress below - ADMIN_MULTISIG_ADDRESSES (comma-
+// separated wallet addresses) and ADMIN_MULTISIG_THRESHOLD (an
+// integer M) must be set identically on every node, same network-
+// wide-consistency requirement as ADMIN_WALLET_ADDRESS/NETWORK_SECRET,
+// since every node independently evaluates whether a proposal has
+// reached threshold. Once both are configured, this supersedes the
+// single-key ADMIN_WALLET_ADDRESS model entirely for the admin action
+// types listed in allowedAdminMultisigActionType (see
+// requireAdminAuthed/verifyAdminTxAuth) - no single key, however it's
+// stored, can act alone anymore.
+func adminMultisigSigners() []string {
+	raw := os.Getenv("ADMIN_MULTISIG_ADDRESSES")
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(raw, ",") {
+		addr := normalizeAdminAddress(part)
+		if addr != "" {
+			out = append(out, addr)
+		}
+	}
+	return out
+}
+
+func adminMultisigThreshold() int {
+	n, err := strconv.Atoi(strings.TrimSpace(os.Getenv("ADMIN_MULTISIG_THRESHOLD")))
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
+// adminMultisigEnabled requires a threshold that's actually reachable
+// by the configured signer set - a misconfigured M > N would silently
+// make every admin action permanently unexecutable (indistinguishable
+// from "working as intended, just waiting for more signers"), which
+// is a worse failure mode than refusing to enable multisig at all
+// until the operator fixes it.
+func adminMultisigEnabled() bool {
+	signers := adminMultisigSigners()
+	threshold := adminMultisigThreshold()
+	return len(signers) > 0 && threshold > 0 && threshold <= len(signers)
+}
+
+func isAdminMultisigSigner(address string) bool {
+	normalized := normalizeAdminAddress(address)
+	for _, s := range adminMultisigSigners() {
+		if s == normalized {
+			return true
+		}
+	}
+	return false
 }
 
 // requireAdmin checks the X-Admin-Token header against ADMIN_TOKEN.
@@ -57,31 +141,68 @@ func requireAdmin(r *http.Request) bool {
 // in apply.go. Empty means the signed-wallet admin path is disabled
 // (falls back to the legacy token path only).
 func adminWalletAddress() string {
-	addr := strings.ToLower(strings.TrimSpace(os.Getenv("ADMIN_WALLET_ADDRESS")))
-	return strings.TrimPrefix(addr, "cc")
+	return normalizeAdminAddress(os.Getenv("ADMIN_WALLET_ADDRESS"))
 }
 
-// requireAdminAuthed is the migration-window admin gate. If
-// ADMIN_WALLET_ADDRESS is configured, ONLY a full signed request from
-// that exact address is accepted (the same Ed25519 proof-of-key-
-// custody every ordinary wallet action already uses, see
-// requireSignedRequest) - no token fallback, since once a network is
-// migrated the legacy path's transactions would just silently no-op
-// at apply time anyway (see verifyAdminTxAuth). If no admin wallet is
-// configured at all, falls back to the legacy X-Admin-Token header.
-// The two paths produce transactions with different on-chain trust
-// models (see recordAdminTx) - the token path is a deliberate,
-// temporary carryover for nodes not yet migrated, not a permanent
-// second door; it's meant to be deleted once every node has
-// ADMIN_WALLET_ADDRESS configured.
+// adminAuthMode records which of the three admin trust tiers
+// authenticated a given request - requireAdminAuthed's caller uses
+// this to decide how recordAdminTx should record the resulting
+// transaction (direct admin action vs. a multisig proposal, see
+// recordAdminTx's doc comment).
+type adminAuthMode int
+
+const (
+	adminAuthLegacyToken adminAuthMode = iota
+	adminAuthSingleWallet
+	adminAuthMultisig
+)
+
+// requireAdminAuthed is the migration-window admin gate, now with
+// three tiers instead of two. If multisig is configured
+// (adminMultisigEnabled), ONLY a signed request from one of the
+// configured signer addresses is accepted - this supersedes the
+// single-wallet tier below entirely, not merely takes priority over
+// it, since a single genuinely-signed request must never be enough to
+// execute an admin action once multisig governs (see recordAdminTx).
+// Otherwise, if ADMIN_WALLET_ADDRESS is configured, that single
+// address's signature is required (unchanged from before multisig
+// existed). Otherwise, falls back to the legacy X-Admin-Token header.
+// Each tier is a deliberate, temporary carryover for networks not yet
+// migrated to the next one, not a permanent parallel door.
 //
 // Reads the request body itself (not via r.Body directly) since it
 // may need to try decoding it two different ways - callers must not
 // also read r.Body.
-func requireAdminAuthed(r *http.Request, out any) (signedAuth core.SignedEnvelope, usedLegacyToken bool, err error) {
+func requireAdminAuthed(r *http.Request, out any) (signedAuth core.SignedEnvelope, mode adminAuthMode, err error) {
 	body, readErr := io.ReadAll(r.Body)
 	if readErr != nil {
-		return core.SignedEnvelope{}, false, errors.New("could not read request body")
+		return core.SignedEnvelope{}, adminAuthLegacyToken, errors.New("could not read request body")
+	}
+
+	if adminMultisigEnabled() {
+		var envelope core.SignedEnvelope
+		if jsonErr := json.Unmarshal(body, &envelope); jsonErr == nil {
+			if verifyErr := envelope.Verify(); verifyErr == nil && isAdminMultisigSigner(envelope.Address) {
+				if !rememberSignature(envelope.Signature) {
+					return core.SignedEnvelope{}, adminAuthMultisig, errors.New("duplicate/replayed request")
+				}
+				if out != nil {
+					if unmarshalErr := json.Unmarshal(envelope.Payload, out); unmarshalErr != nil {
+						return core.SignedEnvelope{}, adminAuthMultisig, errors.New("invalid payload")
+					}
+				}
+				return envelope, adminAuthMultisig, nil
+			}
+		}
+		// Multisig IS configured but this request wasn't signed by one
+		// of its authorized signers - do NOT fall through to the
+		// single-wallet or token tiers. Once multisig governs,
+		// verifyAdminTxAuth (apply.go) rejects every admin action type
+		// outright unless it went through the propose/approve path, so
+		// accepting a different credential here would just produce a
+		// transaction that silently never takes effect - better to
+		// fail loudly now.
+		return core.SignedEnvelope{}, adminAuthMultisig, errors.New("request not signed by an authorized multisig signer")
 	}
 
 	configured := adminWalletAddress()
@@ -90,14 +211,14 @@ func requireAdminAuthed(r *http.Request, out any) (signedAuth core.SignedEnvelop
 		if jsonErr := json.Unmarshal(body, &envelope); jsonErr == nil {
 			if verifyErr := envelope.Verify(); verifyErr == nil && envelope.Address == configured {
 				if !rememberSignature(envelope.Signature) {
-					return core.SignedEnvelope{}, false, errors.New("duplicate/replayed request")
+					return core.SignedEnvelope{}, adminAuthSingleWallet, errors.New("duplicate/replayed request")
 				}
 				if out != nil {
 					if unmarshalErr := json.Unmarshal(envelope.Payload, out); unmarshalErr != nil {
-						return core.SignedEnvelope{}, false, errors.New("invalid payload")
+						return core.SignedEnvelope{}, adminAuthSingleWallet, errors.New("invalid payload")
 					}
 				}
-				return envelope, false, nil
+				return envelope, adminAuthSingleWallet, nil
 			}
 		}
 		// An admin wallet IS configured but this request didn't match
@@ -108,33 +229,44 @@ func requireAdminAuthed(r *http.Request, out any) (signedAuth core.SignedEnvelop
 		// transaction that silently never takes effect at apply time -
 		// better to fail loudly now than return a confusing "pending"
 		// status for something that will quietly no-op.
-		return core.SignedEnvelope{}, false, errors.New("request not signed by the configured admin wallet")
+		return core.SignedEnvelope{}, adminAuthSingleWallet, errors.New("request not signed by the configured admin wallet")
 	}
 
 	if !requireAdmin(r) {
-		return core.SignedEnvelope{}, false, errors.New("admin token required")
+		return core.SignedEnvelope{}, adminAuthLegacyToken, errors.New("admin token required")
 	}
 	if out != nil {
 		if err := json.Unmarshal(body, out); err != nil {
-			return core.SignedEnvelope{}, false, errors.New("invalid request")
+			return core.SignedEnvelope{}, adminAuthLegacyToken, errors.New("invalid request")
 		}
 	}
-	return core.SignedEnvelope{}, true, nil
+	return core.SignedEnvelope{}, adminAuthLegacyToken, nil
 }
 
-// recordAdminTx picks the transaction's Auth/From fields between the
-// two admin auth models requireAdminAuthed can return: the legacy
-// path carries this node's own self-signed identity (the pre-existing
-// trust model - every node trusts whichever node received the HTTP
-// request to have checked ADMIN_TOKEN correctly); the signed-wallet
-// path carries a real, independently-reverifiable signature from the
-// configured admin wallet, which every node applying the transaction
-// re-checks itself (see verifyAdminTxAuth in apply.go).
-func recordAdminTx(signedAuth core.SignedEnvelope, usedLegacyToken bool, to string, amount uint64, txType core.TransactionType, data string) core.Transaction {
-	if usedLegacyToken {
+// recordAdminTx picks how to record the resulting transaction based
+// on which of the three admin trust tiers requireAdminAuthed
+// returned. Legacy: this node's own self-signed identity (every node
+// trusts whichever node received the HTTP request to have checked
+// ADMIN_TOKEN correctly). Single wallet: a real, independently-
+// reverifiable signature from the configured admin wallet, re-checked
+// by every node (see verifyAdminTxAuth). Multisig: the action does
+// NOT execute directly at all - it's wrapped in a
+// TxAdminMultisigPropose transaction instead (see
+// api/admin_multisig.go), and only actually takes effect once enough
+// other authorized signers separately approve it. txType/data here
+// describe the INTENDED action; in multisig mode they become the
+// proposal's ActionType/Payload rather than the transaction's own
+// Type/Data.
+func recordAdminTx(signedAuth core.SignedEnvelope, mode adminAuthMode, to string, amount uint64, txType core.TransactionType, data string) core.Transaction {
+	switch mode {
+	case adminAuthMultisig:
+		proposeData, _ := json.Marshal(adminMultisigProposeData{ActionType: txType, Payload: data})
+		return recordTx(signedAuth, signedAuth.Address, to, amount, core.TxAdminMultisigPropose, string(proposeData))
+	case adminAuthSingleWallet:
+		return recordTx(signedAuth, signedAuth.Address, to, amount, txType, data)
+	default:
 		return recordTx(selfSignedEnvelope([]byte(data)), reporterAddress(), to, amount, txType, data)
 	}
-	return recordTx(signedAuth, signedAuth.Address, to, amount, txType, data)
 }
 
 // verifyAdminTxAuth is the verifyTxAuth-side counterpart to
@@ -142,24 +274,41 @@ func recordAdminTx(signedAuth core.SignedEnvelope, usedLegacyToken bool, to stri
 // admin-only transaction runs this itself, independently of whichever
 // node originally received the HTTP request.
 //
-// Once an admin wallet is configured, this ONLY accepts a genuine
-// signature from that exact address (core.VerifyTransactionAuth,
-// already called before this by every ApplyTransaction path, already
-// confirmed the signature really does bind to tx.AuthAddress - this
-// just checks that address is the right one) - the legacy
-// Data-equals-AuthPayload fallback is deliberately NOT tried in that
-// case. That fallback is a self-consistency check, not an identity
-// check: it's equally true for a genuine signed transaction from ANY
-// wallet, admin or not, since every ordinary signed-transaction call
-// site in this codebase already re-marshals its own payload into both
-// tx.Data and the envelope it signs. Falling through to it once a
-// real admin wallet is configured would let an attacker take any
-// unrelated wallet's genuinely-signed transaction and simply mislabel
-// its type as an admin one to sail through - the fallback is only
-// safe while NO admin wallet is configured at all (true legacy-only
-// nodes, mid-migration-window, matching this codebase's original
+// Once multisig is configured, this ALWAYS rejects a direct
+// submission of any of these transaction types outright - going
+// forward they can only ever take effect via
+// executeAdminMultisigAction (api/admin_multisig.go), called
+// internally once a real proposal reaches its approval threshold and
+// deliberately bypassing this check entirely (auth was already
+// established through the propose/approve chain, not through this
+// synthetic transaction's own signature). Accepting a directly-
+// submitted one here - even from the address that used to be the
+// single admin wallet - would reopen exactly the single-key bypass
+// multisig exists to close.
+//
+// Otherwise (multisig not configured), behavior is unchanged from
+// before multisig existed: once a single admin wallet is configured,
+// this ONLY accepts a genuine signature from that exact address
+// (core.VerifyTransactionAuth, already called before this by every
+// ApplyTransaction path, already confirmed the signature really does
+// bind to tx.AuthAddress - this just checks that address is the right
+// one) - the legacy Data-equals-AuthPayload fallback is deliberately
+// NOT tried in that case. That fallback is a self-consistency check,
+// not an identity check: it's equally true for a genuine signed
+// transaction from ANY wallet, admin or not, since every ordinary
+// signed-transaction call site in this codebase already re-marshals
+// its own payload into both tx.Data and the envelope it signs.
+// Falling through to it once a real admin wallet is configured would
+// let an attacker take any unrelated wallet's genuinely-signed
+// transaction and simply mislabel its type as an admin one to sail
+// through - the fallback is only safe while NEITHER an admin wallet
+// NOR multisig is configured at all (true legacy-only nodes,
+// mid-migration-window, matching this codebase's original
 // self-signed-node trust model for these transaction types).
 func verifyAdminTxAuth(tx core.Transaction) bool {
+	if adminMultisigEnabled() {
+		return false
+	}
 	if configured := adminWalletAddress(); configured != "" {
 		return tx.AuthAddress == configured
 	}

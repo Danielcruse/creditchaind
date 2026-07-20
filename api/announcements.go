@@ -34,7 +34,7 @@ func HandleCreateAnnouncement(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req announcementCreateData
-	signedAuth, legacy, err := requireAdminAuthed(r, &req)
+	signedAuth, mode, err := requireAdminAuthed(r, &req)
 	if err != nil {
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
@@ -50,7 +50,7 @@ func HandleCreateAnnouncement(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data, _ := json.Marshal(req)
-	tx := recordAdminTx(signedAuth, legacy, "", 0, core.TxAnnouncementCreate, string(data))
+	tx := recordAdminTx(signedAuth, mode, "", 0, core.TxAnnouncementCreate, string(data))
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "pending",

@@ -1408,6 +1408,15 @@ func verifyTxAuth(tx core.Transaction) bool {
 		// an address whose own key is unreachable.
 		return verifyAdminTxAuth(tx)
 
+	case core.TxAdminMultisigPropose, core.TxAdminMultisigApprove:
+		// Ordinary wallet-signed - see verifyAdminMultisigTxAuth
+		// (api/admin_multisig.go). Unlike every other admin-only case
+		// above, this is NOT node-authored/self-signed and does NOT
+		// funnel through verifyAdminTxAuth's single-address check -
+		// any of the network's configured multisig signers may
+		// propose or approve.
+		return verifyAdminMultisigTxAuth(tx)
+
 	case core.TxTreasuryPurchaseRequest:
 		if tx.AuthAddress != tx.From {
 			return false
@@ -1661,6 +1670,12 @@ func ApplyTransaction(tx core.Transaction) {
 
 	case core.TxAnnouncementCreate:
 		applyAnnouncementCreate(tx)
+
+	case core.TxAdminMultisigPropose:
+		applyAdminMultisigPropose(tx)
+
+	case core.TxAdminMultisigApprove:
+		applyAdminMultisigApprove(tx)
 	}
 }
 

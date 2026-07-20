@@ -773,6 +773,14 @@ func StartServer(port string) {
 		HandleAdminTransfer,
 	)
 	http.HandleFunc(
+		"/admin/multisig/proposals",
+		HandleAdminMultisigProposals,
+	)
+	http.HandleFunc(
+		"/admin/multisig/approve",
+		HandleAdminMultisigApprove,
+	)
+	http.HandleFunc(
 		"/faucet",
 		HandleFaucet,
 	)

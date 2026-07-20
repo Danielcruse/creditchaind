@@ -48,7 +48,9 @@ function setAdminToken() {
 // public - the address is inherently visible on-chain anyway once any
 // admin transaction lands), so an operator gets a clear "you're logged
 // in as the right/wrong wallet" signal before trying an action and
-// hitting a confusing 403.
+// hitting a confusing 403. Once multisig is configured, it supersedes
+// the single-wallet check entirely - see requireAdminAuthed's own
+// three-tier precedence (api/admin.go).
 async function loadAdminWalletStatus() {
     document.getElementById("myWalletAddressDisplay").innerText = wallet ? wallet.address : "(not logged in)";
     try {
@@ -57,15 +59,83 @@ async function loadAdminWalletStatus() {
         document.getElementById("configuredAdminAddressDisplay").innerText = configured || "(not configured - legacy admin token mode)";
 
         const statusEl = document.getElementById("adminWalletMatchStatus");
-        if (!configured) {
+        const multisigCard = document.getElementById("multisigCard");
+
+        if (info.multisigEnabled) {
+            const signers = info.multisigSigners || [];
+            document.getElementById("multisigThresholdDisplay").innerText = info.multisigThreshold;
+            document.getElementById("multisigSignerCountDisplay").innerText = signers.length;
+            document.getElementById("multisigSignersDisplay").innerText = signers.join(", ");
+            multisigCard.style.display = "";
+
+            const isSigner = wallet && signers.includes(wallet.address);
+            statusEl.innerText = isSigner
+                ? "✓ This wallet is one of the configured multisig signers - it can propose and approve admin actions below."
+                : "⚠ This wallet is NOT one of the configured multisig signers - admin actions will be rejected.";
+        } else if (!configured) {
+            multisigCard.style.display = "none";
             statusEl.innerText = "No admin wallet configured on this network yet - use the Admin Token below instead.";
         } else if (wallet && wallet.address === configured) {
+            multisigCard.style.display = "none";
             statusEl.innerText = "✓ This wallet is the configured admin wallet - every action below will sign correctly.";
         } else {
+            multisigCard.style.display = "none";
             statusEl.innerText = "⚠ This wallet is NOT the configured admin wallet - actions below will be rejected. Log in as the admin wallet instead.";
+        }
+
+        if (info.multisigEnabled) {
+            loadMultisigProposals();
         }
     } catch (e) {
         console.error(e);
+    }
+}
+
+// loadMultisigProposals is public (GET /admin/multisig/proposals) -
+// every configured signer needs to see what's pending regardless of
+// whether they're logged in yet, same reasoning as /admin/whoami.
+async function loadMultisigProposals() {
+    const div = document.getElementById("multisigProposalsList");
+    try {
+        const proposals = await apiGet("/admin/multisig/proposals");
+
+        if (!proposals || proposals.length === 0) {
+            div.innerHTML = `<div class="explorer-empty">No pending proposals.</div>`;
+            return;
+        }
+
+        div.innerHTML = proposals
+            .map((p) => {
+                const approved = wallet && p.Approvals && p.Approvals[wallet.address];
+                const approvalCount = p.Approvals ? Object.keys(p.Approvals).length : 0;
+                return `
+            <div class="explorer-row" style="display:block;">
+                <strong>${p.ActionType}</strong>
+                <span style="opacity:0.7;font-size:12px;"> — proposed by ${p.Proposer ? p.Proposer.slice(0, 8) + "..." : "?"}</span>
+                <p style="margin:4px 0;font-family:monospace;font-size:11px;word-break:break-all;">${p.Payload || ""}</p>
+                <span>${approvalCount} approval(s) so far</span>
+                <button onclick="approveMultisigProposal('${p.ID}')" ${approved ? "disabled" : ""}>
+                    ${approved ? "Already approved by you" : "Approve"}
+                </button>
+            </div>
+        `;
+            })
+            .join("");
+    } catch (e) {
+        console.error(e);
+        div.innerHTML = `<div class="explorer-empty">Could not load: ${e.message}</div>`;
+    }
+}
+
+async function approveMultisigProposal(proposalId) {
+    if (!confirm("Approve this proposal? If this is the final required approval, the underlying action executes once the next block confirms it.")) {
+        return;
+    }
+    try {
+        await apiPostSigned("/admin/multisig/approve", { proposalId });
+        setTimeout(loadMultisigProposals, 9000);
+    } catch (e) {
+        alert("Could not approve: " + e.message);
     }
 }
 
@@ -260,4 +330,5 @@ setInterval(() => {
     loadTreasuryInfo();
     loadPurchases();
     loadAnnouncements();
+    loadAdminWalletStatus();
 }, 10000);

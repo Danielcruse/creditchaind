@@ -93,12 +93,12 @@ func TestRequireAdminAuthed_SignedRequestFromConfiguredWallet(t *testing.T) {
 	req := httptest.NewRequest("POST", "/token/mint", bytes.NewReader(body))
 
 	var out tokenMintData
-	signedAuth, legacy, err := requireAdminAuthed(req, &out)
+	signedAuth, mode, err := requireAdminAuthed(req, &out)
 	if err != nil {
 		t.Fatalf("expected a validly signed request to be accepted, got: %v", err)
 	}
-	if legacy {
-		t.Fatal("expected the signed-wallet path to be used, not the legacy token path")
+	if mode != adminAuthSingleWallet {
+		t.Fatal("expected the signed-wallet path to be used, not the legacy token or multisig path")
 	}
 	if signedAuth.Address != address {
 		t.Fatalf("expected signedAuth.Address %q, got %q", address, signedAuth.Address)
@@ -118,11 +118,11 @@ func TestRequireAdminAuthed_FallsBackToLegacyToken(t *testing.T) {
 	req.Header.Set("X-Admin-Token", "test-secret")
 
 	var out tokenMintData
-	_, legacy, err := requireAdminAuthed(req, &out)
+	_, mode, err := requireAdminAuthed(req, &out)
 	if err != nil {
 		t.Fatalf("expected the legacy token path to be accepted, got: %v", err)
 	}
-	if !legacy {
+	if mode != adminAuthLegacyToken {
 		t.Fatal("expected the legacy token path to be reported as used")
 	}
 	if out.Amount != 5 {
