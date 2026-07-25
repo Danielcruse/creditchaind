@@ -1036,3 +1036,62 @@ comments)
   capacity issue rather than treating each recurrence as a one-off, since
   the same OOM/fork failure mode has now recurred multiple times on the
   same undersized instance.
+
+## Price tracking / token standards / YEN-e claim / device lock (2026-07-25)
+
+- **Multi-currency display price relies on a free, keyless, unauthenticated
+  external API (CoinGecko) with no fallback provider.** (`api/price_oracle.go`)
+  If CoinGecko is unreachable or rate-limits this node, the cache simply
+  stops updating — callers always get the last-known-good rates (with a
+  stale `updatedAt`) rather than an error, so a transient outage never
+  breaks the UI, but a prolonged one means users see increasingly stale
+  fiat conversions with no visible warning beyond the timestamp itself.
+  Never used for anything that moves funds — purely a display convenience,
+  same framing as the existing ETH/BTC/USDC oracle work it extends.
+- **CCT's ETH-equivalent price (`api/cct_price.go`'s `cctPriceInETH`) falls
+  back to a hardcoded illustrative constant (`DefaultCCTPerETH = 0.000975`)
+  until at least one real CCT/ETHTEST trade has been recorded on the order
+  book.** This is a judgment call carried over from earlier hub-rate
+  documentation, not a live market rate — every fiat price shown for CCT
+  on a fresh/thin-liquidity network is this illustrative number, not
+  something derived from real trading activity, until real trades exist.
+- **Token standards (`core/token_standard.go`) are backend-defined, not
+  live-governance-created.** Only three standards exist (`C101` native/
+  reserved, `C117S` stable, `C1` independent) and adding a new one means a
+  code change and redeploy, not an on-chain action — matching the user's
+  own "later on" framing for future growth, not yet built as a live
+  mechanism. `C117S`'s `PegReference` is purely descriptive metadata,
+  never mechanically enforced (no oracle or mint-controller exists to
+  actually back a peg for a user-created token).
+- **YEN-e time-cooldown claim (`api/yene_claim.go`) is an explicit testnet
+  stand-in for a real Ethereum-side YEN-e bridge that does not exist yet.**
+  The claimed amount (1-100 YEN-e, deterministically derived from the
+  transaction's own ID so every node computes the identical value) and the
+  5-day cooldown are both the user's own explicit numbers, not derived
+  from any real bridge economics — there is nothing on the Ethereum side
+  to actually redeem this against.
+- **USDC/ETH address unification (`api/subaddress.go`) only takes effect
+  once a wallet already has a KMS/dev-signer-held custodial Sepolia
+  account.** A wallet that has never touched the ETH custodial corner
+  still gets USDCTEST's old CreditChain-only derived sub-address as a
+  fallback — same "can't happen in practice once ETHB exists, kept as a
+  defensive default" reasoning as the original ETHB address-unification
+  work this mirrors.
+- **The device app-lock password (`website/js/device-lock.js`) is a local
+  UI gate, not encryption, and this is by explicit design, not an
+  oversight.** The wallet's private key already sits unencrypted in this
+  browser's `localStorage` (this project's existing, disclosed custody
+  model) — the device password never touches it, is never used as a key
+  or passphrase for anything, and is stored (as a salted SHA-256 hash,
+  client-side only, never sent to any server) purely to gate the UI. It
+  stops someone who picks up an already-unlocked device from casually
+  opening the app; it does nothing against anyone who already has the raw
+  `localStorage` contents or the wallet's recovery phrase. The
+  "forgot password" recovery path is a user-chosen security-question
+  hint (also salted-hashed client-side) with no cryptographic tie to
+  wallet ownership — correctly answering the hint resets the device lock
+  but was never intended as, and must never be treated as, proof of
+  wallet ownership. Unlock state lives in `sessionStorage` (cleared when
+  the tab/browser closes, per the user's explicit "close and reopen
+  should re-prompt" requirement) — a page reload within the same session
+  does not re-prompt.

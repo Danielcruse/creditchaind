@@ -29,7 +29,14 @@ func resolveBalanceAddress(cctAddress string, publicKeyHex string, symbol string
 	// custodial account exists yet - can't happen in practice for a
 	// wallet that already holds ETHB (a custodial account is a deposit
 	// prerequisite), kept purely as a defensive default.
-	if symbol == "ETHB" {
+	// USDCTEST is unified the same way as ETHB just above - USDC is a
+	// real Ethereum-chain (ERC-20) asset, so it belongs at the same
+	// address as any other Ethereum-side asset this wallet holds, not
+	// a separate CreditChain-only derived hash. This is what makes "one
+	// wallet can receive and send USDC between other users/wallets
+	// exactly like it does elsewhere" literally true - the address is
+	// the same real Ethereum address other ETH/USDC wallets would use.
+	if symbol == "ETHB" || symbol == "USDCTEST" {
 		if account, ok := ethCustodialStore.Get(cctAddress); ok {
 			return account.EthAddress
 		}

@@ -137,6 +137,11 @@ type persistedState struct {
 	// testnet faucet, so a restart doesn't let everyone claim again.
 	FaucetClaims []string `json:"faucetClaims"`
 
+	// YeneClaims persists each address's last YEN-e claim timestamp
+	// (see core.YeneClaimStore) so a restart doesn't reset everyone's
+	// 5-day cooldown.
+	YeneClaims map[string]int64 `json:"yeneClaims"`
+
 	// YenBalances/YenSupply/CCTYenPool are YEN-e's own ledger and
 	// CCT-paired pool, same pattern as the USDCTEST fields above - see
 	// api/token.go's yenStore/cctYenPool doc comments.
@@ -277,6 +282,7 @@ func SaveState() error {
 		AdminMultisigProposals:   adminMultisigStore.Proposals,
 		Mempool:                  mempool.Transactions,
 		FaucetClaims:             snapshotFaucetClaims(),
+		YeneClaims:               yeneClaimStore.LastClaimedAt,
 		YenBalances:              yenStore.Balances,
 		YenSupply:                yenStore.Token.TotalSupply,
 		CCTYenPool:               cctYenPool,
@@ -554,6 +560,10 @@ func LoadState() {
 	}
 
 	restoreFaucetClaims(snapshot.FaucetClaims)
+
+	if snapshot.YeneClaims != nil {
+		yeneClaimStore.LastClaimedAt = snapshot.YeneClaims
+	}
 
 	if snapshot.YenBalances != nil {
 		yenStore.Balances = snapshot.YenBalances

@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+<script src="js/device-lock.js"></script>
 
 <h1>Settings</h1>
 
@@ -56,6 +57,22 @@
 
 <div class="card">
 
+    <h2>Display Currency</h2>
+
+    <p style="opacity:0.75;font-size:13px;">
+        Choose which real-world currency your crypto balances are converted into (shown alongside the native
+        amount) on your Assets pages. This is a display preference only, saved in this browser - it never
+        changes any actual balance or on-chain rate.
+    </p>
+
+    <select id="displayCurrencySelect"></select>
+
+</div>
+
+<br>
+
+<div class="card">
+
     <details>
         <summary style="cursor:pointer;font-weight:bold;">How your ETH/BTC balance works</summary>
         <p style="opacity:0.75;font-size:13px;margin-top:10px;">
@@ -94,6 +111,7 @@
 </div>
 
 <script src="js/api.js"></script>
+<script src="js/currency.js"></script>
 <script src="js/ai-assistant.js"></script>
 <script src="js/settings.js"></script>
 

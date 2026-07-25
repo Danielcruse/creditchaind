@@ -735,15 +735,16 @@ func verifyTxAuth(tx core.Transaction) bool {
 		return payload.Amount == tx.Amount
 
 	case core.TxLend, core.TxRepay, core.TxGovernance, core.TxFaucetClaim, core.TxRatingSubmit,
-		core.TxValidatorApplicationCreate, core.TxValidatorApplicationConfirm:
+		core.TxValidatorApplicationCreate, core.TxValidatorApplicationConfirm, core.TxYeneClaim:
 		// No Amount is trusted directly from these transactions - the
 		// apply* functions for these either re-derive the amount from
 		// existing trusted state (the loan record itself for
 		// Lend/Repay), carry none at all (Governance), mint a fixed
 		// server-side constant regardless of anything the client sent
-		// (FaucetClaim), or mint a fixed 1 CCT gated on a first-ever
-		// good rating (RatingSubmit) - so only the actor's identity
-		// needs binding here.
+		// (FaucetClaim), mint a fixed 1 CCT gated on a first-ever good
+		// rating (RatingSubmit), or mint a server-derived pseudo-random
+		// amount gated on a cooldown (YeneClaim) - so only the actor's
+		// identity needs binding here.
 		return tx.AuthAddress == tx.From
 
 	case core.TxValidatorRegister:
@@ -1533,6 +1534,9 @@ func ApplyTransaction(tx core.Transaction) {
 	case core.TxFaucetClaim:
 		applyFaucetClaim(tx)
 
+	case core.TxYeneClaim:
+		applyYeneClaim(tx)
+
 	case core.TxLoanOfferCreate:
 		applyLoanOfferCreate(tx)
 
@@ -1837,6 +1841,12 @@ func applyTokenRegister(tx core.Transaction) {
 	if data.InitialSupply == 0 || data.InitialSupply > core.MaxCustomTokenSupply {
 		return
 	}
+	if data.Standard == "" {
+		data.Standard = "C1"
+	}
+	if !tokenStandardRegistry.IsCreatable(data.Standard) {
+		return
+	}
 
 	// The ETHTEST fee may also have moved between submission and
 	// confirmation - re-checked and only actually deducted here, never
@@ -1853,7 +1863,7 @@ func applyTokenRegister(tx core.Transaction) {
 	// in that case (paid to enter the race, not a refundable deposit) -
 	// consistent with every other apply* function never refunding a
 	// race loser's fee/gas-equivalent cost.
-	tokenRegistry.Register(data.Symbol, data.Name, tx.From, data.InitialSupply)
+	tokenRegistry.Register(data.Symbol, data.Name, tx.From, data.InitialSupply, data.Standard, data.PegReference)
 }
 
 func applyPoolAddLiquidity(tx core.Transaction) {
@@ -5299,6 +5309,25 @@ func applyFaucetClaim(tx core.Transaction) {
 	tokenStore.Mint(tx.From, FaucetAmount)
 	ethTestStore.Mint(core.DeriveTokenAddress(pub, core.ETHTestAddressTag), FaucetETHTestAmount)
 	usdcTestStore.Mint(core.DeriveTokenAddress(pub, core.USDCTestAddressTag), FaucetUSDCTestAmount)
+}
+
+// applyYeneClaim mints a testnet YEN-e amount deterministically derived
+// from the transaction's own ID (see yeneClaimAmount) - the cooldown
+// check is re-run here, identically on every node, rather than trusted
+// from the HTTP handler's optimistic fast-fail.
+func applyYeneClaim(tx core.Transaction) {
+	if !yeneClaimStore.CanClaim(tx.From, tx.Timestamp, YeneClaimCooldownSeconds) {
+		return
+	}
+	yeneClaimStore.RecordClaim(tx.From, tx.Timestamp)
+
+	pub, err := hex.DecodeString(tx.AuthPublicKey)
+	if err != nil {
+		return
+	}
+
+	amount := yeneClaimAmount(tx.ID)
+	yenStore.Mint(core.DeriveTokenAddress(pub, core.YenAddressTag), amount)
 }
 
 // orderEscrowAddress is one escrow per order, never shared/commingled

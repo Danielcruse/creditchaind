@@ -46,6 +46,7 @@
     </style>
 </head>
 <body>
+<script src="js/device-lock.js"></script>
 
 <h1>Token Creation</h1>
 
@@ -81,14 +82,33 @@
 
     <div id="tokensLoggedIn">
         <h3>Register a Token</h3>
+        <p style="opacity:0.7;font-size:12px;">
+            Pick a standard first - it decides which fields apply and how the token gets its price.
+        </p>
+        <div id="tkStandardPicker" style="margin-bottom:10px;"></div>
         <div class="explorer-search">
             <input id="tkSymbol" placeholder="Symbol (e.g. MYTKN)" maxlength="10">
             <input id="tkName" placeholder="Name (e.g. My Token)" maxlength="64">
             <input id="tkSupply" type="number" placeholder="Initial supply" min="1">
+            <input id="tkPegReference" placeholder="Peg reference (e.g. USD)" maxlength="16" style="display:none;">
             <button id="tkRegisterBtn">Register</button>
         </div>
         <p id="tkRegisterStatus"></p>
     </div>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>YEN-e Bridge (Testnet)</h2>
+    <p style="opacity:0.75;font-size:13px;">
+        YEN-e is a stable currency meant to eventually bridge in from a real Ethereum-side YEN-e token -
+        that counterpart doesn't exist yet, so this is a testnet-only representation for now, not a real
+        bridge. Claiming credits a random amount (1-100 YEN-e) to your wallet, once every 5 days.
+    </p>
+    <p>Your YEN-e balance: <span id="tkYeneBalance">-</span></p>
+    <button id="tkYeneClaimBtn">&#128279; Claim YEN-e</button>
+    <p id="tkYeneStatus"></p>
 </div>
 
 <br>

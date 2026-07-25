@@ -13,7 +13,18 @@ type tokenRegisterData struct {
 	Symbol        string `json:"symbol"`
 	Name          string `json:"name"`
 	InitialSupply uint64 `json:"initialSupply"`
+	// Standard is a token-standard code from GET /token-standards
+	// (currently "C1" independent or "C117S" stable) - see
+	// core/token_standard.go. Empty is treated as "C1" for backward
+	// compatibility with any client that hasn't picked up the selector
+	// yet, matching CustomToken.StandardOrDefault's own fallback.
+	Standard string `json:"standard"`
+	// PegReference is optional, only meaningful for "C117S" - purely
+	// descriptive metadata (e.g. "USD"), never mechanically enforced.
+	PegReference string `json:"pegReference"`
 }
+
+var tokenStandardRegistry = core.NewTokenStandardRegistry()
 
 // TokenCreationFeeETHTest is charged (in ETHTEST, from the creator's
 // derived sub-address - see resolveBalanceAddress) on top of the
@@ -81,6 +92,13 @@ func HandleRegisterToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "symbol already registered", http.StatusBadRequest)
 		return
 	}
+	if req.Standard == "" {
+		req.Standard = "C1"
+	}
+	if !tokenStandardRegistry.IsCreatable(req.Standard) {
+		http.Error(w, "standard must be a real, user-creatable token standard (see GET /token-standards)", http.StatusBadRequest)
+		return
+	}
 
 	data, _ := json.Marshal(req)
 	tx := recordTx(auth, address, "", 0, core.TxTokenRegister, string(data))
@@ -103,7 +121,9 @@ type customTokenInfo struct {
 	// token's pool - see isTradeable's doc comment for why this is
 	// computed from the pool's own reserves rather than stored
 	// separately.
-	Tradeable bool `json:"tradeable"`
+	Tradeable    bool   `json:"tradeable"`
+	Standard     string `json:"standard"`
+	PegReference string `json:"pegReference,omitempty"`
 }
 
 // isTradeable is the one place "can this symbol actually be swapped
@@ -139,10 +159,20 @@ func HandleListTokens(w http.ResponseWriter, r *http.Request) {
 			CCTReserve:    pool.CCTReserve,
 			TokenReserve:  pool.TokenReserve,
 			Tradeable:     isTradeable(pool),
+			Standard:      meta.StandardOrDefault(),
+			PegReference:  meta.PegReference,
 		})
 	}
 
 	json.NewEncoder(w).Encode(list)
+}
+
+// HandleTokenStandards lists the token standards a user can select at
+// registration time (see core/token_standard.go) - server-driven so
+// the frontend selector isn't a duplicated hardcoded list.
+func HandleTokenStandards(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+	json.NewEncoder(w).Encode(tokenStandardRegistry.Creatable())
 }
 
 // poolSummary is one row of HandleListPools - every symbol that's

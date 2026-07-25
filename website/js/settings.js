@@ -94,3 +94,17 @@ async function submitRating() {
 }
 
 loadExistingRating();
+
+async function initDisplayCurrencySelector() {
+    const select = document.getElementById("displayCurrencySelect");
+    if (!select) return;
+    try {
+        const currencies = await apiGet("/price/currencies");
+        const current = getDisplayCurrency();
+        select.innerHTML = currencies.map((c) => `<option value="${c}" ${c === current ? "selected" : ""}>${c}</option>`).join("");
+        select.addEventListener("change", () => setDisplayCurrency(select.value));
+    } catch (e) {
+        console.error(e);
+    }
+}
+initDisplayCurrencySelector();

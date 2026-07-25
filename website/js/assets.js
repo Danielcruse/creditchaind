@@ -54,11 +54,12 @@ async function priceLine(symbol) {
     }
 }
 
-function assetRowHTML(iconLabel, symbol, name, address, balanceText, priceText) {
+function assetRowHTML(iconLabel, symbol, name, address, balanceText, priceText, fiatText) {
     const copyId = `assetCopy_${symbol}`;
     const addressHTML = address
         ? `<span class="asset-name asset-address">${address}</span>${copyIconHTML(address, copyId)}`
         : `<span class="asset-name">${name}</span>`;
+    const fiatHTML = fiatText ? `<span class="asset-fiat" style="opacity:0.65;font-size:12px;">${fiatText}</span>` : "";
     return `
         <div class="asset-row" style="cursor:pointer;" onclick="location.href='asset.html?symbol=${symbol}'">
             <div class="asset-row-left">
@@ -70,6 +71,7 @@ function assetRowHTML(iconLabel, symbol, name, address, balanceText, priceText) 
             </div>
             <div class="asset-values">
                 <span class="asset-balance">${balanceText}</span>
+                ${fiatHTML}
                 <span class="asset-price">${priceText}</span>
             </div>
         </div>
@@ -95,6 +97,16 @@ async function loadAssets() {
             priceLine("USDCTEST"),
         ]);
 
+        const ethbEth = weiToEth(ethbBalance.balance);
+        const btcbBtc = satsToBtc(btcbBalance.balance);
+
+        const [cctFiat, ethbFiat, btcbFiat, usdcFiat] = await Promise.all([
+            fiatLine("CCT", cctBalance.balance),
+            fiatLine("ETHB", ethbEth),
+            fiatLine("BTCB", btcbBtc),
+            fiatLine("USDCTEST", usdcTestBalance.balance),
+        ]);
+
         let customRowsHTML = "";
         try {
             const customTokens = await apiGet("/tokens");
@@ -106,6 +118,9 @@ async function loadAssets() {
                 ),
                 Promise.all((customTokens || []).map((t) => priceLine(t.symbol))),
             ]);
+            const fiats = await Promise.all(
+                (customTokens || []).map((t, i) => fiatLine(t.symbol, balances[i].balance))
+            );
             customRowsHTML = (customTokens || [])
                 .map((t, i) =>
                     assetRowHTML(
@@ -114,7 +129,8 @@ async function loadAssets() {
                         t.name || "Developer-registered token",
                         null,
                         `${balances[i].balance} ${t.symbol}`,
-                        prices[i]
+                        prices[i],
+                        fiats[i]
                     )
                 )
                 .join("");
@@ -147,8 +163,9 @@ async function loadAssets() {
             "BTCB",
             "Bridged BTC (deposits to your Bitcoin address auto-credit here; send picks CCT or BTC network)",
             null,
-            `${satsToBtc(btcbBalance.balance)} BTC`,
-            ""
+            `${btcbBtc} BTC`,
+            "",
+            btcbFiat
         );
 
         // One "ETH" row - real bridged Sepolia ETH (the auto-bridge
@@ -166,15 +183,16 @@ async function loadAssets() {
             "ETHB",
             "Real bridged Sepolia ETH (deposits auto-credit; send picks CCT or ERC network)",
             null,
-            `${weiToEth(ethbBalance.balance)} ETH`,
-            ""
+            `${ethbEth} ETH`,
+            "",
+            ethbFiat
         );
 
         listEl.innerHTML =
-            assetRowHTML("CCT", "CCT", "CreditChain native token", null, `${cctBalance.balance} CCT`, "Hub currency") +
+            assetRowHTML("CCT", "CCT", "CreditChain native token", null, `${cctBalance.balance} CCT`, "Hub currency", cctFiat) +
             ethRowHTML +
             btcbRowHTML +
-            assetRowHTML("USDC", "USDCTEST", "Imported token", usdcTestAddress, `${usdcTestBalance.balance} USDCTEST`, usdcPrice) +
+            assetRowHTML("USDC", "USDCTEST", "Imported token", usdcTestAddress, `${usdcTestBalance.balance} USDCTEST`, usdcPrice, usdcFiat) +
             btcRowHTML +
             customRowsHTML;
     } catch (e) {

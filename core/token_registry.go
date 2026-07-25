@@ -11,6 +11,28 @@ type CustomToken struct {
 	Name          string
 	Creator       string
 	InitialSupply uint64
+	// Standard is the token-standard code (see token_standard.go) this
+	// token was registered under - "C1" (independent) or "C117S"
+	// (stable). Empty on any token registered before this field
+	// existed, treated as "C1" (today's only real behavior at the
+	// time), not a migration.
+	Standard string
+	// PegReference is an optional, purely descriptive string a C117S
+	// creator may supply (e.g. "USD") - metadata only, never
+	// mechanically enforced (no oracle/mint-controller exists to back
+	// a peg for a user-created token).
+	PegReference string
+}
+
+// StandardOrDefault returns t.Standard, or "C1" if empty (a token
+// registered before the standards field existed) - correct as a
+// default since C1's MARKET_AMM behavior was the only thing every
+// custom token ever did before this field existed.
+func (t *CustomToken) StandardOrDefault() string {
+	if t.Standard == "" {
+		return "C1"
+	}
+	return t.Standard
 }
 
 // TokenRegistry lets any wallet register a new named token using the
@@ -87,7 +109,7 @@ func ValidateTokenName(name string) bool {
 // callers must not treat that as fatal since it can legitimately
 // happen at confirmation time even after a clean submission-time
 // check (a race between two registrations for the same symbol).
-func (r *TokenRegistry) Register(symbol, name, creator string, initialSupply uint64) bool {
+func (r *TokenRegistry) Register(symbol, name, creator string, initialSupply uint64, standard, pegReference string) bool {
 	if _, exists := r.Meta[symbol]; exists {
 		return false
 	}
@@ -103,6 +125,8 @@ func (r *TokenRegistry) Register(symbol, name, creator string, initialSupply uin
 		Name:          name,
 		Creator:       creator,
 		InitialSupply: initialSupply,
+		Standard:      standard,
+		PegReference:  pegReference,
 	}
 	r.Pools[symbol] = NewLiquidityPool(symbol)
 

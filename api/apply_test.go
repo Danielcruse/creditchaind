@@ -50,6 +50,7 @@ func resetApplyTestState() {
 	resetMissedBlockReportersForTest()
 	resetReputationMiningSweepForTest()
 	adminMultisigStore = core.NewAdminMultisigStore()
+	yeneClaimStore = core.NewYeneClaimStore()
 	bridgeWithdrawReserved.mu.Lock()
 	bridgeWithdrawReserved.wei = make(map[string]uint64)
 	bridgeWithdrawReserved.mu.Unlock()

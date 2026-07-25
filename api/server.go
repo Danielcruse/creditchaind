@@ -312,6 +312,10 @@ func StartServer(port string) {
 		HandleCustomTokenBalance,
 	)
 	http.HandleFunc(
+		"/token-standards",
+		HandleTokenStandards,
+	)
+	http.HandleFunc(
 		"/pool",
 		HandlePoolInfo,
 	)
@@ -785,6 +789,14 @@ func StartServer(port string) {
 		HandleFaucet,
 	)
 	http.HandleFunc(
+		"/yene/claim",
+		HandleYeneClaim,
+	)
+	http.HandleFunc(
+		"/yene/claim-status",
+		HandleYeneClaimStatus,
+	)
+	http.HandleFunc(
 		"/marketplace",
 		HandleMarketplace,
 	)
@@ -925,6 +937,16 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/price/external",
 		HandleExternalPrice,
+	)
+
+	http.HandleFunc(
+		"/price/currencies",
+		HandleSupportedCurrencies,
+	)
+
+	http.HandleFunc(
+		"/price/cct",
+		HandleCctPrice,
 	)
 
 	http.HandleFunc(

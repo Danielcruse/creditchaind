@@ -334,6 +334,14 @@ const (
 	// gone, only the frozen shortfall is still owed. See
 	// api/loan_redemption.go.
 	TxLoanRedeemShortfall TransactionType = "LOAN_REDEEM_SHORTFALL"
+
+	// TxYeneClaim is a time-cooldown testnet claim of YEN-e (see
+	// api/yene_claim.go) - a stand-in for the real ETH-side YEN-e
+	// bridge, which has no live counterpart to bridge from yet. Mints a
+	// deterministic pseudo-random amount in [1,100] once every 5 days
+	// per address, same "no Amount trusted from the client" shape as
+	// TxFaucetClaim.
+	TxYeneClaim TransactionType = "YENE_CLAIM"
 )
 
 type Transaction struct {

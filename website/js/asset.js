@@ -25,6 +25,15 @@ function descriptionFor(sym) {
     return ASSET_DESCRIPTIONS[sym] || "Custom token registered on OUTERNET.";
 }
 
+// setFiat computes and shows a fiat-equivalent line under the hero
+// balance via currency.js's shared fiatLine() helper - shows nothing
+// if no conversion path exists yet (e.g. an untraded custom token).
+async function setFiat(sym, balance) {
+    const el = document.getElementById("assetFiat");
+    if (!el) return;
+    el.innerText = await fiatLine(sym, balance);
+}
+
 // weiToEth mirrors defi.js's helper of the same name - both convert a
 // decimal-wei string into a human ETH string using BigInt (no
 // float-precision loss), kept as separate small copies rather than a
@@ -96,9 +105,11 @@ async function loadHero() {
         if (address) {
             try {
                 const info = await apiGet(`/eth-selfcustody/balance?address=${address}`);
-                const ethStr = `${weiToEth(info.weiBalance)} ETH`;
+                const ethAmount = weiToEth(info.weiBalance);
+                const ethStr = `${ethAmount} ETH`;
                 document.getElementById("assetBalance").innerText = ethStr;
                 document.getElementById("ovBalance").innerText = ethStr;
+                setFiat("ETH", ethAmount);
             } catch (e) {
                 console.error(e);
                 document.getElementById("assetBalance").innerText = "Couldn't load balance (Sepolia RPC unavailable)";
@@ -129,9 +140,11 @@ async function loadHero() {
 
         try {
             const info = await apiGet(`/ethb/balance?address=${address}`);
-            const ethStr = `${weiToEth(info.balance)} ETH`;
+            const ethAmount = weiToEth(info.balance);
+            const ethStr = `${ethAmount} ETH`;
             document.getElementById("assetBalance").innerText = ethStr;
             document.getElementById("ovBalance").innerText = ethStr;
+            setFiat("ETHB", ethAmount);
         } catch (e) {
             console.error(e);
             document.getElementById("assetBalance").innerText = "Couldn't load balance";
@@ -150,9 +163,11 @@ async function loadHero() {
 
         try {
             const info = await apiGet(`/btcb/balance?address=${address}`);
-            const btcStr = `${satsToBtcAsset(info.balance)} BTC`;
+            const btcAmount = satsToBtcAsset(info.balance);
+            const btcStr = `${btcAmount} BTC`;
             document.getElementById("assetBalance").innerText = btcStr;
             document.getElementById("ovBalance").innerText = btcStr;
+            setFiat("BTCB", btcAmount);
         } catch (e) {
             console.error(e);
             document.getElementById("assetBalance").innerText = "Couldn't load balance";
@@ -179,9 +194,11 @@ async function loadHero() {
                 const confirmedSats = (utxos || [])
                     .filter((u) => u.status && u.status.confirmed)
                     .reduce((sum, u) => sum + Number(u.value || 0), 0);
-                const btcStr = `${satsToBtcAsset(confirmedSats)} BTC`;
+                const btcAmount = satsToBtcAsset(confirmedSats);
+                const btcStr = `${btcAmount} BTC`;
                 document.getElementById("assetBalance").innerText = btcStr;
                 document.getElementById("ovBalance").innerText = btcStr;
+                setFiat("BTC", btcAmount);
             } catch (e) {
                 console.error(e);
                 document.getElementById("assetBalance").innerText = "Couldn't load balance";
@@ -210,6 +227,7 @@ async function loadHero() {
         const balance = await fetchTokenBalance(wallet, symbol);
         document.getElementById("assetBalance").innerText = `${balance.balance} ${symbol}`;
         document.getElementById("ovBalance").innerText = `${balance.balance} ${symbol}`;
+        setFiat(symbol, balance.balance);
     } catch (e) {
         console.error(e);
     }
