@@ -6,14 +6,53 @@ const obWallet = getWallet();
 // history points already use.
 const PRICE_SCALE = 1e6;
 
-let obSelectedSymbol = "ETHTEST";
+// OB_SYMBOLS mirrors p2pNativeSymbols' own network branch
+// (website/js/p2p.js): testnet trades against the synthetic
+// ETHTEST/USDCTEST faucet tokens, mainnet against their real,
+// vault-locked 1:1-backed equivalents ETH_CCC1/USDC_CCC1 (see
+// api/order_book.go's orderBookSymbols). Labels stay the friendly
+// "ETH"/"USDC" on mainnet, matching every other CCC1 display in this
+// app (p2pSymbolLabels) - only the underlying value sent to the API
+// differs.
+const OB_SYMBOLS =
+    window.CC_NETWORK === "mainnet"
+        ? [
+              { value: "ETH_CCC1", label: "ETH" },
+              { value: "USDC_CCC1", label: "USDC" },
+          ]
+        : [
+              { value: "ETHTEST", label: "ETHTEST" },
+              { value: "USDCTEST", label: "USDCTEST" },
+          ];
+
+let obSelectedSymbol = OB_SYMBOLS[0].value;
+
+// obUpdateCcc1UnitNote warns before the trader types anything - Amount
+// and Price still operate in the token's raw smallest unit for
+// ETH_CCC1/USDC_CCC1 (1 ETH = 1000000000000000000), not human ETH/USDC
+// decimals, since Price's own precision (core/price_history.go's
+// priceScale, 6 decimal digits) can't represent a sane "CCT per wei"
+// price - the same rescaling gap already flagged for hub-rate trading
+// (website/js/p2p.js) would need to land here too before this can take
+// human-decimal input directly.
+function obUpdateCcc1UnitNote() {
+    const note = document.getElementById("obCcc1UnitNote");
+    const decimals = OB_CCC1_DECIMALS[obSelectedSymbol];
+    note.style.display = decimals ? "block" : "none";
+    if (decimals) {
+        note.innerText = `Amount and price are in ${obSelectedSymbol}'s smallest unit (10^-${decimals}), not whole ${OB_SYMBOLS.find((s) => s.value === obSelectedSymbol).label} - see your balance below for the raw number to work from.`;
+    }
+}
 
 function obInit() {
     if (!obWallet) {
         document.getElementById("obLoggedOut").style.display = "block";
         document.getElementById("obLoggedIn").style.display = "none";
     }
-    obSelectedSymbol = document.getElementById("obSymbol").value;
+    const select = document.getElementById("obSymbol");
+    select.innerHTML = OB_SYMBOLS.map((s) => `<option value="${s.value}">${s.label}</option>`).join("");
+    obSelectedSymbol = select.value;
+    obUpdateCcc1UnitNote();
     obLoadAll();
 }
 
@@ -27,14 +66,42 @@ function obLoadAll() {
     }
 }
 
+// OB_CCC1_CHAIN maps an order-book symbol to the vault "chain" key
+// fetchCcc1Balance (vault.js) expects - ETH_CCC1/USDC_CCC1 balances
+// live behind the vault (see vault.js's own doc comment), not the
+// generic custom-token registry fetchTokenBalance falls back to for
+// any symbol it doesn't special-case, which 404s for these.
+const OB_CCC1_CHAIN = { ETH_CCC1: "ETH", USDC_CCC1: "USDC" };
+const OB_CCC1_DECIMALS = { ETH_CCC1: 18, USDC_CCC1: 6 };
+
+// obBalanceFor fetches the correct balance for whichever kind of
+// symbol is selected - raw testnet token store for ETHTEST/USDCTEST,
+// the vault-backed CCC1 balance otherwise. Returns the raw smallest-
+// unit string either way - Amount/Price below are still expressed in
+// that same raw unit (see the note rendered next to those inputs);
+// full human-decimal entry needs the same amount/price rescaling
+// already flagged as a follow-up for hub rates (website/js/p2p.js),
+// not something this fix attempts.
+async function obBalanceFor(symbol) {
+    const chain = OB_CCC1_CHAIN[symbol];
+    if (chain) {
+        const { balance } = await fetchCcc1Balance(obWallet, chain);
+        return balance || "0";
+    }
+    const { balance } = await fetchTokenBalance(obWallet, symbol);
+    return String(balance || 0);
+}
+
 async function obLoadBalance() {
     const el = document.getElementById("obBalance");
     try {
-        const [cct, token] = await Promise.all([
+        const [cct, tokenBalanceRaw] = await Promise.all([
             fetchTokenBalance(obWallet, "CCT"),
-            fetchTokenBalance(obWallet, obSelectedSymbol),
+            obBalanceFor(obSelectedSymbol),
         ]);
-        el.innerText = `Your balance: ${cct.balance} CCT, ${token.balance} ${obSelectedSymbol}`;
+        const decimals = OB_CCC1_DECIMALS[obSelectedSymbol];
+        const humanHint = decimals ? ` (≈${smallestToDecimal(tokenBalanceRaw, decimals)} ${OB_SYMBOLS.find((s) => s.value === obSelectedSymbol).label})` : "";
+        el.innerText = `Your balance: ${cctFromSmallest(cct.balance)} CCT, ${tokenBalanceRaw} ${obSelectedSymbol}${humanHint}`;
     } catch (e) {
         console.error(e);
         el.innerText = "";
@@ -176,6 +243,7 @@ async function obCancelOrder(orderId) {
 
 document.getElementById("obSymbol").addEventListener("change", (e) => {
     obSelectedSymbol = e.target.value;
+    obUpdateCcc1UnitNote();
     obLoadAll();
 });
 document.getElementById("obPlaceBtn").addEventListener("click", obPlaceOrder);

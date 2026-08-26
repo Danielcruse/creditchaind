@@ -1,70 +1,240 @@
 // Same host the page was loaded from, backend port instead of the
 // static-file port - works whether this is opened locally
 // (localhost:8081 -> localhost:8080) or from a real deployed server
-// (server-ip:8081 -> server-ip:8080), without hardcoding either.
-const API_BASE = `${window.location.protocol}//${window.location.hostname}:8080`;
+// (server-ip:8081 -> server-ip:8080), without hardcoding either. The
+// port itself comes from window.CC_API_PORT (see network-config.js,
+// which must load before this file) - defaults to 8080 (today's exact
+// behavior) if that file didn't load for some reason, so this degrades
+// gracefully rather than breaking a page that's missing the tag.
+const API_BASE = `${window.location.protocol}//${window.CC_API_HOST || window.location.hostname}:${window.CC_API_PORT || 8080}`;
 
-// Injected on every page that loads this script, so anyone clicking
-// through the demo (e.g. an investor) sees an honest, unmissable
-// statement of what this actually is - a testnet with disclosed,
-// unaudited simplifications, not a live network with real value at
-// stake. Keep this until there's been a real professional security
-// audit.
-(function showDemoBanner() {
-    const banner = document.createElement("div");
-    banner.appendChild(document.createTextNode("⚠ Testnet demo, not audited — tokens have no real value. "));
-    banner.title =
-        "\"ETHTEST\", \"CCT\" and \"USDCTEST\" are test/participation tokens only, with no real monetary value.";
+// escapeHtml is the ONE shared sanitizer for any user-submitted text
+// (a company name/description, a hub trade's payment instructions, a
+// chat message, an application note - anything another user typed,
+// not this browser's own trusted UI strings) that a page needs to
+// render via innerHTML rather than textContent/innerText directly.
+// Before this existed, several pages either reimplemented the same
+// div.innerText-round-trip trick under a different local name
+// (escapeHtmlBuy in buy-cct.js, a page-scoped escapeHtml in admin.js/
+// device-lock.js) or, in several real cases, skipped escaping
+// entirely - stored XSS in a page that keeps this wallet's private key
+// in localStorage means a malicious company/trade/message can silently
+// exfiltrate it the moment another logged-in user views that content.
+// api.js loads before every other page script (see each page's own
+// <script> ordering), so this is always available without a page
+// needing its own copy or an extra <script> tag.
+function escapeHtml(s) {
+    const div = document.createElement("div");
+    div.innerText = s == null ? "" : String(s);
+    return div.innerHTML;
+}
 
-    // Original CreditChain whitepaper - linked from the banner so it's
-    // reachable from every page, not just one. Opens the Office web
-    // viewer against the raw .docx on GitHub (no local copy hosted).
+// escapeHtmlMultiline is escapeHtml plus turning newlines into <br> -
+// for free-text fields where the author's own line breaks (payment
+// instructions, trade terms, a chat message) are part of the actual
+// content and shouldn't silently collapse into one line just because
+// this now escapes markup. Safe: the \n-to-<br> substitution runs
+// AFTER escaping, so it only ever matches the literal newline
+// character, never anything from the untrusted input itself.
+function escapeHtmlMultiline(s) {
+    return escapeHtml(s).replace(/\n/g, "<br>");
+}
+
+// Switches window.CC_NETWORK for future page loads. Deliberately NOT a
+// reload of whatever page you happen to be on: the page you're
+// currently viewing may not make sense (or may even be broken) under
+// the other network (e.g. an admin/explorer page mid-flow), so every
+// network switch lands on a known-safe starting point instead. A full
+// navigation is required either way since api.js's own API_BASE is a
+// const computed once at load time, same as a real MetaMask network
+// switch typically reloading the dapp. Selecting Mainnet specifically
+// lands on the CreditChain landing page (index.html), not the wallet -
+// mainnet is real value, so the user should land somewhere that
+// re-orients them rather than dropping straight back into a wallet
+// view. Testnet keeps its existing wallet.html target.
+function switchCreditChainNetwork(network) {
+    const isMainnet = network === "mainnet";
+    localStorage.setItem("cc_network", isMainnet ? "mainnet" : "testnet");
+    location.href = isMainnet ? "/" : "wallet";
+}
+
+// buildDisclosureFooter builds the full disclosure text + whitepaper
+// link that used to live in the top banner (see showDemoBanner below) -
+// appended once, as document.body's LAST child, on every page that
+// loads this script. Kept as a real page footer (not another fixed
+// overlay) since this content isn't meant to be glanced at constantly
+// like the network pill - it's read once, at the bottom, the way a
+// disclosure/terms line normally works.
+function buildDisclosureFooter(isMainnet) {
+    const footer = document.createElement("footer");
+    footer.style.cssText =
+        "padding:14px 16px;text-align:center;font-family:Arial,sans-serif;font-size:11px;" +
+        "line-height:1.5;color:rgba(255,255,255,0.55);border-top:1px solid rgba(255,255,255,0.12);" +
+        "background:transparent;";
+
+    const disclosure = document.createElement("span");
+    disclosure.innerText = isMainnet
+        ? "⚠ Preliminary internal review complete; full independent professional audit still pending — each account's total BTC + ETH holdings are capped during this stabilization period. "
+        : "⚠ Testnet demo, not audited — tokens have no real value. \"ETHTEST\", \"CCT\" and \"USDCTEST\" are test/participation tokens only. ";
+    footer.appendChild(disclosure);
+
+    // Original CreditChain whitepaper - linked from every page's footer.
+    // Self-hosted as a plain PDF (same downloads/ convention as the
+    // source tarball, see validator.html) - the old link opened the
+    // Office web viewer against the raw .docx on GitHub, which broke the
+    // moment the repo went private (that URL requires public, unauthed
+    // access - see project memory on the private-repo decision).
     const whitepaperLink = document.createElement("a");
-    whitepaperLink.href =
-        "https://view.officeapps.live.com/op/view.aspx?src=https%3A%2F%2Fraw.githubusercontent.com%2FDanielcruse%2Fcreditchaind%2Frefs%2Fheads%2Fmain%2Fdocs%2FCreditChain_Whitepaper_v0.9.docx&wdOrigin=BROWSELINK";
+    whitepaperLink.href = "downloads/CreditChain_Whitepaper_v0.9.pdf";
     whitepaperLink.target = "_blank";
     whitepaperLink.rel = "noopener";
     whitepaperLink.innerText = "Read the original whitepaper";
     whitepaperLink.style.cssText = "color:#ffd166;text-decoration:underline;font-weight:bold;";
-    banner.appendChild(whitepaperLink);
-    // position:fixed (not sticky) is deliberate - some pages (e.g.
-    // outernet.html) set body{display:flex} for their own sidebar/main
-    // layout. A sticky (or any in-flow) banner inserted as body's
-    // first child becomes an unintended THIRD flex item there: its
-    // inline width:100% is read as a flex-basis claiming the entire
-    // row, and default align-items:stretch makes it stretch to match
-    // its tallest sibling - covering the whole page. Fixed positioning
-    // removes it from flow entirely (block or flex) on every page, so
-    // it can never interfere with a host page's own layout. The
-    // tradeoff is it no longer reserves space in flow, so body gets an
-    // explicit padding-top below sized to the banner's own height.
-    banner.style.cssText =
-        "position:fixed;top:0;left:0;z-index:9999;width:100%;max-width:100%;box-sizing:border-box;" +
-        "padding:6px 10px;text-align:center;font-family:Arial,sans-serif;font-size:12px;" +
-        "line-height:1.3;white-space:normal;overflow-wrap:anywhere;" +
-        "background:#3a2a00;color:#ffd166;border-bottom:1px solid #ffd166;";
+    footer.appendChild(whitepaperLink);
+
+    return footer;
+}
+
+// Injected on every page that loads this script - a small, glanceable
+// network indicator + switcher (see network-config.js), styled as a
+// compact red pill on mainnet ("Not Audited") vs a neutral pill on
+// testnet. Lives in the top-left corner as a small floating control
+// (not a full-width bar) so it doesn't compete with page content or
+// push everything down - the full disclosure paragraph lives in the
+// page footer instead (buildDisclosureFooter above).
+//
+// Starts COLLAPSED (just the warning icon) rather than the full pill -
+// a fixed-position full pill was found to sit directly over real page
+// content on some layouts (e.g. outernet.html's sidebar logo). Rather
+// than chase down and CSS-override every page this could ever overlap,
+// the control itself stays small by default (a single emoji glyph
+// rarely overlaps anything worth clicking) and expands to the full
+// pill + network switcher only on click - "shrink to stay out of the
+// way, open back up on demand" per the explicit request this replaced
+// the always-expanded version for. Collapse/expand never touches
+// window.CC_NETWORK - it's purely a display toggle, independent of
+// which network is actually selected.
+(function showDemoBanner() {
+    const isMainnet = window.CC_NETWORK === "mainnet";
+    const banner = document.createElement("div");
+    banner.id = "ccNetworkPill";
+
+    const endpoints = window.CC_NETWORK_ENDPOINTS || { testnet: { label: "Testnet" }, mainnet: { label: "Mainnet" } };
+    const disclosureTitle = isMainnet
+        ? "Preliminary internal review complete; full independent security audit still pending. Each account's total BTC + ETH holdings are capped; see the receive page for the current limit. Full list of known gaps at /security, linked in the page footer. Click to expand."
+        : "\"ETHTEST\", \"CCT\" and \"USDCTEST\" are test/participation tokens only, with no real monetary value. Full disclosure in the page footer. Click to expand.";
+
+    const icon = document.createElement("span");
+    icon.innerText = isMainnet ? "⚠" : "🧪";
+    icon.style.cssText = "cursor:pointer;font-size:14px;";
+
+    const expanded = document.createElement("span");
+    expanded.style.cssText = "display:none;align-items:center;";
+
+    const networkPill = document.createElement("span");
+    networkPill.innerText = isMainnet ? "⚠ " + endpoints.mainnet.label + " - Not Audited" : "🧪 " + endpoints.testnet.label;
+    networkPill.style.cssText =
+        "display:inline-block;font-weight:bold;padding:2px 8px;border-radius:10px;margin-right:6px;cursor:pointer;" +
+        (isMainnet
+            ? "background:rgba(220,38,38,0.25);border:1px solid #f87171;color:#fecaca;"
+            : "background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.25);color:#ffd166;");
+    networkPill.title = "Click to collapse.";
+    expanded.appendChild(networkPill);
+
+    const networkSelect = document.createElement("select");
+    networkSelect.style.cssText =
+        "font-size:11px;background:#1a1200;color:#ffd166;border:1px solid #ffd166;border-radius:6px;padding:1px 4px;";
+    Object.keys(endpoints).forEach((key) => {
+        const opt = document.createElement("option");
+        opt.value = key;
+        opt.innerText = endpoints[key].label;
+        opt.selected = key === window.CC_NETWORK;
+        networkSelect.appendChild(opt);
+    });
+    networkSelect.addEventListener("change", (e) => switchCreditChainNetwork(e.target.value));
+    expanded.appendChild(networkSelect);
+
+    banner.appendChild(icon);
+    banner.appendChild(expanded);
+
+    // The full disclosure text lives in the page footer (see
+    // buildDisclosureFooter above) - the title attribute carries the
+    // short version for a hover tooltip in either state.
+    banner.title = disclosureTitle;
+
+    function setCollapsed(collapsed) {
+        icon.style.display = collapsed ? "inline" : "none";
+        expanded.style.display = collapsed ? "none" : "inline-flex";
+        banner.style.padding = collapsed ? "4px 6px" : "4px 8px";
+    }
+    setCollapsed(true);
+
+    // Only the icon (collapsed) or the network-label span (expanded)
+    // toggle - the <select> itself must NOT re-trigger this, or
+    // clicking it to open its own dropdown would collapse the whole
+    // control out from under it first.
+    icon.addEventListener("click", () => setCollapsed(false));
+    networkPill.addEventListener("click", () => setCollapsed(true));
+
+    // position:fixed, small corner control (not a full-width bar) - a
+    // compact pill in the top-left corner, per the explicit "move to
+    // the corner, top left" request. Deliberately does NOT reserve
+    // space via body.paddingTop (unlike the old full-width bar) since
+    // its footprint (collapsed: one glyph) is small enough to just
+    // float over whatever's in that corner. On narrow/mobile viewports
+    // it's nudged down below outernet.html's own sticky mobile topbar
+    // (see the injected style rule below) so it never overlaps that
+    // page's hamburger button.
+    banner.style.cssText +=
+        "position:fixed;top:8px;left:8px;z-index:9998;box-sizing:border-box;" +
+        "padding:4px 6px;text-align:left;font-family:Arial,sans-serif;font-size:12px;" +
+        "line-height:1.3;white-space:nowrap;display:flex;align-items:center;" +
+        "background:#3a2a00;color:#ffd166;border:1px solid #ffd166;border-radius:10px;" +
+        "box-shadow:0 2px 8px rgba(0,0,0,0.35);";
+
+    // Self-contained media query (works on every page regardless of
+    // which stylesheet, if any, that page loads) - pushes the pill
+    // below the ~56px-tall sticky mobile topbar (js/mobile-nav.js,
+    // css/outernet.css's .mobile-topbar) so it never sits on top of
+    // the hamburger button on narrow viewports.
+    const cornerStyle = document.createElement("style");
+    cornerStyle.innerText = "@media (max-width:900px){ #ccNetworkPill{ top:60px; } }";
     document.addEventListener("DOMContentLoaded", () => {
-        document.body.insertBefore(banner, document.body.firstChild);
-        document.body.style.paddingTop = banner.offsetHeight + "px";
-        // The banner's height isn't fixed - its text wraps to a second
-        // line on narrow viewports, and paddingTop was previously only
-        // ever set once here. Resizing the window, rotating a phone,
-        // or zooming after load could all change how many lines the
-        // banner wraps to without body.paddingTop ever being
-        // recalculated, so the banner's second line would sit on top
-        // of (overlap) the page content below it. Both a window
-        // resize listener and a ResizeObserver on the banner itself
-        // keep paddingTop in sync for the lifetime of the page, not
-        // just at initial load - belt and suspenders, since not every
-        // environment reflows a fixed-position element's box in a way
-        // ResizeObserver alone reliably picks up.
-        const syncPadding = () => {
-            document.body.style.paddingTop = banner.offsetHeight + "px";
-        };
-        window.addEventListener("resize", syncPadding);
-        new ResizeObserver(syncPadding).observe(banner);
+        document.head.appendChild(cornerStyle);
+        document.body.appendChild(banner);
+        document.body.appendChild(buildDisclosureFooter(isMainnet));
     });
 })();
+
+// --- CCT smallest-unit helpers ---------------------------------------
+//
+// CCT moved from whole-unit uint64 balances to 18-decimal smallest-unit
+// big-int balances (stored/transmitted as decimal STRINGS), mirroring
+// how ETHB (wei) already works - see weiToEth in website/js/defi.js.
+// Only the CCT-denominated fields that actually changed shape on the
+// backend (dedicated CCT balance/supply endpoints, treasury, explorer
+// CCT balance, AMM pool CCT reserves/shares/swap amounts) use these;
+// generic whole-uint64 CCT amounts (transfers, staking, P2P offers,
+// order book, collateral, validator stake) are untouched by this
+// migration and must NOT be run through these helpers.
+
+function cctFromSmallest(smallestStr) {
+    if (smallestStr === undefined || smallestStr === null || smallestStr === "") return "0";
+    const n = BigInt(smallestStr);
+    const whole = n / 1000000000000000000n;
+    const frac = (n % 1000000000000000000n).toString().padStart(18, "0").replace(/0+$/, "") || "0";
+    return `${whole}.${frac}`;
+}
+
+function cctToSmallest(displayStr) {
+    // displayStr is a whole-or-decimal CCT amount typed by a user (e.g. "12.5") -> smallest-unit decimal string for the API.
+    const s = String(displayStr).trim();
+    const [wholePart, fracPartRaw = ""] = s.split(".");
+    const fracPart = (fracPartRaw + "000000000000000000").slice(0, 18);
+    const whole = BigInt(wholePart || "0");
+    const frac = BigInt(fracPart || "0");
+    return (whole * 1000000000000000000n + frac).toString();
+}
 
 async function apiGet(path) {
     const res = await fetch(API_BASE + path);
@@ -250,29 +420,93 @@ function getYenAddress(wallet) {
     return deriveTokenAddress(wallet.publicKey, YENE_ADDRESS_TAG);
 }
 
-// getEthbAddress resolves the SAME address api/subaddress.go's
-// resolveBalanceAddress does server-side: the real custodial Sepolia
-// address once one exists (fetched via the RPC-free
-// /eth-custodial/address lookup), falling back to the old derived-hash
-// sub-address only if it doesn't (can't happen for a wallet that
-// already holds ETHB - a custodial account is a deposit prerequisite -
-// kept purely so a brand-new wallet with no custodial account yet
-// still gets a stable, correct-shaped placeholder address). Cached per
-// wallet address for the lifetime of the page, same spirit as
-// deriveTokenAddress's own cache.
+// ethbAddressCache caches getEthbAddress's resolved address per wallet
+// for the lifetime of the page, same spirit as deriveTokenAddress's own
+// cache. See getEthbAddress below for the actual resolution order.
 const ethbAddressCache = new Map();
 
+// registerEthWatchAddressOnce fires the same free registration
+// getEthbAddress does, for call sites that resolve/display the
+// self-custodial ETH address directly (assets.js, asset.js) without
+// going through getEthbAddress itself - so deposit-detection starts
+// watching it the moment a user's own address is ever shown to them,
+// not only when something happens to touch the ETHB ledger. Harmless
+// to call repeatedly - HandleEthRegisterAddress on the server is a
+// no-op re-registration of the same address.
+const ethWatchRegistered = new Set();
+function registerEthWatchAddressOnce(wallet, ethAddress) {
+    if (!ethAddress || ethWatchRegistered.has(wallet.address)) return;
+    ethWatchRegistered.add(wallet.address);
+    apiPostSigned("/eth-bridge/register-address", { ethAddress }).catch(() => {});
+}
+
+// selfCustodialEthAddressFor reads the free, real Ethereum address this
+// wallet already derived from its own recovery phrase (see
+// hdwallet.js/hd_migrate.js) - no server round-trip needed, since the
+// browser already knows it. Returns null for a wallet that hasn't gone
+// through HD derivation/migration yet.
+// getHdAccounts resolves the browser's cached HD-derived accounts
+// (eth/btc), transparently handling two storage shapes:
+//   - legacy (pre-dual-network-fix): accounts.btc = {address,...} for
+//     whichever single network was active at derivation time - kept
+//     working exactly as before, including asset.js's existing
+//     "wrong network, re-derive via btc-network-fix.html" fallback for
+//     wallets that only ever cached one network.
+//   - current: accounts.btc = {testnet:{...}, mainnet:{...}} (both
+//     derived together at registration/migration/fix time, see
+//     register.html, hd_migrate.js, btc-network-fix.js) - resolved
+//     here to whichever network is currently active, so switching
+//     networks never requires re-entering the recovery phrase again.
+// Returns the same FLAT {eth, btc} shape either way, so every existing
+// call site (asset.js, send-*.js, vault-deposit-*.js, etc.) keeps
+// working unchanged - only the raw localStorage read is centralized
+// here instead of duplicated ~12 times.
+function getHdAccounts() {
+    let raw;
+    try {
+        raw = JSON.parse(localStorage.getItem("cc_hd_accounts") || "null");
+    } catch (e) {
+        return null;
+    }
+    if (!raw) return null;
+    if (raw.btc && (raw.btc.testnet || raw.btc.mainnet)) {
+        const network = window.CC_NETWORK === "mainnet" ? "mainnet" : "testnet";
+        return { eth: raw.eth, btc: raw.btc[network] || raw.btc.testnet || raw.btc.mainnet || null };
+    }
+    return raw;
+}
+
+function selfCustodialEthAddressFor(wallet) {
+    const accounts = getHdAccounts();
+    return accounts && accounts.eth ? accounts.eth.address : null;
+}
+
+// getEthbAddress resolves "this wallet's one real ETH address" - free
+// and self-custodial (see core/eth_address.go's doc comment for why
+// this replaced the earlier paid AWS-KMS-custodial design: a real
+// deposit to this exact address is what the server watches and credits
+// as ETHB, no second address or fee required). Registers the address
+// with the server on first resolution (fire-and-forget - deposit
+// detection just won't start until this lands, never blocks the
+// caller) so the bridge's deposit-detection loop knows to watch it.
+// Falls back to the legacy /eth-custodial/address lookup only for a
+// wallet that somehow already has a custodial account from before this
+// change, then to the old derived-hash placeholder as a last resort.
 async function getEthbAddress(wallet) {
     if (ethbAddressCache.has(wallet.address)) {
         return ethbAddressCache.get(wallet.address);
     }
 
-    let resolved;
-    try {
-        const info = await apiGet(`/eth-custodial/address?address=${wallet.address}`);
-        resolved = info.ethAddress;
-    } catch (e) {
-        resolved = await deriveTokenAddress(wallet.publicKey, ETHB_ADDRESS_TAG);
+    let resolved = selfCustodialEthAddressFor(wallet);
+    if (resolved) {
+        apiPostSigned("/eth-bridge/register-address", { ethAddress: resolved }).catch(() => {});
+    } else {
+        try {
+            const info = await apiGet(`/eth-custodial/address?address=${wallet.address}`);
+            resolved = info.ethAddress;
+        } catch (e) {
+            resolved = await deriveTokenAddress(wallet.publicKey, ETHB_ADDRESS_TAG);
+        }
     }
 
     ethbAddressCache.set(wallet.address, resolved);
@@ -388,7 +622,7 @@ function getWalletAddress() {
 function requireWallet() {
     const wallet = getWallet();
     if (!wallet || !wallet.address) {
-        window.location.href = "register.html";
+        window.location.href = "register";
         return null;
     }
     return wallet;

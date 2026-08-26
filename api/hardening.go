@@ -76,3 +76,14 @@ func allowRequest(remoteAddr string) bool {
 // make the server allocate while decoding JSON - without this, a
 // single oversized POST can exhaust memory.
 const maxRequestBodyBytes = 64 * 1024
+
+// maxCertificateUploadRequestBytes is a narrow, per-route exception to
+// maxRequestBodyBytes for exactly one endpoint
+// (/companies/upload-certificate) - a real certificate file
+// (maxCertificateFileBytes = 5MB, see api/companies.go) travels
+// base64-encoded inside the signed JSON envelope this codebase's auth
+// model already uses (see requireSignedRequest's doc comment on why
+// this isn't a raw multipart upload), which costs ~33% size overhead
+// plus room for the rest of the envelope - sized generously above
+// that. Every other route keeps the tight 64KB default.
+const maxCertificateUploadRequestBytes = 7 * 1024 * 1024

@@ -190,7 +190,7 @@
             rlpEncodeBytes(bigIntToMinimalBytes(fields.gasLimit)),
             rlpEncodeBytes(fields.toBytes), // 20-byte address - fixed-length, never minimal-trimmed
             rlpEncodeBytes(bigIntToMinimalBytes(fields.value)),
-            rlpEncodeBytes(EMPTY_BYTES), // data - empty for a plain ETH transfer (no contract calls in Phase B)
+            rlpEncodeBytes(fields.data || EMPTY_BYTES), // empty for a plain transfer, ABI-encoded call data for a contract call (e.g. an ERC-20 transfer)
             rlpEncodeBytes(bigIntToMinimalBytes(v)),
             rlpEncodeBytes(bigIntToMinimalBytes(r)),
             rlpEncodeBytes(bigIntToMinimalBytes(s)),
@@ -206,12 +206,16 @@
 
     // ---------- public API ----------
 
-    // signLegacyTx builds, signs, and RLP-encodes a plain (no calldata)
-    // legacy Ethereum transfer entirely client-side. gasPriceWei/
-    // valueWei accept decimal strings (matching the wei-as-string
-    // convention /eth-selfcustody/balance already returns, avoiding
-    // precision loss past Number.MAX_SAFE_INTEGER) or BigInt/number.
-    async function signLegacyTx(privateKeyHex, { nonce, gasPriceWei, gasLimit, to, valueWei, chainId }) {
+    // signLegacyTx builds, signs, and RLP-encodes a legacy Ethereum
+    // transaction entirely client-side. gasPriceWei/valueWei accept
+    // decimal strings (matching the wei-as-string convention
+    // /eth-selfcustody/balance already returns, avoiding precision loss
+    // past Number.MAX_SAFE_INTEGER) or BigInt/number. `data` is optional
+    // ABI-encoded calldata (a Uint8Array) for a contract call - e.g. the
+    // vault's deposit()/depositERC20()/approve() calls (see
+    // website/js/vault.js) - omitted entirely for a plain ETH transfer,
+    // matching this function's original (pre-vault) behavior exactly.
+    async function signLegacyTx(privateKeyHex, { nonce, gasPriceWei, gasLimit, to, valueWei, chainId, data }) {
         const privKeyBigInt = HDCrypto.bytesToBigInt(HDCrypto.hexToBytes(privateKeyHex.replace(/^0x/i, "")));
 
         const toHex = to.replace(/^0x/i, "");
@@ -227,6 +231,7 @@
             toBytes,
             value: BigInt(valueWei),
             chainId: BigInt(chainId),
+            data: data || undefined,
         };
 
         const hash = signingHash(fields);
@@ -240,5 +245,58 @@
         return { rawTxHex, txHash };
     }
 
-    global.EthTx = { signLegacyTx };
+    // addressFromPrivateKey derives the Ethereum address for a raw
+    // private key - same scalarBaseMult -> keccak256(pubX||pubY)[12:]
+    // recipe hdwallet.js's deriveEthAddress already uses, exposed here
+    // so a caller holding only a raw hex key (e.g. a pasted-in relayer
+    // key, never derived via BIP-32) can learn its own address without
+    // going through the HD derivation path.
+    function addressFromPrivateKey(privateKeyHex) {
+        const privBigInt = HDCrypto.bytesToBigInt(HDCrypto.hexToBytes(privateKeyHex.replace(/^0x/i, "")));
+        const pub = HDCrypto.scalarBaseMult(privBigInt);
+        const pubXY = HDCrypto.concatBytes(
+            HDCrypto.bigIntToBytes(pub.x, 32),
+            HDCrypto.bigIntToBytes(pub.y, 32)
+        );
+        const addrHash = HDCrypto.keccak256(pubXY);
+        return "0x" + HDCrypto.bytesToHex(addrHash.slice(12));
+    }
+
+    // compressedPublicKeyFromPrivateKey derives the 33-byte compressed
+    // secp256k1 public key (66 hex chars, 0x02/0x03 prefix) for a raw
+    // private key - reuses the exact same scalarBaseMult/compressPoint
+    // primitives addressFromPrivateKey already uses. Both Ethereum and
+    // Bitcoin sign on the same secp256k1 curve, just with different
+    // address encodings from the same public key - this is what lets a
+    // single key serve as a bridge validator's EthSigningAddress AND
+    // BtcPublicKeyHex (api/bridge_validator.go's HandleBridgeValidatorRegister)
+    // without needing two separate keys.
+    function compressedPublicKeyFromPrivateKey(privateKeyHex) {
+        const privBigInt = HDCrypto.bytesToBigInt(HDCrypto.hexToBytes(privateKeyHex.replace(/^0x/i, "")));
+        const pub = HDCrypto.scalarBaseMult(privBigInt);
+        return HDCrypto.bytesToHex(HDCrypto.compressPoint(pub));
+    }
+
+    // signDigest exposes the same raw ECDSA-over-a-32-byte-digest
+    // primitive signLegacyTx already uses internally (RFC 6979
+    // deterministic k, low-s normalized) - needed for signing anything
+    // that ISN'T a transaction, e.g. contracts/CreditChainVault.sol's
+    // release()/setValidators()/etc digests (keccak256(abi.encode(...)),
+    // verified via a direct ecrecover with no EIP-191 prefix - see
+    // website/js/vault-lock-attest.js). Returns the standard 65-byte
+    // [R(32)||S(32)||V(1)] signature format that contract expects,
+    // V already normalized to 27/28.
+    async function signDigest(privateKeyHex, digestBytes32) {
+        const privKeyBigInt = HDCrypto.bytesToBigInt(HDCrypto.hexToBytes(privateKeyHex.replace(/^0x/i, "")));
+        const { r, s, recid } = await ecdsaSign(privKeyBigInt, digestBytes32);
+        const v = 27 + recid;
+        const sigBytes = HDCrypto.concatBytes(
+            HDCrypto.bigIntToBytes(r, 32),
+            HDCrypto.bigIntToBytes(s, 32),
+            new Uint8Array([v])
+        );
+        return "0x" + HDCrypto.bytesToHex(sigBytes);
+    }
+
+    global.EthTx = { signLegacyTx, addressFromPrivateKey, compressedPublicKeyFromPrivateKey, signDigest };
 })(window);

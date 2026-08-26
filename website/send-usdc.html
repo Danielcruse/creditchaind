@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Send USDC - OUTERNET</title>
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+<link rel="stylesheet" href="css/style.css?v=fixaug5c">
+<link rel="stylesheet" href="css/outernet.css?v=fixaug5d">
+<style>
+    .address-row{ display:flex; gap:8px; align-items:center; }
+    .address-row input{ flex:1; }
+    .scan-btn{
+        height:40px; flex-shrink:0; border-radius:8px; display:flex; align-items:center; gap:6px; padding:0 14px;
+        border:1px solid rgba(0,0,0,0.15); background:rgba(0,0,0,0.05);
+        font-size:16px; font-weight:600; cursor:pointer; white-space:nowrap;
+    }
+    .modal-overlay{
+        display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7);
+        align-items:center; justify-content:center; z-index:10000;
+    }
+    .modal-box{ background:var(--cc-bg-2, #082616); color:#fff; border-radius:16px; padding:20px; width:min(420px, 90vw); }
+    #scanVideo{ width:100%; border-radius:10px; background:black; }
+    .eth-review-row{ display:flex; justify-content:space-between; padding:6px 0; }
+    .eth-warning{
+        background:rgba(255,176,32,0.12); border:1px solid #ffb020;
+        border-radius:8px; padding:10px; font-size:13px; margin:12px 0;
+    }
+</style>
+</head>
+<body class="outernet-light">
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
+
+<div class="main" style="max-width:520px;margin:0 auto;padding:24px 16px;">
+
+<p><a href="asset?symbol=USDC" style="color:#0284c7;">&larr; USDC</a></p>
+
+<h1>Send USDC</h1>
+
+<div class="card" style="border:2px solid #ff8a3d;">
+<p style="margin:0;font-size:13px;">
+This sends real USDC (an ERC-20 token) from your self-custodial Ethereum account.
+Signing happens entirely in this browser - your private key never leaves it.
+A small amount of ETH in the same account is needed to pay the network fee.
+</p>
+</div>
+
+<div class="card">
+    <p>
+        USDC balance: <span id="usdcBalance">Loading...</span>
+        <br>
+        ETH balance (for network fee): <span id="ethFeeBalance">Loading...</span>
+        <br>
+        <span id="usdcFromAddress" style="font-family:monospace;font-size:12px;opacity:0.7;"></span>
+    </p>
+</div>
+
+<div class="card" id="formCard">
+    <div class="address-row">
+        <input type="text" id="toAddress" placeholder="Recipient address (0x...)">
+        <button type="button" class="scan-btn" onclick="openScanModal()" title="Scan a QR code"><span>&#9678;</span>Scan</button>
+    </div>
+    <br>
+    <input type="number" id="amount" placeholder="Amount in USDC" step="any">
+    <br><br>
+    <button onclick="review()">Review</button>
+    <p id="formStatus" style="opacity:0.75;font-size:13px;"></p>
+</div>
+
+<div class="card" id="reviewCard" style="display:none;">
+    <h3 style="margin-top:0;">Confirm Send</h3>
+    <div class="eth-review-row"><span>To</span><span id="reviewTo" style="font-family:monospace;font-size:12px;word-break:break-all;text-align:right;max-width:70%;"></span></div>
+    <div class="eth-review-row"><span>Amount</span><span id="reviewAmount"></span></div>
+    <div class="eth-review-row"><span>Estimated network fee</span><span id="reviewFee"></span></div>
+    <div class="eth-warning">
+        This sends real USDC. This action is <strong>irreversible</strong> and cannot be undone or refunded by CreditChain.
+    </div>
+    <button id="confirmSendBtn" onclick="confirmSend()">Confirm and Send</button>
+    <button onclick="cancelReview()">Back</button>
+    <p id="reviewStatus" style="opacity:0.75;font-size:13px;"></p>
+</div>
+
+<div class="modal-overlay" id="scanModalOverlay">
+    <div class="modal-box">
+        <h3 style="margin-top:0;">Scan Address QR Code</h3>
+        <video id="scanVideo" autoplay playsinline muted></video>
+        <p id="scanStatus" style="opacity:0.75;font-size:13px;"></p>
+        <label for="scanFileInput" style="display:block;margin-top:10px;">
+            <span style="opacity:0.75;font-size:12px;">Camera not working? Take or choose a photo of the code instead:</span>
+            <input type="file" accept="image/*" capture="environment" id="scanFileInput" style="display:block;margin-top:6px;width:100%;box-sizing:border-box;">
+        </label>
+        <button onclick="closeScanModal()" style="margin-top:10px;">Cancel</button>
+    </div>
+</div>
+
+</div>
+
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/vendor/bip39-wordlist.js?v=fixaug5b"></script>
+<script src="js/vendor/hd-crypto.js?v=fixaug5b"></script>
+<script src="js/vendor/eth-tx.js?v=fixaug5b"></script>
+<script src="js/vendor/erc20-abi.js?v=fixaug5b"></script>
+<script src="js/qrcode.js?v=fixaug5b"></script>
+<script src="js/qr-decode.js?v=fixaug5b"></script>
+<script src="js/send-usdc.js?v=fixaug5b"></script>
+
+</body>
+</html>

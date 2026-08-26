@@ -22,27 +22,41 @@ type persistedState struct {
 	// before per-symbol staking existed still decodes without error.
 	// LoadState migrates it into Stakes below and never writes it
 	// again itself.
-	StakesLegacy      map[string]uint64              `json:"stakes"`
-	Stakes            map[string]map[string]uint64   `json:"stakesBySymbol"`
-	Unbonding         []core.UnbondingEntry          `json:"unbondingEntries"`
-	TokenBalances     map[string]uint64              `json:"tokenBalances"`
-	TokenSupply       uint64                         `json:"tokenSupply"`
-	USDCTestBalances  map[string]uint64              `json:"usdcTestBalances"`
-	USDCTestSupply    uint64                         `json:"usdcTestSupply"`
-	REPTBalances      map[string]uint64              `json:"reptBalances"`
-	REPTSupply        uint64                         `json:"reptSupply"`
-	CustomTokens      map[string]*core.CustomToken   `json:"customTokens"`
-	CustomTokenStores map[string]*core.TokenStore    `json:"customTokenStores"`
-	LiquidityPools    map[string]*core.LiquidityPool `json:"liquidityPools"`
-	ETHTestBalances   map[string]uint64              `json:"ethTestBalances"`
-	ETHTestSupply     uint64                         `json:"ethTestSupply"`
-	CCTEthTestPool    *core.LiquidityPool            `json:"cctEthTestPool"`
-	CCTUsdcTestPool   *core.LiquidityPool            `json:"cctUsdcTestPool"`
-	P2POffers         map[string]*core.P2POffer      `json:"p2pOffers"`
-	LoanOffers        map[string]*core.LoanOffer     `json:"loanOffers"`
-	LoanRequests      map[string]*core.LoanRequest   `json:"loanRequests"`
-	Negotiations      map[string]*core.Negotiation   `json:"negotiations"`
-	Loans             map[string]*core.Loan          `json:"loans"`
+	StakesLegacy map[string]uint64            `json:"stakes"`
+	Stakes       map[string]map[string]uint64 `json:"stakesBySymbol"`
+	Unbonding    []core.UnbondingEntry        `json:"unbondingEntries"`
+	// TokenBalances/TokenSupply are the FROZEN pre-migration CCT ledger
+	// - left exactly as they were the moment
+	// applyTokenomicsDecimalMigration ran (see api/tokenomics_migration.go),
+	// never written to again. CCTBalances/CCTSupply below are the real,
+	// live CCT ledger going forward.
+	TokenBalances map[string]uint64 `json:"tokenBalances"`
+	TokenSupply   uint64            `json:"tokenSupply"`
+	// CCTBalances/CCTSupply persist core.CctStore - CCT's real ledger
+	// as of the 18-decimal migration (see core/cct_store.go). Decimal
+	// strings, not uint64 - the whole point of this store.
+	CCTBalances       map[string]string               `json:"cctBalances"`
+	CCTSupply         string                          `json:"cctSupply"`
+	USDCTestBalances  map[string]uint64               `json:"usdcTestBalances"`
+	USDCTestSupply    uint64                          `json:"usdcTestSupply"`
+	REPTBalances      map[string]uint64               `json:"reptBalances"`
+	REPTSupply        uint64                          `json:"reptSupply"`
+	CustomTokens      map[string]*core.CustomToken    `json:"customTokens"`
+	CustomTokenStores map[string]*core.TokenStore     `json:"customTokenStores"`
+	LiquidityPools    map[string]*core.LiquidityPool  `json:"liquidityPools"`
+	ETHTestBalances   map[string]uint64               `json:"ethTestBalances"`
+	ETHTestSupply     uint64                          `json:"ethTestSupply"`
+	CCTEthTestPool    *core.LiquidityPool             `json:"cctEthTestPool"`
+	CCTUsdcTestPool   *core.LiquidityPool             `json:"cctUsdcTestPool"`
+	BTCTestBalances   map[string]uint64               `json:"btcTestBalances"`
+	BTCTestSupply     uint64                          `json:"btcTestSupply"`
+	CCTBtcTestPool    *core.LiquidityPool             `json:"cctBtcTestPool"`
+	PredictionPools   map[string]*core.PredictionPool `json:"predictionPools"`
+	P2POffers         map[string]*core.P2POffer       `json:"p2pOffers"`
+	LoanOffers        map[string]*core.LoanOffer      `json:"loanOffers"`
+	LoanRequests      map[string]*core.LoanRequest    `json:"loanRequests"`
+	Negotiations      map[string]*core.Negotiation    `json:"negotiations"`
+	Loans             map[string]*core.Loan           `json:"loans"`
 	// CollateralLockedLegacy is the pre-multi-symbol shape (address ->
 	// amount, always meaning CCT, back when collateral only ever came
 	// from liquid CCT) - kept ONLY so a state.json written before
@@ -51,16 +65,23 @@ type persistedState struct {
 	// entry) and never writes it again itself.
 	CollateralLockedLegacy map[string]uint64                   `json:"collateralLocked"`
 	CollateralLocked       map[string]map[string]uint64        `json:"collateralLockedBySymbol"`
+	StakePurposeLocked     map[string]map[string]uint64        `json:"stakePurposeLocked"`
 	CreditProfiles         map[string]*core.CreditProfile      `json:"creditProfiles"`
 	ReputationProfiles     map[string]*core.Reputation         `json:"reputationProfiles"`
 	CreditHistory          map[string][]core.CreditEvent       `json:"creditHistory"`
 	LenderStats            map[string]*core.LenderStats        `json:"lenderStats"`
 	Proposals              map[string]*core.Proposal           `json:"proposals"`
 	ProposalVotes          map[string]map[string]bool          `json:"proposalVotes"`
+	ExecutiveProposals     map[string]*core.ExecutiveProposal  `json:"executiveProposals"`
+	RCInfusions            []*core.RCInfusion                  `json:"rcInfusions"`
+	ModeratorVerifications []*core.ModeratorVerificationEntry  `json:"moderatorVerifications"`
+	GovernanceRCPoolMint   governanceRCPoolMintSnapshot        `json:"governanceRCPoolMint"`
 	Validators             map[string]*core.ValidatorStatus    `json:"validators"`
 	Delegations            map[string]map[string]uint64        `json:"delegations"`
 	DelegationUnbonding    []core.DelegationUnbondingEntry     `json:"delegationUnbonding"`
 	Moderators             core.ModeratorSnapshot              `json:"moderators"`
+	TradeReviews           core.TradeReviewSnapshot            `json:"tradeReviews"`
+	DisputeFaultChoices    map[string]*core.DisputeFaultChoice `json:"disputeFaultChoices"`
 	Companies              map[string]*core.CompanyApplication `json:"companies"`
 	BuyRequests            map[string]*core.BuyRequest         `json:"buyRequests"`
 	Orders                 map[string]*core.Order              `json:"orders"`
@@ -103,6 +124,14 @@ type persistedState struct {
 	AppliedBlockHashes []string `json:"appliedBlockHashes"`
 	SlashDedupKeys     []string `json:"slashDedupKeys"`
 
+	// BridgeExternalTxHashes persists the side-store mapping a
+	// TxBridgeWithdraw's ID to the real Sepolia tx hash it broadcast as
+	// (see api/bridge_tx_hash.go) - without this, a restart would wipe
+	// every recorded external-chain link even though the original
+	// withdrawal transactions themselves (persisted via the chain/
+	// mempool above) are unaffected.
+	BridgeExternalTxHashes map[string]string `json:"bridgeExternalTxHashes"`
+
 	// MissedBlockReporters persists in-flight (not-yet-resolved) M-of-N
 	// corroboration state for missed-block slash reports (see
 	// missed_block_confirmation.go) - without this, a node that
@@ -117,6 +146,19 @@ type persistedState struct {
 	// restart mid-epoch would re-mint wallets already processed
 	// earlier in the same epoch.
 	ReputationMiningSweep reputationMiningSweepSnapshot `json:"reputationMiningSweep"`
+
+	// LegacyStakeMigrationSweep persists the one-time ETHTEST/USDCTEST
+	// stake redemption sweep's progress (see legacy_stake_migration.go)
+	// - see that snapshot type's own doc comment for why.
+	LegacyStakeMigrationSweep legacyStakeMigrationSweepSnapshot `json:"legacyStakeMigrationSweep"`
+
+	// GovernanceConvictionSweep/GovernanceConvictionBootstrap persist
+	// the recurring and one-time governance-conviction sweeps' progress
+	// (see governance_conviction.go) - same non-optional
+	// restart-correctness reasoning as ReputationMiningSweep/
+	// LegacyStakeMigrationSweep above.
+	GovernanceConvictionSweep     governanceConvictionSweepSnapshot     `json:"governanceConvictionSweep"`
+	GovernanceConvictionBootstrap governanceConvictionBootstrapSnapshot `json:"governanceConvictionBootstrap"`
 
 	// AdminMultisigProposals persists every admin multisig proposal
 	// ever created (pending or executed) - kept as a full audit trail,
@@ -169,6 +211,13 @@ type persistedState struct {
 	BTCBSupply          uint64                             `json:"btcbSupply"`
 	BtcWatchedAddresses map[string]*core.BtcWatchedAddress `json:"btcWatchedAddresses"`
 
+	// EthWatchedAddresses mirrors BtcWatchedAddresses exactly, for the
+	// free self-custodial ETH deposit-detection path (see
+	// core/eth_address.go's doc comment) - not gossiped, persisted here
+	// only so this node's own restart doesn't lose the address-watch
+	// mapping/deposit-detection baseline.
+	EthWatchedAddresses map[string]*core.EthWatchedAddress `json:"ethWatchedAddresses"`
+
 	// Treasury/Purchases persist the Foundation Treasury Wallet's
 	// sale configuration and purchase-request history - see
 	// core/treasury.go's doc comment.
@@ -182,9 +231,27 @@ type persistedState struct {
 	// its hardcoded default.
 	GovernanceParams map[string]uint64 `json:"governanceParams"`
 
+	// GovernanceParamsSetAt persists when each staleness-tracked
+	// governance param (currently just EthUsdCentsPerEth) was last
+	// SetAt - see core.GovernanceParamsStore.IsStale. Absent/empty on
+	// any state.json written before this field existed, which correctly
+	// leaves every key with no recorded timestamp (IsStale reports true
+	// until an admin/proposal actually SetAt's it again post-upgrade)
+	// rather than assuming a pre-upgrade value is freshly confirmed.
+	GovernanceParamsSetAt map[string]int64 `json:"governanceParamsSetAt,omitempty"`
+
 	// ActivatedProtocolVersion persists the governance-gated version
 	// flag - see core.ActivatedProtocolVersion's doc comment.
 	ActivatedProtocolVersion string `json:"activatedProtocolVersion"`
+
+	// ProtocolManifest persists the consensus-committed security-
+	// critical config record (audit findings C-06/C-09) - see
+	// core.ProtocolManifest's doc comment. Zero value (Set: false) on
+	// any state.json written before this field existed, which
+	// correctly leaves every node falling back to its own local
+	// environment variables exactly as it always has, until an admin
+	// explicitly commits a manifest.
+	ProtocolManifest core.ProtocolManifest `json:"protocolManifest,omitempty"`
 
 	// ProposalVotesByAddress persists the per-address vote-history log
 	// (core.ProposalStore.VotesByAddress) - the "community remembers"
@@ -212,6 +279,38 @@ type persistedState struct {
 	// pipeline's state - see core.ValidatorApplicationStore's doc
 	// comment.
 	ValidatorApplications map[string]*core.ValidatorApplication `json:"validatorApplications"`
+
+	// BridgeValidators/VaultLockAttestations/VaultReleaseApprovals
+	// persist the lock-and-mint vault bridge's consensus-critical
+	// authorization state - see core/bridge_validator.go,
+	// core/vault_lock_attestation.go, core/vault_release_approval.go.
+	BridgeValidators      map[string]*core.BridgeValidator      `json:"bridgeValidators"`
+	VaultLockAttestations map[string]*core.VaultLockAttestation `json:"vaultLockAttestations"`
+	VaultReleaseApprovals map[string]*core.VaultReleaseApproval `json:"vaultReleaseApprovals"`
+
+	// NodeAdmissions persists every governance-approved peer-admission
+	// grant - see core.NodeAdmissionStore's own doc comment. Keyed by
+	// public key, same shape/reasoning as BridgeValidators above.
+	NodeAdmissions map[string]*core.NodeAdmission `json:"nodeAdmissions"`
+
+	// EthCcc1Balances/UsdcCcc1Balances/BtcCcc1Balances back ETH_CCC1/
+	// USDC_CCC1/BTC_CCC1 - the real, vault-backed tokens (see
+	// api/vault_token.go). ETH/USDC use decimal-string balances
+	// (core.DecimalTokenStore); BTC stays plain uint64 sats.
+	EthCcc1Balances  map[string]string `json:"ethCcc1Balances"`
+	EthCcc1Supply    string            `json:"ethCcc1Supply"`
+	UsdcCcc1Balances map[string]string `json:"usdcCcc1Balances"`
+	UsdcCcc1Supply   string            `json:"usdcCcc1Supply"`
+	BtcCcc1Balances  map[string]uint64 `json:"btcCcc1Balances"`
+	BtcCcc1Supply    uint64            `json:"btcCcc1Supply"`
+
+	// VaultEthLastScannedBlock is the ETH vault watch loop's node-local
+	// progress marker (see api/vault_eth_watch.go) - not consensus
+	// state, just worth persisting across restarts to avoid re-scanning
+	// from the current head every time (see that file's doc comment on
+	// vaultEthLastScannedBlock for why losing this isn't unsafe, just
+	// wasteful).
+	VaultEthLastScannedBlock uint64 `json:"vaultEthLastScannedBlock"`
 }
 
 // SaveState writes a snapshot of every store to disk. Called after
@@ -226,78 +325,109 @@ func SaveState() error {
 		Unbonding: stakingStore.Unbonding,
 		// StakesLegacy is intentionally left unset - only ever read for
 		// migrating an old-format file, never written back.
-		TokenBalances:            tokenStore.Balances,
-		TokenSupply:              tokenStore.Token.TotalSupply,
-		USDCTestBalances:         usdcTestStore.Balances,
-		USDCTestSupply:           usdcTestStore.Token.TotalSupply,
-		REPTBalances:             reptStore.Balances,
-		REPTSupply:               reptStore.Token.TotalSupply,
-		CustomTokens:             tokenRegistry.Meta,
-		CustomTokenStores:        tokenRegistry.Tokens,
-		LiquidityPools:           tokenRegistry.Pools,
-		ETHTestBalances:          ethTestStore.Balances,
-		ETHTestSupply:            ethTestStore.Token.TotalSupply,
-		CCTEthTestPool:           cctEthTestPool,
-		CCTUsdcTestPool:          cctUsdcTestPool,
-		P2POffers:                p2pOfferStore.Offers,
-		LoanOffers:               loanOfferStore.Offers,
-		LoanRequests:             loanRequestStore.Requests,
-		Negotiations:             negotiationStore.Negotiations,
-		Loans:                    loanStore.Loans,
-		CollateralLocked:         collateralStore.Locked,
-		CreditProfiles:           creditStore.Profiles,
-		ReputationProfiles:       creditEngine.Profiles.Profiles,
-		CreditHistory:            creditHistory.Events,
-		LenderStats:              lenderStore.Stats,
-		Proposals:                proposalStore.Proposals,
-		ProposalVotes:            proposalStore.Voted,
-		Validators:               validatorStore.Validators,
-		Delegations:              delegationStore.Delegations,
-		DelegationUnbonding:      delegationStore.Unbonding,
-		Moderators:               moderatorStore.Snapshot(),
-		Companies:                companyStore.Applications,
-		BuyRequests:              buyRequestStore.Requests,
-		Orders:                   orderBookStore.Orders,
-		TradeHistory:             tradeHistoryStore.Trades,
-		Recovery:                 recoveryStore.Records,
-		HubRates:                 hubRateStore.Rates,
-		HubRules:                 hubRulesStore.Snapshot(),
-		HubNotifications:         notificationStore.Snapshot(),
-		UserNotifications:        userNotificationStore.Snapshot(),
-		GovernanceStatuses:       governanceStatusStore.Snapshot(),
-		HubAgentApplications:     hubAgentApplicationStore.Snapshot(),
-		HubWorkers:               hubWorkerStore.Snapshot(),
-		HubAutomations:           hubAutomationStore.Snapshot(),
-		ValidatorApplications:    validatorApplicationStore.Snapshot(),
-		HubStorefronts:           hubStorefrontStore.Snapshot(),
-		ReputationEvents:         reputationEventStore.Snapshot(),
-		EthCustodial:             ethCustodialStore.Snapshot(),
-		KYC:                      kycStore.Records,
-		PriceHistory:             priceHistoryStore.History,
-		AppliedTxIDs:             snapshotAppliedTxIDs(),
-		AppliedBlockHashes:       snapshotAppliedBlockHashes(),
-		SlashDedupKeys:           snapshotSlashDedup(),
-		MissedBlockReporters:     snapshotMissedBlockReporters(),
-		ReputationMiningSweep:    snapshotReputationMiningSweep(),
-		AdminMultisigProposals:   adminMultisigStore.Proposals,
-		Mempool:                  mempool.Transactions,
-		FaucetClaims:             snapshotFaucetClaims(),
-		YeneClaims:               yeneClaimStore.LastClaimedAt,
-		YenBalances:              yenStore.Balances,
-		YenSupply:                yenStore.Token.TotalSupply,
-		CCTYenPool:               cctYenPool,
-		Treasury:                 treasuryStore.Treasury,
-		Purchases:                treasuryStore.Purchases,
-		ETHBBalances:             bridgedEthStore.Balances,
-		ETHBSupply:               bridgedEthStore.Token.TotalSupply,
-		BTCBBalances:             bridgedBtcStore.Balances,
-		BTCBSupply:               bridgedBtcStore.Token.TotalSupply,
-		BtcWatchedAddresses:      btcAddressStore.Snapshot(),
-		GovernanceParams:         governanceParamsStore.Snapshot(),
-		ActivatedProtocolVersion: core.ActivatedProtocolVersion,
-		ProposalVotesByAddress:   proposalStore.VotesByAddress,
-		Announcements:            announcementStore.Snapshot(),
-		Ratings:                  ratingStore.Snapshot(),
+		TokenBalances:                 tokenStore.Balances,
+		TokenSupply:                   tokenStore.Token.TotalSupply,
+		CCTBalances:                   cctStore.Snapshot(),
+		CCTSupply:                     cctStore.TotalSupply,
+		USDCTestBalances:              usdcTestStore.Balances,
+		USDCTestSupply:                usdcTestStore.Token.TotalSupply,
+		REPTBalances:                  reptStore.Balances,
+		REPTSupply:                    reptStore.Token.TotalSupply,
+		CustomTokens:                  tokenRegistry.Meta,
+		CustomTokenStores:             tokenRegistry.Tokens,
+		LiquidityPools:                tokenRegistry.Pools,
+		ETHTestBalances:               ethTestStore.Balances,
+		ETHTestSupply:                 ethTestStore.Token.TotalSupply,
+		CCTEthTestPool:                cctEthTestPool,
+		CCTUsdcTestPool:               cctUsdcTestPool,
+		BTCTestBalances:               btcTestStore.Balances,
+		BTCTestSupply:                 btcTestStore.Token.TotalSupply,
+		CCTBtcTestPool:                cctBtcTestPool,
+		PredictionPools:               predictionPoolStore.Snapshot(),
+		P2POffers:                     p2pOfferStore.Offers,
+		LoanOffers:                    loanOfferStore.Offers,
+		LoanRequests:                  loanRequestStore.Requests,
+		Negotiations:                  negotiationStore.Negotiations,
+		Loans:                         loanStore.Loans,
+		CollateralLocked:              collateralStore.Locked,
+		StakePurposeLocked:            stakePurposeStore.Locked,
+		CreditProfiles:                creditStore.Profiles,
+		ReputationProfiles:            creditEngine.Profiles.Profiles,
+		CreditHistory:                 creditHistory.Events,
+		LenderStats:                   lenderStore.Stats,
+		Proposals:                     proposalStore.Proposals,
+		ProposalVotes:                 proposalStore.Voted,
+		ExecutiveProposals:            executiveProposalStore.Proposals,
+		RCInfusions:                   rcInfusionStore.Infusions,
+		ModeratorVerifications:        moderatorVerificationLog.Snapshot(),
+		GovernanceRCPoolMint:          snapshotGovernanceRCPoolMint(),
+		Validators:                    validatorStore.Validators,
+		Delegations:                   delegationStore.Delegations,
+		DelegationUnbonding:           delegationStore.Unbonding,
+		Moderators:                    moderatorStore.Snapshot(),
+		TradeReviews:                  tradeReviewStore.Snapshot(),
+		DisputeFaultChoices:           disputeFaultChoiceStore.Snapshot(),
+		Companies:                     companyStore.Applications,
+		BuyRequests:                   buyRequestStore.Requests,
+		Orders:                        orderBookStore.Orders,
+		TradeHistory:                  tradeHistoryStore.Trades,
+		Recovery:                      recoveryStore.Records,
+		HubRates:                      hubRateStore.Rates,
+		HubRules:                      hubRulesStore.Snapshot(),
+		HubNotifications:              notificationStore.Snapshot(),
+		UserNotifications:             userNotificationStore.Snapshot(),
+		GovernanceStatuses:            governanceStatusStore.Snapshot(),
+		HubAgentApplications:          hubAgentApplicationStore.Snapshot(),
+		HubWorkers:                    hubWorkerStore.Snapshot(),
+		HubAutomations:                hubAutomationStore.Snapshot(),
+		ValidatorApplications:         validatorApplicationStore.Snapshot(),
+		HubStorefronts:                hubStorefrontStore.Snapshot(),
+		ReputationEvents:              reputationEventStore.Snapshot(),
+		EthCustodial:                  ethCustodialStore.Snapshot(),
+		KYC:                           kycStore.Records,
+		PriceHistory:                  priceHistoryStore.History,
+		AppliedTxIDs:                  snapshotAppliedTxIDs(),
+		AppliedBlockHashes:            snapshotAppliedBlockHashes(),
+		SlashDedupKeys:                snapshotSlashDedup(),
+		BridgeExternalTxHashes:        snapshotBridgeExternalTxHashes(),
+		MissedBlockReporters:          snapshotMissedBlockReporters(),
+		ReputationMiningSweep:         snapshotReputationMiningSweep(),
+		LegacyStakeMigrationSweep:     snapshotLegacyStakeMigrationSweep(),
+		GovernanceConvictionSweep:     snapshotGovernanceConvictionSweep(),
+		GovernanceConvictionBootstrap: snapshotGovernanceConvictionBootstrap(),
+		AdminMultisigProposals:        adminMultisigStore.Proposals,
+		Mempool:                       mempool.Transactions,
+		FaucetClaims:                  snapshotFaucetClaims(),
+		YeneClaims:                    yeneClaimStore.LastClaimedAt,
+		YenBalances:                   yenStore.Balances,
+		YenSupply:                     yenStore.Token.TotalSupply,
+		CCTYenPool:                    cctYenPool,
+		Treasury:                      treasuryStore.Treasury,
+		Purchases:                     treasuryStore.Purchases,
+		ETHBBalances:                  bridgedEthStore.Balances,
+		ETHBSupply:                    bridgedEthStore.Token.TotalSupply,
+		BTCBBalances:                  bridgedBtcStore.Balances,
+		BTCBSupply:                    bridgedBtcStore.Token.TotalSupply,
+		BtcWatchedAddresses:           btcAddressStore.Snapshot(),
+		EthWatchedAddresses:           ethAddressStore.Snapshot(),
+		GovernanceParams:              governanceParamsStore.Snapshot(),
+		GovernanceParamsSetAt:         governanceParamsStore.SnapshotSetAt(),
+		ActivatedProtocolVersion:      core.ActivatedProtocolVersion,
+		ProtocolManifest:              core.ActiveProtocolManifest,
+		ProposalVotesByAddress:        proposalStore.VotesByAddress,
+		Announcements:                 announcementStore.Snapshot(),
+		Ratings:                       ratingStore.Snapshot(),
+		BridgeValidators:              bridgeValidatorStore.Snapshot(),
+		VaultLockAttestations:         vaultLockAttestationStore.Snapshot(),
+		VaultReleaseApprovals:         vaultReleaseApprovalStore.Snapshot(),
+		NodeAdmissions:                nodeAdmissionStore.Snapshot(),
+		EthCcc1Balances:               ethCcc1Store.Balances,
+		EthCcc1Supply:                 ethCcc1Store.TotalSupply,
+		UsdcCcc1Balances:              usdcCcc1Store.Balances,
+		UsdcCcc1Supply:                usdcCcc1Store.TotalSupply,
+		BtcCcc1Balances:               btcCcc1Store.Balances,
+		BtcCcc1Supply:                 btcCcc1Store.Token.TotalSupply,
+		VaultEthLastScannedBlock:      vaultEthLastScannedBlock,
 	}
 
 	data, err := json.MarshalIndent(snapshot, "", "  ")
@@ -315,6 +445,34 @@ func SaveState() error {
 	// purely an additional durable copy while that remains true.
 	saveSnapshotToDB(data)
 	return nil
+}
+
+// restoreTrustWeightsFromGovernanceParams re-syncs core.DefaultTrustWeights
+// (a core-package mirror var, see syncTrustWeightIfNeeded's doc comment in
+// api/governance_params.go) from whatever the six TSIWeight*Bps keys were
+// last set to in governanceParamsStore, which LoadState's caller must
+// already have restored via governanceParamsStore.Restore/RestoreSetAt
+// before calling this. core.DefaultTrustWeights needs no dedicated
+// snapshot field of its own - the underlying value already round-trips
+// through the same GovernanceParams/GovernanceParamsSetAt fields every
+// other governanceParamsStore key persists through; this just re-applies
+// it onto the mirror, so a governance-changed weight survives a restart
+// instead of silently reverting to the compiled-in default. A key that
+// was never set (fresh chain, never governance-changed) is left alone,
+// since governanceParamsStore.Get correctly reports not-ok for it.
+func restoreTrustWeightsFromGovernanceParams() {
+	for _, key := range []string{
+		"TSIWeightRepaymentBps",
+		"TSIWeightTradingBps",
+		"TSIWeightGovernanceBps",
+		"TSIWeightContributionBps",
+		"TSIWeightVerificationBps",
+		"TSIWeightDisputeBps",
+	} {
+		if v, ok := governanceParamsStore.Get(key); ok {
+			syncTrustWeightIfNeeded(key, v)
+		}
+	}
 }
 
 // LoadState restores every store from disk at startup. A missing or
@@ -392,6 +550,7 @@ func LoadState() {
 		tokenStore.Balances = snapshot.TokenBalances
 	}
 	tokenStore.Token.TotalSupply = snapshot.TokenSupply
+	cctStore.Restore(snapshot.CCTBalances, snapshot.CCTSupply)
 	if snapshot.USDCTestBalances != nil {
 		usdcTestStore.Balances = snapshot.USDCTestBalances
 	}
@@ -419,6 +578,16 @@ func LoadState() {
 	if snapshot.CCTUsdcTestPool != nil {
 		cctUsdcTestPool = snapshot.CCTUsdcTestPool
 	}
+	if snapshot.BTCTestBalances != nil {
+		btcTestStore.Balances = snapshot.BTCTestBalances
+	}
+	btcTestStore.Token.TotalSupply = snapshot.BTCTestSupply
+	if snapshot.CCTBtcTestPool != nil {
+		cctBtcTestPool = snapshot.CCTBtcTestPool
+	}
+	if snapshot.PredictionPools != nil {
+		predictionPoolStore.Restore(snapshot.PredictionPools)
+	}
 	if snapshot.P2POffers != nil {
 		p2pOfferStore.Offers = snapshot.P2POffers
 	}
@@ -434,6 +603,10 @@ func LoadState() {
 	if snapshot.Loans != nil {
 		loanStore.Loans = snapshot.Loans
 	}
+	if snapshot.StakePurposeLocked != nil {
+		stakePurposeStore.Locked = snapshot.StakePurposeLocked
+	}
+
 	if snapshot.CollateralLocked != nil {
 		collateralStore.Locked = snapshot.CollateralLocked
 	} else if snapshot.CollateralLockedLegacy != nil {
@@ -470,6 +643,16 @@ func LoadState() {
 	if snapshot.ProposalVotes != nil {
 		proposalStore.Voted = snapshot.ProposalVotes
 	}
+	if snapshot.ExecutiveProposals != nil {
+		executiveProposalStore.Proposals = snapshot.ExecutiveProposals
+	}
+	if snapshot.RCInfusions != nil {
+		rcInfusionStore.Infusions = snapshot.RCInfusions
+	}
+	if snapshot.ModeratorVerifications != nil {
+		moderatorVerificationLog.Restore(snapshot.ModeratorVerifications)
+	}
+	restoreGovernanceRCPoolMint(snapshot.GovernanceRCPoolMint)
 	if snapshot.Validators != nil {
 		validatorStore.Validators = snapshot.Validators
 	}
@@ -481,6 +664,12 @@ func LoadState() {
 	}
 	if snapshot.Moderators.Moderators != nil {
 		moderatorStore.Restore(snapshot.Moderators)
+	}
+	if snapshot.TradeReviews.Reviews != nil {
+		tradeReviewStore.Restore(snapshot.TradeReviews)
+	}
+	if snapshot.DisputeFaultChoices != nil {
+		disputeFaultChoiceStore.Restore(snapshot.DisputeFaultChoices)
 	}
 	if snapshot.Companies != nil {
 		companyStore.Applications = snapshot.Companies
@@ -548,8 +737,12 @@ func LoadState() {
 	restoreAppliedTxIDs(snapshot.AppliedTxIDs)
 	restoreAppliedBlockHashes(snapshot.AppliedBlockHashes)
 	restoreSlashDedup(snapshot.SlashDedupKeys)
+	restoreBridgeExternalTxHashes(snapshot.BridgeExternalTxHashes)
 	restoreMissedBlockReporters(snapshot.MissedBlockReporters)
 	restoreReputationMiningSweep(snapshot.ReputationMiningSweep)
+	restoreLegacyStakeMigrationSweep(snapshot.LegacyStakeMigrationSweep)
+	restoreGovernanceConvictionSweep(snapshot.GovernanceConvictionSweep)
+	restoreGovernanceConvictionBootstrap(snapshot.GovernanceConvictionBootstrap)
 
 	if snapshot.AdminMultisigProposals != nil {
 		adminMultisigStore.Proposals = snapshot.AdminMultisigProposals
@@ -589,11 +782,19 @@ func LoadState() {
 	if snapshot.BtcWatchedAddresses != nil {
 		btcAddressStore.Restore(snapshot.BtcWatchedAddresses)
 	}
+	if snapshot.EthWatchedAddresses != nil {
+		ethAddressStore.Restore(snapshot.EthWatchedAddresses)
+	}
 
 	if snapshot.GovernanceParams != nil {
 		governanceParamsStore.Restore(snapshot.GovernanceParams)
 	}
+	if snapshot.GovernanceParamsSetAt != nil {
+		governanceParamsStore.RestoreSetAt(snapshot.GovernanceParamsSetAt)
+	}
+	restoreTrustWeightsFromGovernanceParams()
 	core.ActivatedProtocolVersion = snapshot.ActivatedProtocolVersion
+	core.ActiveProtocolManifest = snapshot.ProtocolManifest
 
 	if snapshot.ProposalVotesByAddress != nil {
 		proposalStore.VotesByAddress = snapshot.ProposalVotesByAddress
@@ -604,4 +805,29 @@ func LoadState() {
 	if snapshot.Ratings != nil {
 		ratingStore.Restore(snapshot.Ratings)
 	}
+
+	if snapshot.BridgeValidators != nil {
+		bridgeValidatorStore.Restore(snapshot.BridgeValidators)
+	}
+	if snapshot.NodeAdmissions != nil {
+		nodeAdmissionStore.Restore(snapshot.NodeAdmissions)
+	}
+	if snapshot.VaultLockAttestations != nil {
+		vaultLockAttestationStore.Restore(snapshot.VaultLockAttestations)
+	}
+	if snapshot.VaultReleaseApprovals != nil {
+		vaultReleaseApprovalStore.Restore(snapshot.VaultReleaseApprovals)
+	}
+
+	if snapshot.EthCcc1Balances != nil {
+		ethCcc1Store.Restore(snapshot.EthCcc1Balances, snapshot.EthCcc1Supply)
+	}
+	if snapshot.UsdcCcc1Balances != nil {
+		usdcCcc1Store.Restore(snapshot.UsdcCcc1Balances, snapshot.UsdcCcc1Supply)
+	}
+	if snapshot.BtcCcc1Balances != nil {
+		btcCcc1Store.Balances = snapshot.BtcCcc1Balances
+	}
+	btcCcc1Store.Token.TotalSupply = snapshot.BtcCcc1Supply
+	vaultEthLastScannedBlock = snapshot.VaultEthLastScannedBlock
 }

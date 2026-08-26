@@ -60,6 +60,16 @@ else
     LOCAL_HASH=$(echo "$LOCAL_JSON" | grep -o '"latestBlockHash":"[^"]*"' | cut -d'"' -f4)
 
     # --- 4. Block height stall detection ---
+    # Block production here is reactive, not on a fixed cadence (see
+    # api/consensus_loop.go's startConsensusLoop): with zero currently-
+    # registered validators, a block is only mined when the mempool has
+    # a pending transaction to confirm. A flat height during a genuinely
+    # quiet period (nobody submitted anything) is therefore expected,
+    # healthy behavior, not a stall - the real failure signal is pending
+    # transactions sitting unconfirmed while height doesn't move. Only
+    # alarm when both are true.
+    MEMPOOL_COUNT=$(curl -sk -m 10 "${HEALTHCHECK_LOCAL_URL}/mempool" 2>/dev/null | grep -o '"ID"' | wc -l)
+
     NOW=$(date +%s)
     PREV_HEIGHT=""
     PREV_SINCE="$NOW"
@@ -69,8 +79,8 @@ else
 
     if [ "$LOCAL_HEIGHT" = "$PREV_HEIGHT" ]; then
         STALLED_FOR=$((NOW - PREV_SINCE))
-        if [ "$STALLED_FOR" -ge "$STALL_SECONDS" ]; then
-            FAILURES+=("block height stuck at $LOCAL_HEIGHT for ${STALLED_FOR}s (threshold ${STALL_SECONDS}s)")
+        if [ "$STALLED_FOR" -ge "$STALL_SECONDS" ] && [ "${MEMPOOL_COUNT:-0}" -gt 0 ]; then
+            FAILURES+=("block height stuck at $LOCAL_HEIGHT for ${STALLED_FOR}s with ${MEMPOOL_COUNT} pending tx(s) not confirming (threshold ${STALL_SECONDS}s)")
         fi
     else
         PREV_SINCE="$NOW"

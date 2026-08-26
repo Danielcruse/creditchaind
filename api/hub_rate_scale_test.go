@@ -39,7 +39,7 @@ func TestApplyHubTradeRequest_FractionalRateScalesCorrectly(t *testing.T) {
 	}
 
 	// Hub needs CCT inventory to sell.
-	tokenStore.Mint(hubAddr, 1_000_000)
+	cctStore.Mint(hubAddr, cctW(1_000_000))
 
 	buyerPub, buyerPriv, _ := core.GenerateKeyPair()
 	buyerAddr := core.GenerateAddress(buyerPub)
@@ -63,7 +63,7 @@ func TestApplyHubTradeRequest_FractionalRateScalesCorrectly(t *testing.T) {
 	}
 
 	escrow := p2pOfferEscrowAddress(tradeTx.ID)
-	if got := tokenStore.BalanceOf(escrow); got != 1_000_000 {
-		t.Fatalf("expected 1,000,000 CCT escrowed from the hub's sale, got %d", got)
+	if got := cctStore.BalanceOf(escrow); got != cctW(1_000_000) {
+		t.Fatalf("expected 1,000,000 CCT escrowed from the hub's sale, got %s", got)
 	}
 }

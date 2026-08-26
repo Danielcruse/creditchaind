@@ -384,7 +384,16 @@
         if (total < target) {
             throw new Error("insufficient confirmed BTC balance to cover amount + fee");
         }
-        const changeSats = total - target;
+        // Bitcoin's own mempool/relay policy rejects any output below
+        // the dust threshold unless the WHOLE transaction pays zero fee
+        // ("sendrawtransaction RPC error -26: dust, tx with dust output
+        // must be 0-fee") - a too-small leftover is simply absorbed
+        // into the fee (no change output at all) rather than creating
+        // an output real Bitcoin nodes won't relay. See
+        // website/js/vault.js's buildAndSignBtcVaultDepositTx for the
+        // same fix applied to the vault deposit flow.
+        const changeSatsRaw = total - target;
+        const changeSats = changeSatsRaw >= 546n ? changeSatsRaw : 0n;
 
         const privKeyBigInt = HDCrypto.bytesToBigInt(HDCrypto.hexToBytes(privateKeyHex.replace(/^0x/i, "")));
         const pubPoint = HDCrypto.scalarBaseMult(privKeyBigInt);

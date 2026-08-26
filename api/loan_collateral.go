@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/creditchain/creditchaind/core"
 )
@@ -92,6 +93,13 @@ type loanHealthResponse struct {
 	PriceAvailable   bool   `json:"priceAvailable"`
 	CollateralValue  uint64 `json:"collateralValue,omitempty"`
 	RatioPercent     uint64 `json:"ratioPercent,omitempty"`
+	// ThresholdPercent is the margin this specific collateral symbol
+	// must clear (see core.LiquidationThresholdPercentFor) - only
+	// meaningful when PriceAvailable is true. Surfaced so the frontend
+	// can show borrowers WHY a STETH_CCC1 loan needs a wider buffer
+	// than an OETH one, rather than a single hardcoded "120%" baked
+	// into the UI.
+	ThresholdPercent uint64 `json:"thresholdPercent,omitempty"`
 	AtRisk           bool   `json:"atRisk"`
 
 	// RiskStage/RiskStageEnteredAt/RiskStageDeadline surface this
@@ -136,12 +144,13 @@ func HandleLoanHealth(
 		LiquidatedShortfall: loan.LiquidatedShortfall,
 	}
 
-	if collateralValue, ok := collateralValueInYen(loan.CollateralSymbol, loan.CollateralAmount); ok {
+	if collateralValue, ok := collateralValueInYen(loan.CollateralSymbol, loan.CollateralAmount, time.Now().Unix()); ok {
 		resp.PriceAvailable = true
 		resp.CollateralValue = collateralValue
+		resp.ThresholdPercent = core.LiquidationThresholdPercentFor(loan.CollateralSymbol)
 		if resp.Owed > 0 {
 			resp.RatioPercent = collateralValue * 100 / resp.Owed
-			resp.AtRisk = collateralValue*100 < core.LiquidationThresholdPercent*resp.Owed
+			resp.AtRisk = collateralValue*100 < resp.ThresholdPercent*resp.Owed
 		}
 	}
 

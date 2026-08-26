@@ -45,6 +45,91 @@ function jumpToBlock(index) {
 // CCT for EXCHANGE when Data is empty, matching the same
 // backward-compatible defaults the backend itself uses for
 // transactions recorded before Symbol existed.
+
+// DECIMAL_SYMBOL_DECIMALS is which symbols carry raw smallest-unit
+// amounts needing decimal conversion for display - ETH_CCC1/USDC_CCC1
+// (see api/vault_token.go's DecimalTokenStore, 18/6 decimals) and
+// BTC_CCC1 (btcCcc1Store holds raw satoshis, 8 decimals - same
+// convention website/js/vault.js's VAULT_CHAINS.BTC and asset.js's own
+// sats-to-BTC conversion already use for every other BTC_CCC1 display
+// in this app; explorer previously left this out and showed raw
+// satoshi integers instead of BTC amounts). CCT's TxExchange.Amount
+// stays a plain whole-CCT integer even after CCT's own 18-decimal
+// balance migration (see api/apply.go's applyTransfer - only the FEE
+// moved to smallest-unit precision, not the transfer amount itself),
+// and REPT/other symbols are already whole-integer-scaled, so those
+// don't belong here.
+const DECIMAL_SYMBOL_DECIMALS = { ETH_CCC1: 18, USDC_CCC1: 6, BTC_CCC1: 8 };
+
+// smallestToDecimalDisplay mirrors website/js/vault.js's own
+// smallestToDecimal exactly - duplicated locally (not a shared
+// <script> include) since explorer.html doesn't otherwise depend on
+// vault.js at all.
+function smallestToDecimalDisplay(smallestStr, decimals) {
+    if (smallestStr === undefined || smallestStr === null || smallestStr === "") return "0";
+    const base = 10n ** BigInt(decimals);
+    const n = BigInt(smallestStr);
+    const whole = n / base;
+    const frac = (n % base).toString().padStart(decimals, "0").replace(/0+$/, "") || "0";
+    return frac === "0" ? `${whole}` : `${whole}.${frac}`;
+}
+
+// parseTxData is the same "best-effort JSON.parse, empty object on any
+// failure" pattern txTypeLabel already uses independently - kept as its
+// own small duplicate rather than a shared refactor, matching this
+// file's existing style (every tx-detail function here already parses
+// tx.Data locally rather than threading a shared parsed value through).
+function parseTxData(tx) {
+    if (!tx.Data) return {};
+    try {
+        return JSON.parse(tx.Data);
+    } catch (e) {
+        return {};
+    }
+}
+
+// formatSymbolAmount decimal-converts only the symbols that actually
+// need it (DECIMAL_SYMBOL_DECIMALS), leaving every other symbol's raw
+// integer exactly as-is (already correct for those) - shared by both
+// the transaction-list Amount column and the address profile's held
+// balances, which carry the exact same raw-smallest-unit convention.
+function formatSymbolAmount(symbol, rawAmount) {
+    const decimals = symbol && DECIMAL_SYMBOL_DECIMALS[symbol];
+    if (!decimals) return rawAmount;
+    return smallestToDecimalDisplay(String(rawAmount), decimals);
+}
+
+// VAULT_CHAIN_DECIMALS/VAULT_CHAIN_LABEL are the vault bridge's own
+// "chain" field (ETH/USDC/BTC - see api/vault_lock.go's vaultBurnData/
+// vaultLockAttestData) mapped to the same decimal precision
+// DECIMAL_SYMBOL_DECIMALS already uses for the equivalent CCC1 symbol -
+// BTC's amountSmallestUnit is raw satoshis, same 8-decimal conversion
+// as BTC_CCC1 above.
+const VAULT_CHAIN_DECIMALS = { ETH: 18, USDC: 6, BTC: 8 };
+const VAULT_CHAIN_LABEL = { ETH: "ETH", USDC: "USDC", BTC: "BTC" };
+
+// isVaultBridgeType is every transaction type this session's vault
+// bridge explorer work covers - all three carry their real amount only
+// inside Data.amountSmallestUnit (tx.Amount is always 0 for these, see
+// api/vault_lock.go's recordTx calls), so both the label AND the
+// amount column need this special-cased, not just the label the way
+// STAKE_ETH/EXCHANGE/P2P_OFFER_CREATE already are.
+function isVaultBridgeType(type) {
+    return type === "VAULT_BURN" || type === "VAULT_LOCK_ATTEST" || type === "VAULT_RELEASE_COMPLETE";
+}
+
+// formatTxAmount is txTypeLabel's counterpart for the Amount column.
+function formatTxAmount(tx) {
+    const data = parseTxData(tx);
+    if (isVaultBridgeType(tx.Type)) {
+        if (tx.Type === "VAULT_RELEASE_COMPLETE") return ""; // no amount field on this one - see its own doc comment
+        const decimals = VAULT_CHAIN_DECIMALS[data.chain];
+        return decimals === undefined ? data.amountSmallestUnit : smallestToDecimalDisplay(data.amountSmallestUnit, decimals);
+    }
+    const symbol = data.symbol || (tx.Type === "EXCHANGE" ? "CCT" : null);
+    return formatSymbolAmount(symbol, tx.Amount);
+}
+
 function txTypeLabel(tx) {
     let data = {};
     if (tx.Data) {
@@ -64,6 +149,37 @@ function txTypeLabel(tx) {
     if (tx.Type === "P2P_OFFER_CREATE" && data.offerSymbol) {
         return `${tx.Type} ${data.offerSymbol}→${data.wantSymbol || "?"}`;
     }
+    if (tx.Type === "VAULT_BURN") {
+        // The moment a withdrawal irrevocably leaves CreditChain's own
+        // side - the user's CCC1 balance is already burned once this
+        // confirms, regardless of whether the real external release
+        // (VAULT_RELEASE_COMPLETE, a separate later transaction) ever
+        // succeeds. Signed by the withdrawing user themselves in-app,
+        // not something CreditChain-the-operator initiates on anyone's
+        // behalf.
+        const chain = VAULT_CHAIN_LABEL[data.chain] || data.chain || "?";
+        const dest = data.destinationExtAddress ? shortHash(data.destinationExtAddress) : "an external address";
+        return `Bridged Out: ${chain} released from CreditChain to ${dest} (signed in-app by the sender)`;
+    }
+    if (tx.Type === "VAULT_LOCK_ATTEST") {
+        // One bridge validator's own independent confirmation that a
+        // real external deposit happened - see core/vault_lock_attestation.go.
+        // The underlying CCC1 mint only actually fires once enough of
+        // these accumulate (bridgeValidatorThreshold), not on every
+        // single one - this label describes what THIS attestation is
+        // about, not "minting completed."
+        const chain = VAULT_CHAIN_LABEL[data.chain] || data.chain || "?";
+        const depositor = data.depositorCcAddress ? shortHash(data.depositorCcAddress) : "an unknown depositor";
+        return `Deposit Received: ${chain} from ${depositor} (bridge → vault → mint)`;
+    }
+    if (tx.Type === "VAULT_RELEASE_COMPLETE") {
+        // The real external send actually landed - the part
+        // VAULT_BURN's own label explicitly says isn't guaranteed. Only
+        // ever recorded once a node-local relay observes the real
+        // release()/broadcast succeed (api/vault_release_relay.go /
+        // api/vault_btc_release_relay.go).
+        return `Bridge Confirmed: external transaction ${data.externalHash ? shortHash(data.externalHash) : "-"} succeeded`;
+    }
     return tx.Type;
 }
 
@@ -75,7 +191,7 @@ function reputationBadge(tx) {
     if (!tx.reputationDelta) return "";
     const positive = tx.reputationDelta > 0;
     const sign = positive ? "+" : "";
-    const color = positive ? "#00ff95" : "#ff6b6b";
+    const color = positive ? "#0f9d58" : "#ff6b6b";
     const target = tx.reputationTarget ? ` for ${shortHash(tx.reputationTarget)}` : "";
     return `<span style="color:${color};font-weight:600;font-size:11px;border:1px solid ${color};border-radius:8px;padding:1px 7px;" title="Reputation change${target}">${sign}${tx.reputationDelta} rep</span>`;
 }
@@ -90,14 +206,16 @@ function renderTxRow(tx, confirmed) {
     const label = confirmed ? "confirmed" : "pending";
     const time = tx.Timestamp ? new Date(tx.Timestamp * 1000).toLocaleString() : "-";
     const idDisplay = confirmed
-        ? `<a href="tx.html?id=${encodeURIComponent(tx.ID)}" style="color:#00ff95;">${shortHash(tx.ID)}</a>`
+        ? `<a href="tx?id=${encodeURIComponent(tx.ID)}" style="color:#0f9d58;">${shortHash(tx.ID)}</a>`
         : shortHash(tx.ID);
+    const amount = formatTxAmount(tx);
+    const amountPrefix = amount === "" ? "" : `${amount} `;
     return `
         <tr title="${tx.ID || ""}">
             <td data-label="Status"><span class="explorer-pill ${label}">${label}</span></td>
             <td data-label="Tx">${idDisplay}</td>
             <td data-label="From &rarr; To" class="explorer-hash">${shortHash(tx.From)} &rarr; ${shortHash(tx.To)}</td>
-            <td data-label="Amount">${tx.Amount} (${txTypeLabel(tx)}) ${reputationBadge(tx)}</td>
+            <td data-label="Amount">${amountPrefix}(${txTypeLabel(tx)}) ${reputationBadge(tx)}</td>
             <td data-label="Time">${time}</td>
         </tr>
     `;
@@ -108,20 +226,36 @@ function renderVoteRow(vote) {
     return `
         <div class="explorer-row">
             <span>${vote.support ? "YES" : "NO"}</span>
-            <span class="explorer-hash">${vote.title}</span>
+            <span class="explorer-hash">${escapeHtml(vote.title)}</span>
             <span>${time}</span>
         </div>
     `;
 }
 
-// renderAddressProfile is the "explorer sheet" for a single address -
-// balances across every ledger, reputation/tier, and ordered
-// (newest-first) transaction and vote history, all in one place
-// instead of the caller having to piece it together from several
-// separate lookups.
+function renderLoanRow(loan) {
+    const due = loan.dueAt ? new Date(loan.dueAt * 1000).toLocaleString() : "-";
+    return `
+        <div class="explorer-row">
+            <span>${loan.role === "borrower" ? "Borrowed" : "Lent"}</span>
+            <span class="explorer-hash">${loan.amount} ${loan.symbol}</span>
+            <span class="explorer-pill ${loan.status === "REPAID" ? "confirmed" : "pending"}">${loan.status}</span>
+            <span>${due}</span>
+        </div>
+    `;
+}
+
+// renderAddressProfile is the "explorer sheet" for a single address.
+// Order follows the explicit ask: CCT balance, then any other token
+// with a nonzero available balance, then staked amounts, then held
+// loans - deliberately no marketplace-offers section (those are the
+// user's own posted offers, not public standing) - then transaction
+// history, governance votes, and finally block/network info (handled
+// by the caller, this only renders the per-address sheet).
 function renderAddressProfile(profile) {
     const transactions = profile.transactions || [];
     const votes = profile.votes || [];
+    const heldBalances = profile.heldBalances || [];
+    const loans = profile.loans || [];
 
     const txSection =
         transactions.length === 0
@@ -132,6 +266,22 @@ function renderAddressProfile(profile) {
         votes.length === 0
             ? `<div class="explorer-empty">No governance votes yet.</div>`
             : votes.map(renderVoteRow).join("");
+
+    const heldBalancesSection =
+        heldBalances.length === 0
+            ? `<div class="explorer-empty">No other token balances.</div>`
+            : heldBalances
+                  .map(
+                      (b) => `
+            <div class="explorer-row">
+                <span>${b.symbol}</span>
+                <span>${formatSymbolAmount(b.symbol, b.balance)}</span>
+            </div>`
+                  )
+                  .join("");
+
+    const loansSection =
+        loans.length === 0 ? `<div class="explorer-empty">No loans.</div>` : loans.map(renderLoanRow).join("");
 
     const shownCount = transactions.length;
     const totalNote =
@@ -145,8 +295,13 @@ function renderAddressProfile(profile) {
 
             <div class="explorer-row">
                 <span>CCT</span>
-                <span>${profile.cctBalance}</span>
+                <span>${cctFromSmallest(profile.cctBalance)}</span>
             </div>
+
+            <h4 style="margin-bottom:4px;">Other Balances</h4>
+            ${heldBalancesSection}
+
+            <h4 style="margin-bottom:4px;">Staked</h4>
             <div class="explorer-row">
                 <span>CCT staked</span>
                 <span>${profile.cctStaked}</span>
@@ -167,12 +322,11 @@ function renderAddressProfile(profile) {
                 <span>REPT</span>
                 <span>${profile.reptBalance}</span>
             </div>
-            <p style="opacity:0.6;font-size:12px;">
-                Held (not staked) ETHTEST/USDCTEST can't be shown for an arbitrary
-                looked-up address - see your own Wallet page instead, which can
-                derive your own sub-address balance.
-            </p>
-            <div class="explorer-row">
+
+            <h4 style="margin-bottom:4px;">Loans</h4>
+            ${loansSection}
+
+            <div class="explorer-row" style="margin-top:10px;">
                 <span>Reputation</span>
                 <span>${profile.reputation} (${profile.creditTier})</span>
             </div>
@@ -278,7 +432,7 @@ async function runSearch() {
         document.getElementById("explorerSearchClearBtn").style.display = "inline-block";
 
         if (!data.found) {
-            resultDiv.innerHTML = `<div class="explorer-empty">No block or transaction matches "${query}".</div>`;
+            resultDiv.innerHTML = `<div class="explorer-empty">No block or transaction matches "${escapeHtml(query)}".</div>`;
             return;
         }
 
@@ -286,7 +440,7 @@ async function runSearch() {
             resultDiv.innerHTML = `<div class="block-chain">${renderBlockCube(data.block)}</div>`;
         } else if (data.type === "transactions") {
             const rows = data.transactions.map((tx) => renderTxRow(tx, true)).join("");
-            resultDiv.innerHTML = `<table class="explorer-table"><tbody>${rows}</tbody></table>`;
+            resultDiv.innerHTML = `<div class="explorer-table-scroll"><table class="explorer-table"><tbody>${rows}</tbody></table></div>`;
         } else if (data.type === "address") {
             resultDiv.innerHTML = renderAddressProfile(data.address);
         }

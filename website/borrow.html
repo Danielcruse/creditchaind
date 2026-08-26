@@ -2,10 +2,10 @@
 <html>
 <head>
     <title>Borrow Marketplace - OUTERNET</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/outernet.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/outernet.css?v=fixaug5d">
     <style>
         .explorer-search{ display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap; }
         .explorer-search input, .explorer-search select{
@@ -66,15 +66,16 @@
     </style>
 </head>
 <body class="outernet-light">
-<script src="js/device-lock.js"></script>
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <div class="main" style="max-width:960px;margin:0 auto;padding:24px 16px;">
 
-<p><a href="outernet.html" style="color:#0284c7;">&larr; OUTERNET</a></p>
+<p><a href="outernet" style="color:#0284c7;">&larr; OUTERNET</a></p>
 
 <h1>Borrow Marketplace</h1>
 <p style="margin-top:-10px;opacity:.7;">
-    Looking to lend instead? <a href="lend.html">Go to the Lend / Investment marketplace</a>.
+    Looking to lend instead? <a href="lend">Go to the Lend / Investment marketplace</a>.
 </p>
 
 <!-- Protocol stats -->
@@ -123,17 +124,20 @@
         <span class="collapsible-chevron" id="collateralChevron">&#9656;</span>
     </h2>
     <div class="collapsible-content" id="collateralContent">
-        <p style="opacity:0.8; font-size:13px;">
-            Collateral is locked from your STAKED CCT or your oETH balance (the receipt you got for staking ETHTEST) -
-            never your liquid/spendable CCT. Borrowed funds are paid out in YEN-e.
+        <p style="opacity:0.8; font-size:13px;" id="collateralIntroText">
+            Collateral is locked from your STAKED CCT, your oETH balance (the receipt you got for staking ETHTEST),
+            or your real vault-locked stETH (STETH_CCC1) balance - never your liquid/spendable CCT. Borrowed funds
+            are paid out in YEN-e.
         </p>
         <p>Staked CCT (lockable): <span id="stakedCct">0</span></p>
-        <p>oETH - staked-ETHTEST receipt (lockable): <span id="oethBalance">0</span></p>
-        <p>Locked Collateral - CCT: <span id="lockedCollateralCct">0</span> &nbsp;|&nbsp; oETH: <span id="lockedCollateralOeth">0</span></p>
+        <p id="oethBalanceRow">oETH - staked-ETHTEST receipt (lockable): <span id="oethBalance">0</span></p>
+        <p>STETH_CCC1 - vault-locked stETH (lockable): <span id="stethCcc1Balance">0</span></p>
+        <p>Locked Collateral - CCT: <span id="lockedCollateralCct">0</span> <span id="lockedOethRow">&nbsp;|&nbsp; oETH: <span id="lockedCollateralOeth">0</span></span> &nbsp;|&nbsp; STETH_CCC1: <span id="lockedCollateralStethCcc1">0</span></p>
         <div class="explorer-search">
             <select id="lockSymbol">
                 <option value="CCT">Staked CCT</option>
-                <option value="OETH">oETH</option>
+                <option value="OETH" id="lockSymbolOethOption">oETH</option>
+                <option value="STETH_CCC1">STETH_CCC1 (vault-locked stETH)</option>
             </select>
             <input type="number" id="lockAmount" placeholder="Amount">
         </div>
@@ -172,8 +176,9 @@
     <div class="explorer-search">
         <input type="number" id="reqAmount" placeholder="Borrow amount (YEN-e)">
         <select id="reqCollateralSymbol">
-            <option value="OETH">oETH collateral</option>
+            <option value="OETH" id="reqCollateralOethOption">oETH collateral</option>
             <option value="CCT">CCT collateral</option>
+            <option value="STETH_CCC1">STETH_CCC1 collateral</option>
         </select>
         <input type="number" id="reqCollateralAmount" placeholder="Collateral amount">
     </div>
@@ -238,7 +243,7 @@
     </p>
 </div>
 
-<button onclick="location.href='wallet.html'">Back To Wallet</button>
+<button onclick="location.href='wallet'">Back To Wallet</button>
 
 <!-- Chat modal (shared with lend.html) -->
 <div class="modal-overlay" id="chatModalOverlay">
@@ -256,11 +261,13 @@
 
 </div>
 
-<script src="js/api.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/lending-shared.js"></script>
-<script src="js/negotiation-chat.js"></script>
-<script src="js/borrow.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/vault.js?v=sec0816c"></script>
+<script src="js/ai-assistant.js?v=fixaug5b"></script>
+<script src="js/lending-shared.js?v=fixaug5b"></script>
+<script src="js/negotiation-chat.js?v=sec0815a"></script>
+<script src="js/borrow.js?v=fixaug5s"></script>
 
 </body>
 </html>

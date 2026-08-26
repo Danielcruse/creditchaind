@@ -20,8 +20,88 @@ const MinModeratorReputation = 50
 // moderator - same pattern as HubApplyFeeCCT/ValidatorRegisterFeeCCT,
 // paid to registrationFeeAddress (api/apply.go). Lowest of the three
 // registration fees: moderating carries real trust but less exposure
-// than running a hub or a validator.
+// than running a hub or a validator. This is the DEFAULT value only -
+// see moderatorRegisterFeeCCT() below, which is what every real call
+// site actually reads.
 const ModeratorRegisterFeeCCT = 10
+
+// DefaultModeratorStakeRequirementCCT is the default amount of already-
+// staked CCT a moderator must have before registering - a real (if
+// small) bond, unlike today's zero-stake-required moderator role.
+// Deliberately much smaller than HubMinimumStakeCCT (3000, see
+// api/companies.go): moderating carries real trust but far less
+// exposure than running a Trading Hub. A judgment call, not derived
+// from any spec - see moderatorStakeRequirementCCT() below.
+const DefaultModeratorStakeRequirementCCT = 200
+
+// moderatorFeeParamKey/moderatorStakeParamKey are the GovernanceParamsStore
+// keys these two constants become governable under - see
+// api/admin_params.go's adminSettableParams (direct admin write) and
+// api/executive_proposal.go's allowlist (executive vote). A general
+// community PARAM_CHANGE vote can already target either key too, with
+// no new code needed for that path - see core/governance_params.go's
+// doc comment on why this store exists.
+const moderatorFeeParamKey = "ModeratorRegisterFeeCCT"
+const moderatorStakeParamKey = "ModeratorStakeRequirementCCT"
+
+// moderatorRegisterFeeCCT/moderatorStakeRequirementCCT are the one
+// place every real call site reads these two values from - never the
+// bare constants directly, so an admin/executive/community override
+// via governanceParamsStore actually takes effect everywhere at once.
+func moderatorRegisterFeeCCT() uint64 {
+	return governanceParamsStore.GetOrDefault(moderatorFeeParamKey, ModeratorRegisterFeeCCT)
+}
+
+func moderatorStakeRequirementCCT() uint64 {
+	return governanceParamsStore.GetOrDefault(moderatorStakeParamKey, DefaultModeratorStakeRequirementCCT)
+}
+
+// availableStakedCct is address's self-staked CCT still actually
+// backing their own moderator/validator standing - staking and
+// delegating-to-a-validator are two separate pools both funded from the
+// same liquid CCT balance (see core.DelegationStore's own doc comment),
+// so raw stakingStore.StakeOf overstates what's actually still
+// "available" once some of it has been committed elsewhere via
+// delegation. Floors at 0 rather than underflowing if delegated
+// somehow exceeds staked (shouldn't happen - delegation and staking
+// both only ever move CCT out of the same liquid balance, never out of
+// each other - but never trust that invariant blindly in an unsigned
+// subtraction).
+func availableStakedCct(address string) uint64 {
+	staked := stakingStore.StakeOf(address, "CCT")
+	delegatedOut := delegationStore.TotalDelegatedBy(address)
+	if delegatedOut >= staked {
+		return 0
+	}
+	return staked - delegatedOut
+}
+
+// activeModeratorStakeShortfall reports how much MORE staked CCT
+// address would need for their available (staked-minus-delegated)
+// balance to still clear their own moderator stake requirement -
+// 0 if address isn't an active moderator at all, or already clears it.
+// Deactivated moderators are exempt (see core.ModeratorStatus.Deactivate's
+// doc comment - they're out of the assignment rotation entirely, so
+// there's nothing left of theirs to protect a floor for).
+func activeModeratorStakeShortfall(address string, afterDelegating uint64) uint64 {
+	m, ok := moderatorStore.Get(address)
+	if !ok || m.Deactivated {
+		return 0
+	}
+	required := moderatorStakeRequirementCCT()
+	available := availableStakedCct(address)
+	if available < afterDelegating {
+		// Caller is about to delegate more than they actually have
+		// available - the real balance/escrow Transfer check elsewhere
+		// already rejects this; nothing more to floor here.
+		return 0
+	}
+	remaining := available - afterDelegating
+	if remaining >= required {
+		return 0
+	}
+	return required - remaining
+}
 
 type moderatorInfo struct {
 	Address       string `json:"address"`
@@ -76,8 +156,13 @@ func HandleRegisterModerator(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if tokenStore.BalanceOf(address) < ModeratorRegisterFeeCCT {
-		http.Error(w, fmt.Sprintf("you need at least %d CCT to cover the moderator registration fee", ModeratorRegisterFeeCCT), http.StatusBadRequest)
+	if requiredStake := moderatorStakeRequirementCCT(); availableStakedCct(address) < requiredStake {
+		http.Error(w, fmt.Sprintf("you need at least %d CCT staked (and not already delegated to a validator) before registering as a moderator", requiredStake), http.StatusBadRequest)
+		return
+	}
+
+	if fee := moderatorRegisterFeeCCT(); !hasCctBalance(address, fee) {
+		http.Error(w, fmt.Sprintf("you need at least %d CCT to cover the moderator registration fee", fee), http.StatusBadRequest)
 		return
 	}
 

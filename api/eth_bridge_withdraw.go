@@ -1,15 +1,8 @@
 package api
 
 import (
-	"context"
-	"encoding/json"
-	"math/big"
 	"net/http"
 	"sync"
-	"time"
-
-	"github.com/creditchain/creditchaind/core"
-	"github.com/ethereum/go-ethereum/common"
 )
 
 // ethbWithdrawGasLimitEstimate is the plain-transfer gas limit used to
@@ -47,19 +40,34 @@ func ethbWithdrawFeeWei(fromAddr string, amountWei uint64) (uint64, error) {
 	return liveGasFeeWei + bridgeFeeWei, nil
 }
 
-// bridgeWithdrawData is both the signed request body and the
-// transaction Data for a TxBridgeWithdraw - the recipient's real
-// Sepolia address and the amount (excluding the fee) to send them, in
-// wei as a decimal string (same convention as
-// ethCustodialWithdrawData.AmountWei). FeeWei is never sent by the
-// client (their signed envelope only ever carries To/AmountWei) - the
-// handler computes it live via ethbWithdrawFeeWei and sets it on this
-// same struct before re-marshaling for tx.Data, so apply-time reads a
-// trustworthy, already-decided number.
-type bridgeWithdrawData struct {
+// bridgeWithdrawRequest is exactly what the client signs - To/AmountWei
+// only. Kept as its own type (rather than inlined into
+// bridgeWithdrawData below) so verifyTxAuth's TxBridgeWithdraw case
+// (api/apply.go) can compare tx.AuthPayload against tx.Data using ONLY
+// this narrower type - unmarshaling tx.Data's superset JSON into it
+// simply ignores the extra "feeWei" key. Comparing the FULL
+// bridgeWithdrawData struct instead (as this code originally did) is a
+// real, previously-shipped bug: FeeWei is absent from the client's
+// signed payload (decodes to its zero value, 0) but always nonzero in
+// tx.Data once ethbWithdrawFeeWei computes a real live fee, so
+// signed==claimed would be false for every genuine withdrawal that
+// makes it this far - silently rejecting every real ERC-network
+// withdrawal as "unauthorized" the moment gas prices are nonzero.
+type bridgeWithdrawRequest struct {
 	To        string `json:"to"`
 	AmountWei string `json:"amountWei"`
-	FeeWei    uint64 `json:"feeWei,omitempty"`
+}
+
+// bridgeWithdrawData is the transaction Data for a TxBridgeWithdraw -
+// bridgeWithdrawRequest (what was signed) plus FeeWei, which the
+// handler computes live via ethbWithdrawFeeWei and sets on this same
+// struct before re-marshaling for tx.Data, so apply-time reads a
+// trustworthy, already-decided number. FeeWei is never part of what the
+// client signs - see bridgeWithdrawRequest's doc comment above for why
+// that matters to verifyTxAuth.
+type bridgeWithdrawData struct {
+	bridgeWithdrawRequest
+	FeeWei uint64 `json:"feeWei,omitempty"`
 }
 
 // bridgeWithdrawReserved tracks ETHB wei this node has already
@@ -104,156 +112,37 @@ func reservedBridgeWithdrawal(ethbAddress string) uint64 {
 	return bridgeWithdrawReserved.wei[ethbAddress]
 }
 
-// HandleBridgedEthWithdraw is the "ERC network" half of the auto-
-// bridge send flow (see api/eth_bridge.go's doc comment for the "CCT
-// network" half, applyTransfer's ETHB branch). Debits the caller's
-// ETHB balance for amount+ETHBridgeFeeWei through the normal signed-
-// tx/block-confirmation pipeline (auditable, replicated, same as
-// every other economic action in this app), then - deliberately NOT
-// waiting for that confirmation - broadcasts a real Sepolia
-// transaction for amount, synchronously, on this node only, reusing
-// buildAndBroadcastWithdrawal exactly like
-// HandleEthCustodialWithdraw's own real-broadcast step.
+// HandleBridgedEthWithdraw ("ERC network" ETHB withdrawal) is RETIRED.
+// It used to broadcast real Sepolia ETH out of a CreditChain-held
+// custodial account (see ethCustodialStore.Get(from) in the version of
+// this function this comment replaces) - but custodial accounts are no
+// longer creatable (see api/eth_custodial.go's
+// HandleCreateEthCustodialAccount), so there is no longer any
+// CreditChain-controlled reserve for this endpoint to draw from.
 //
-// This inherits that same handler's disclosed "not atomic" limitation:
-// the ETHB debit and the real broadcast are two separate steps, not
-// one. A crash between them leaves a debited-but-not-yet-broadcast
-// state (recoverable - nothing was actually sent); a crash or
-// non-confirmation of the debit tx after a successful broadcast
-// leaves a broadcast-but-not-debited state (NOT automatically
-// recoverable - see audit/KNOWN_GAPS.md's entry on this). This is a
-// disclosed, testnet-scoped simplification, not solved here - see
-// this project's own precedent at eth_custodial.go for why a two-
-// phase-commit/outbox pattern is judged disproportionate for a
-// testnet-value feature with no other precedent anywhere in this
-// codebase. reserveBridgeWithdrawal above closes the more urgent
-// double-broadcast race; this remaining gap is a single-request
-// crash-timing edge case, not a repeatable exploit.
+// This mirrors BTCB's own already-correct design exactly: BTCB has
+// never had a "withdraw from reserve" endpoint at all - real BTC moves
+// only ever happen via the user's own self-custodial signing
+// (send-bridged-btc.html's "BTC network" mode, client-side BIP143,
+// never touching a CreditChain-held key). ETHB now follows the same
+// shape - it stays a free, instant, CCT-network-only ledger mirror of
+// the user's self-custodial ETH balance (see applyTransfer's ETHB
+// branch); moving real ETH is always done directly through the
+// self-custodial account (api/eth_selfcustody.go, send-eth.html),
+// which never required a fee or a CreditChain-held key to begin with.
+//
+// core.TxBridgeWithdraw and applyBridgeWithdraw (api/apply.go) are
+// deliberately NOT removed - any already-confirmed historical
+// TxBridgeWithdraw transaction from before this retirement must still
+// replay identically when a node re-syncs the chain from genesis.
 func HandleBridgedEthWithdraw(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w)
-
-	if r.Method != http.MethodPost {
-		http.Error(w, "POST only", http.StatusMethodNotAllowed)
-		return
-	}
-	if ethRPCClient == nil || ethSigner == nil {
-		http.Error(w, "ETH bridge not enabled (no Sepolia RPC/signer configured)", http.StatusServiceUnavailable)
-		return
-	}
-
-	var req bridgeWithdrawData
-	auth, from, err := requireSignedRequest(r, &req)
-	if err != nil {
-		writeUnauthorized(w, err)
-		return
-	}
-
-	account, ok := ethCustodialStore.Get(from)
-	if !ok {
-		http.Error(w, "no custodial ETH account for this wallet - create one first", http.StatusBadRequest)
-		return
-	}
-	if !common.IsHexAddress(req.To) {
-		http.Error(w, "to must be a valid 0x Ethereum address", http.StatusBadRequest)
-		return
-	}
-	amountWei, ok := new(big.Int).SetString(req.AmountWei, 10)
-	if !ok || amountWei.Sign() <= 0 || !amountWei.IsUint64() {
-		http.Error(w, "amountWei must be a positive decimal integer string", http.StatusBadRequest)
-		return
-	}
-
-	feeWei, err := ethbWithdrawFeeWei(account.EthAddress, amountWei.Uint64())
-	if err != nil {
-		http.Error(w, "could not fetch live gas price to compute the withdrawal fee: "+err.Error(), http.StatusServiceUnavailable)
-		return
-	}
-	total := amountWei.Uint64() + feeWei // both operands already bounded above tokenStore's uint64 cap
-
-	ethbSide := resolveBalanceAddress(from, auth.PublicKey, "ETHB")
-
-	reserveBridgeWithdrawal(ethbSide, total)
-	available := bridgedEthStore.BalanceOf(ethbSide)
-	reserved := reservedBridgeWithdrawal(ethbSide)
-	if reserved > available {
-		// Insufficient (accounting for anything already in flight from
-		// this same address) - release what this request just reserved
-		// and fail before doing anything irreversible.
-		releaseBridgeWithdrawal(ethbSide, total)
-		http.Error(w, "insufficient ETHB balance for amount + live gas fee + bridge fee", http.StatusBadRequest)
-		return
-	}
-
-	// Snapshot the live-computed fee onto the SAME struct the client
-	// signed (req) before re-marshaling - the signature only ever
-	// covered To/AmountWei, so adding a server-computed field here
-	// doesn't invalidate anything already verified; see FeeWei's doc
-	// comment.
-	req.FeeWei = feeWei
-	data, _ := json.Marshal(req)
-	tx := recordTx(auth, from, req.To, amountWei.Uint64(), core.TxBridgeWithdraw, string(data))
-
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-
-	txHash, err := buildAndBroadcastWithdrawal(ctx, account.KeyRef, account.EthAddress, req.To, amountWei)
-	if err != nil {
-		// Nothing was actually sent - safe to release the reservation.
-		// The debit tx above is still in the mempool/may still confirm;
-		// this is the disclosed debited-but-not-broadcast edge case
-		// from this function's doc comment if it does.
-		releaseBridgeWithdrawal(ethbSide, total)
-		json.NewEncoder(w).Encode(map[string]any{
-			"status": "broadcast_failed",
-			"txId":   tx.ID,
-			"error":  err.Error(),
-		})
-		return
-	}
-
-	json.NewEncoder(w).Encode(map[string]any{
-		"status":    "broadcast",
-		"txId":      tx.ID,
-		"ethTxHash": txHash,
-		"feeWei":    feeWei,
-	})
+	http.Error(w, "ETHB ERC-network withdrawal is retired - CreditChain never holds an ETH signing key on your behalf. ETHB moves are CCT-network transfers only (instant, between CreditChain users); to move real ETH, use your self-custodial ETH account directly.", http.StatusGone)
 }
 
-// HandleBridgedEthWithdrawQuote is a read-only preview of A.3's live
-// ERC-network withdrawal fee - lets the frontend show a real,
-// currently-accurate fee estimate on the review screen before the user
-// commits, without spending a reservation slot or moving anything.
-// Re-derives the exact same number HandleBridgedEthWithdraw itself
-// would compute a moment later (small unavoidable staleness window,
-// same as any live-price quote).
+// HandleBridgedEthWithdrawQuote is RETIRED alongside HandleBridgedEthWithdraw
+// above - see that function's doc comment.
 func HandleBridgedEthWithdrawQuote(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w)
-
-	if ethRPCClient == nil {
-		http.Error(w, "ETH bridge not enabled (no Sepolia RPC configured)", http.StatusServiceUnavailable)
-		return
-	}
-
-	address := r.URL.Query().Get("address")
-	amountWeiStr := r.URL.Query().Get("amountWei")
-
-	account, ok := ethCustodialStore.Get(address)
-	if !ok {
-		http.Error(w, "no custodial ETH account for this wallet", http.StatusBadRequest)
-		return
-	}
-
-	amountWei, ok := new(big.Int).SetString(amountWeiStr, 10)
-	if !ok || amountWei.Sign() < 0 || !amountWei.IsUint64() {
-		http.Error(w, "amountWei must be a non-negative decimal integer string", http.StatusBadRequest)
-		return
-	}
-
-	feeWei, err := ethbWithdrawFeeWei(account.EthAddress, amountWei.Uint64())
-	if err != nil {
-		http.Error(w, "could not fetch live gas price: "+err.Error(), http.StatusServiceUnavailable)
-		return
-	}
-
-	json.NewEncoder(w).Encode(map[string]any{"feeWei": feeWei})
+	http.Error(w, "ETHB ERC-network withdrawal is retired - use your self-custodial ETH account directly to move real ETH.", http.StatusGone)
 }

@@ -28,7 +28,6 @@ async function loadProfile() {
 
     try {
         const w = await apiGet(`/wallet?address=${profileWallet.address}`);
-        document.getElementById("nodeId").innerText = w.nodeId || "Not Connected";
         document.getElementById("voting").innerText = w.votingPower;
     } catch (e) {
         console.error(e);
@@ -47,6 +46,12 @@ async function loadProfile() {
         const validators = await apiGet("/validators");
         const mine = validators.find((v) => v.address === profileWallet.address);
         document.getElementById("validator").innerText = mine && mine.active ? "Active" : "Inactive";
+        // wallet.NodeID (the old /wallet-sourced value this used to
+        // read) is dead state - never written anywhere in the live
+        // codebase. A validator's real node delegation lives on
+        // ValidatorStatus.AuthorizedNodeID instead, which this same
+        // /validators fetch already carries.
+        document.getElementById("nodeId").innerText = (mine && mine.authorizedNodeId) || "Not Connected";
     } catch (e) {
         console.error(e);
     }

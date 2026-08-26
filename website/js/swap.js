@@ -87,7 +87,8 @@ async function loadSwapFromBalance(symbol) {
     }
     try {
         const balance = await fetchTokenBalance(swapWallet, symbol);
-        document.getElementById("swapFromBalance").innerText = `Your balance: ${balance.balance} ${symbol}`;
+        const displayBalance = symbol === "CCT" ? cctFromSmallest(balance.balance) : balance.balance;
+        document.getElementById("swapFromBalance").innerText = `Your balance: ${displayBalance} ${symbol}`;
     } catch (e) {
         console.error(e);
     }
@@ -96,14 +97,14 @@ async function loadSwapFromBalance(symbol) {
 async function swapInPool() {
     const symbol = document.getElementById("swapPoolSymbol").value;
     const direction = document.getElementById("swapDirection").value;
-    const amountIn = parseInt(document.getElementById("swapAmount").value, 10);
+    const amountInStr = document.getElementById("swapAmount").value.trim();
     const statusEl = document.getElementById("swapStatus");
 
     if (!symbol) {
         statusEl.innerText = "No token selected.";
         return;
     }
-    if (!amountIn) {
+    if (!amountInStr) {
         statusEl.innerText = "Enter an amount to swap.";
         return;
     }
@@ -111,6 +112,12 @@ async function swapInPool() {
         statusEl.innerText = `${symbol} isn't tradeable yet - add liquidity first.`;
         return;
     }
+
+    // AmountIn is a decimal string regardless of direction - CCT
+    // smallest units for "cct_to_token", plain whole units of symbol
+    // for "token_to_cct" (see api/token_registry.go's poolSwapData doc
+    // comment) - only the CCT leg needs the 18-decimal conversion.
+    const amountIn = direction === "cct_to_token" ? cctToSmallest(amountInStr) : String(parseInt(amountInStr, 10));
 
     try {
         const result = await apiPostSigned("/pool/swap", { symbol, direction, amountIn });
@@ -123,17 +130,22 @@ async function swapInPool() {
 async function swapViaCCT() {
     const fromSymbol = document.getElementById("swapFrom").value;
     const toSymbol = document.getElementById("swapTo").value;
-    const amountIn = parseInt(document.getElementById("swapViaAmount").value, 10);
+    const amountInStr = document.getElementById("swapViaAmount").value.trim();
     const statusEl = document.getElementById("swapViaStatus");
 
     if (fromSymbol === toSymbol) {
         statusEl.innerText = "Pick two different tokens.";
         return;
     }
-    if (!amountIn) {
+    if (!amountInStr) {
         statusEl.innerText = "Enter an amount to swap.";
         return;
     }
+
+    // Same one-wire-shape-for-both convention as poolSwapData.AmountIn -
+    // CCT smallest units when fromSymbol is CCT, plain whole units of
+    // fromSymbol otherwise (see api/token_registry.go's swapViaCCTData).
+    const amountIn = fromSymbol === "CCT" ? cctToSmallest(amountInStr) : String(parseInt(amountInStr, 10));
 
     try {
         const result = await apiPostSigned("/swap", { fromSymbol, toSymbol, amountIn });

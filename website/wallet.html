@@ -2,18 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Wallet - OUTERNET</title>
-<link rel="stylesheet" href="css/theme.css">
-<link rel="stylesheet" href="css/style.css">
-<link rel="stylesheet" href="css/outernet.css">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+<link rel="stylesheet" href="css/style.css?v=fixaug5c">
+<link rel="stylesheet" href="css/outernet.css?v=fixaug5d">
 </head>
 <body class="outernet-light">
-<script src="js/device-lock.js"></script>
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <div class="main" style="max-width:640px;margin:0 auto;padding:24px 16px;">
 
-    <p><a href="outernet.html" style="color:var(--cc-accent-gold, #c9a227);">&larr; OUTERNET</a></p>
+    <p><a href="outernet" style="color:var(--cc-accent-gold, #c9a227);">&larr; OUTERNET</a></p>
 
     <section class="wallet-hero dash-panel">
 
@@ -29,7 +30,7 @@
 
             <span class="wallet-address-chip">
                 <button
-                onclick="showReceiveAddress()"
+                onclick="openReceivePicker()"
                 title="Show QR code for your address"
                 style="background:none;border:none;color:inherit;font:inherit;cursor:pointer;padding:0;">
                     <span id="wallet">-</span>
@@ -48,21 +49,25 @@
         </div>
 
         <div class="quick-actions">
-            <button onclick="location.href='send.html'">
+            <button onclick="location.href='send'">
                 <span class="qa-icon">&#8593;</span>
                 Send
             </button>
-            <button onclick="showReceiveAddress()">
+            <button onclick="openReceivePicker()">
                 <span class="qa-icon">&#8595;</span>
                 Receive
             </button>
-            <button onclick="location.href='staking.html'">
+            <button onclick="location.href='staking'">
                 <span class="qa-icon">%</span>
                 Stake
             </button>
             <button onclick="claimFaucet()">
                 <span class="qa-icon">&#128167;</span>
                 Faucet
+            </button>
+            <button onclick="location.href='buy-cct'">
+                <span class="qa-icon">$</span>
+                Buy CCT
             </button>
         </div>
         <p id="faucetStatus"></p>
@@ -72,7 +77,7 @@
     <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;">
             <h2 style="margin:0;">Assets</h2>
-            <a href="assets.html" style="color:var(--cc-accent-gold, #c9a227);font-size:12px;">View All &rarr;</a>
+            <a href="assets" style="color:var(--cc-accent-gold, #c9a227);font-size:12px;">View All &rarr;</a>
         </div>
         <div id="assetsList">
             <p class="explorer-empty" style="opacity:0.6;">Loading...</p>
@@ -83,8 +88,8 @@
         <h2 style="margin:0 0 8px;">Your Referral Link</h2>
         <p style="opacity:0.75;font-size:12px;margin:0 0 10px;">
             Share this link - people who register through it count toward your referral total,
-            which boosts your <a href="governance.html" style="color:var(--cc-accent-gold, #c9a227);">governance voting weight</a>
-            and <a href="borrow.html" style="color:var(--cc-accent-gold, #c9a227);">borrowing power</a>.
+            which boosts your <a href="governance" style="color:var(--cc-accent-gold, #c9a227);">governance voting weight</a>
+            and <a href="borrow" style="color:var(--cc-accent-gold, #c9a227);">borrowing power</a>.
         </p>
         <p style="word-break:break-all;font-family:monospace;font-size:12px;background:rgba(15,157,88,0.08);border-radius:8px;padding:10px;" id="referralLink">-</p>
         <button type="button" class="copy-icon" id="referralCopyIcon" title="Copy link" onclick="copyReferralLink()">&#128203; Copy</button>
@@ -92,31 +97,66 @@
     </div>
 
     <p style="margin-top:20px;">
-        <a href="profile.html">Profile</a> &nbsp;|&nbsp;
-        <a href="network.html">Network</a> &nbsp;|&nbsp;
-        <a href="explorer.html">Explorer</a> &nbsp;|&nbsp;
-        <a href="outernet.html">Back to OUTERNET</a>
+        <a href="profile">Profile</a> &nbsp;|&nbsp;
+        <a href="network">Network</a> &nbsp;|&nbsp;
+        <a href="explorer">Explorer</a> &nbsp;|&nbsp;
+        <a href="outernet">Back to OUTERNET</a>
     </p>
 
 </div>
 
 <div
+id="receivePickerOverlay"
+style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;z-index:10000;">
+    <div style="background:#ffffff;color:#111827;border-radius:16px;padding:25px;max-width:90vw;width:340px;text-align:center;">
+        <h3 style="margin-top:0;">Receive - Choose a Token</h3>
+        <p style="color:#6b7280;font-size:12px;margin-top:-8px;">
+            This shows your CreditChain-network address for the token you pick. To receive on a token's own
+            external network instead (e.g. real Bitcoin or Ethereum), open that token's page and use Receive there.
+        </p>
+        <div id="receivePickerList" style="display:flex;flex-direction:column;gap:8px;margin-top:15px;">
+            <button onclick="selectReceiveToken('CCT')" style="width:100%;text-align:left;padding:12px 14px;border-radius:10px;border:1px solid #e5e7eb;background:#f9fafb;color:#111827;cursor:pointer;font-size:14px;">CCT</button>
+            <button onclick="receiveEthPicked()" style="width:100%;text-align:left;padding:12px 14px;border-radius:10px;border:1px solid #e5e7eb;background:#f9fafb;color:#111827;cursor:pointer;font-size:14px;">ETH</button>
+            <button onclick="location.href='asset?symbol=BTCB'" style="width:100%;text-align:left;padding:12px 14px;border-radius:10px;border:1px solid #e5e7eb;background:#f9fafb;color:#111827;cursor:pointer;font-size:14px;">BTC (bridged)</button>
+            <button onclick="receiveUsdcPicked()" style="width:100%;text-align:left;padding:12px 14px;border-radius:10px;border:1px solid #e5e7eb;background:#f9fafb;color:#111827;cursor:pointer;font-size:14px;">USDC</button>
+            <button onclick="selectReceiveToken('YENE')" style="width:100%;text-align:left;padding:12px 14px;border-radius:10px;border:1px solid #e5e7eb;background:#f9fafb;color:#111827;cursor:pointer;font-size:14px;">YEN-e</button>
+        </div>
+        <button onclick="closeReceivePicker()" style="margin-top:15px;">Cancel</button>
+    </div>
+</div>
+
+<div
 id="qrModalOverlay"
 style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;z-index:10000;">
-    <div style="background:var(--cc-bg-2, #082616);border-radius:16px;padding:25px;max-width:90vw;text-align:center;">
-        <h3 style="margin-top:0;">Your Receive Address</h3>
+    <div style="background:#ffffff;color:#111827;border-radius:16px;padding:25px;max-width:90vw;text-align:center;">
+        <h3 id="qrModalTitle" style="margin-top:0;">Your Receive Address</h3>
         <canvas id="qrCanvas" style="max-width:80vw;height:auto;border-radius:8px;"></canvas>
         <p id="qrAddressText" style="word-break:break-all;font-family:monospace;font-size:13px;margin:15px 0;"></p>
-        <p style="opacity:0.75;font-size:12px;">Copied to clipboard if supported. Anyone can send you test tokens by scanning this or entering the address on the Send page.</p>
+        <p style="color:#6b7280;font-size:12px;" id="qrReceiveHint">Copied to clipboard if supported. Anyone can send you test tokens by scanning this or entering the address on the Send page.</p>
+        <button onclick="backToReceivePicker()">&larr; Choose a different token</button>
         <button onclick="closeQrModal()">Close</button>
     </div>
 </div>
 
-<script src="js/api.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/qrcode.js"></script>
-<script src="js/assets.js"></script>
-<script src="js/wallet-page.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/ai-assistant.js?v=fixaug5b"></script>
+<script src="js/qrcode.js?v=fixaug5b"></script>
+<script src="js/currency.js?v=fixaug5b"></script>
+<script src="js/coin-icons.js?v=fixaug5b"></script>
+<script src="js/vault.js?v=sec0816c"></script>
+<script src="js/assets.js?v=fixaug5c"></script>
+<script src="js/wallet-page.js?v=fixaug5b"></script>
+<script>
+// Display-copy only - "test tokens" reads wrong once real value is on
+// the line on mainnet, even though the underlying balances/QR code are
+// unchanged either way.
+(function mainnetAwareReceiveHint() {
+    if (window.CC_NETWORK !== "mainnet") return;
+    const hint = document.getElementById("qrReceiveHint");
+    if (hint) hint.innerText = "Copied to clipboard if supported. Anyone can send you assets by scanning this or entering the address on the Send page.";
+})();
+</script>
 
 </body>
 </html>

@@ -5,6 +5,9 @@
 
 async function loadNetwork() {
     try {
+        document.getElementById("networkNameLabel").innerText =
+            window.CC_NETWORK === "mainnet" ? "CreditChain Mainnet" : "CreditChain Testnet";
+
         const data = await apiGet("/network");
 
         document.getElementById("height").innerText = data.blockHeight;
@@ -13,8 +16,10 @@ async function loadNetwork() {
         document.getElementById("validators").innerText = data.activeValidators;
         document.getElementById("tps").innerText = data.tps;
         document.getElementById("gas").innerText = data.gasPrice;
-        document.getElementById("supply").innerText = data.totalSupply;
-        document.getElementById("circulating").innerText = data.circulatingSupply;
+        // TotalSupply/CirculatingSupply are 18-decimal smallest-unit
+        // decimal strings now (see api/network.go).
+        document.getElementById("supply").innerText = cctFromSmallest(data.totalSupply);
+        document.getElementById("circulating").innerText = cctFromSmallest(data.circulatingSupply);
         document.querySelector(".network-live").innerText = `● ${data.status}`;
     } catch (e) {
         console.error(e);

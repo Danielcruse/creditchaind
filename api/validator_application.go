@@ -26,9 +26,10 @@ import (
 // fact.
 //
 // Stage 1: any activated-governance wallet can support an open
-// application; once SupportWeight crosses 1% of governanceTotalWeight,
-// the application advances to PENDING_NODE_PROOF and an email link is
-// sent to the applicant's on-file recovery address.
+// application; once SupportWeight crosses validatorApplicationRequiredWeight
+// (a stepped count, not a flat percentage - see that function's doc
+// comment), the application advances to PENDING_NODE_PROOF and an
+// email link is sent to the applicant's on-file recovery address.
 // Stage 2: the applicant signs a confirm request carrying the emailed
 // token, proving both wallet control and receipt of the email: this
 // records TxValidatorApplicationConfirm, which only succeeds if the
@@ -41,12 +42,54 @@ import (
 
 var validatorApplicationStore = core.NewValidatorApplicationStore()
 
-// validatorApplicationSupportThresholdPercent is "gains at least 1
-// percent trust of total blockchain or governance count" per the
-// user's own wording - integer basis, not a specified model.
-const validatorApplicationSupportThresholdPercent = 1
-
 const validatorApplicationTokenValiditySeconds = 7 * 24 * 3600 // 7 days
+
+// validatorApplicationRequiredWeight is a stepped, count-based bar
+// rather than a flat percentage of total governance weight - the
+// user's explicit ask: the very first-ever applicant needs just one
+// supporting vote (any activated wallet's weight, which floors at 1 -
+// see votingWeight's doc comment), and each applicant after that needs
+// one more than the last, keyed off how many have already been
+// approved. A flat percentage of governanceTotalWeight() was either
+// unreachable (near-zero activated governance weight early on) or
+// meaninglessly easy later - this scales with real adoption instead,
+// mirroring the same per-count-scaling precedent already used for
+// validatorRegisterFeeForCount/minValidatorStakeForCount.
+func validatorApplicationRequiredWeight() uint64 {
+	return uint64(validatorApplicationStore.ApprovedCount()) + 1
+}
+
+// Reputation floor + per-wallet vote cap on supporting validator
+// applications - the user's own explicit numbers ("if needed
+// reputation is 30 a user with reputation up to 90 can make 3
+// votes"). Read literally: 30 is the minimum Trust Score to support
+// any application at all, and 3 is the maximum number of distinct
+// applications one wallet can ever throw its support behind - a flat
+// cap for every wallet clearing the 30 floor, not a second reputation-
+// scaled tier, since only one bracket was actually specified. Flagged
+// as a judgment call on the exact wording, not a guess at unspecified
+// tiers above reputation 90.
+const validatorApplicationMinReputationToVote = 30
+const validatorApplicationBaseMaxVotesPerWallet = 3
+
+// rcPerExtraVoteCapSlot/maxExtraVoteCapSlots let RC (REPT) balance
+// raise a wallet's flat support-vote cap above the base 3 - a judgment
+// call, not derived from any spec: +1 extra vote slot per 50 RC held,
+// capped at +5 extra slots (ceiling of 8 total) so RC can meaningfully
+// help but never remove the cap entirely.
+const rcPerExtraVoteCapSlot = 50
+const maxExtraVoteCapSlots = 5
+
+// validatorApplicationVoteCapFor is the RC-scaled replacement for the
+// old flat validatorApplicationMaxVotesPerWallet constant - every call
+// site that used to read the constant directly now calls this instead.
+func validatorApplicationVoteCapFor(address string) uint64 {
+	extra := reptStore.BalanceOf(address) / rcPerExtraVoteCapSlot
+	if extra > maxExtraVoteCapSlots {
+		extra = maxExtraVoteCapSlots
+	}
+	return validatorApplicationBaseMaxVotesPerWallet + extra
+}
 
 func newConfirmToken() string {
 	b := make([]byte, 32)
@@ -104,8 +147,22 @@ func HandleSupportValidatorApplication(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "address required", http.StatusBadRequest)
 		return
 	}
-	if walletStore.Get(address).VotingPower == 0 {
+	wallet := walletStore.Get(address)
+	if wallet.VotingPower == 0 {
 		http.Error(w, "activate governance before supporting an application", http.StatusForbidden)
+		return
+	}
+	// Governance Trust specifically - supporting a validator application
+	// is a governance act, same reasoning as votingWeight's own
+	// redirect (api/governance_weight.go).
+	governanceTrust := core.TrustDimensionValue(wallet, core.DimensionGovernance)
+	if governanceTrust < validatorApplicationMinReputationToVote {
+		http.Error(w, fmt.Sprintf("reputation %d is below the minimum (%d) to support a validator application", governanceTrust, validatorApplicationMinReputationToVote), http.StatusForbidden)
+		return
+	}
+	voteCap := validatorApplicationVoteCapFor(address)
+	if uint64(validatorApplicationStore.SupportCountFor(address)) >= voteCap {
+		http.Error(w, fmt.Sprintf("you've already used all %d of your validator-application votes", voteCap), http.StatusForbidden)
 		return
 	}
 
@@ -167,7 +224,66 @@ func HandleGetValidatorApplication(w http.ResponseWriter, r *http.Request) {
 		"exists":         true,
 		"status":         app.Status,
 		"supportWeight":  app.SupportWeight,
-		"requiredWeight": governanceTotalWeight() * validatorApplicationSupportThresholdPercent / 100,
+		"requiredWeight": validatorApplicationRequiredWeight(),
+	})
+}
+
+// HandleListValidatorApplications is the "intending validators" list
+// governance.html's new tab reads - every OPEN application, so anyone
+// can see who's asking for community support and vote for them. A
+// public read, same "an application's support level carries no value
+// to protect" reasoning as HandleGetValidatorApplication above.
+func HandleListValidatorApplications(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	required := validatorApplicationRequiredWeight()
+	open := validatorApplicationStore.ListOpen()
+	out := make([]map[string]any, 0, len(open))
+	for _, a := range open {
+		out = append(out, map[string]any{
+			"address":        a.Address,
+			"reputation":     walletStore.Get(a.Address).Reputation,
+			"supportWeight":  a.SupportWeight,
+			"requiredWeight": required,
+			"createdAt":      a.CreatedAt,
+		})
+	}
+	json.NewEncoder(w).Encode(out)
+}
+
+// HandleMyValidatorVotes tells the caller's own eligibility/remaining
+// votes for the intending-validators list - purely informational, so
+// the frontend can show "2 of 3 votes remaining" or explain why the
+// Support button is disabled, rather than the user finding out only
+// after a rejected POST.
+func HandleMyValidatorVotes(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	address := r.URL.Query().Get("address")
+	if address == "" {
+		http.Error(w, "address required", http.StatusBadRequest)
+		return
+	}
+
+	wallet := walletStore.Get(address)
+	votesUsed := uint64(validatorApplicationStore.SupportCountFor(address))
+	voteCap := validatorApplicationVoteCapFor(address)
+	// voteCap can, in principle, fall (e.g. RC spent via promote/infuse
+	// after votes were already cast under a higher cap) - clamp rather
+	// than underflow the unsigned subtraction below.
+	var votesRemaining uint64
+	if voteCap > votesUsed {
+		votesRemaining = voteCap - votesUsed
+	}
+	governanceTrust := core.TrustDimensionValue(wallet, core.DimensionGovernance)
+	json.NewEncoder(w).Encode(map[string]any{
+		"reputation":       governanceTrust,
+		"minReputation":    validatorApplicationMinReputationToVote,
+		"eligible":         wallet.VotingPower != 0 && governanceTrust >= validatorApplicationMinReputationToVote,
+		"votesUsed":        votesUsed,
+		"maxVotes":         voteCap,
+		"votesRemaining":   votesRemaining,
+		"governanceActive": wallet.VotingPower != 0,
 	})
 }
 
@@ -180,7 +296,14 @@ func applyValidatorApplicationSupport(tx core.Transaction) {
 	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
 		return
 	}
-	if walletStore.Get(tx.From).VotingPower == 0 {
+	wallet := walletStore.Get(tx.From)
+	if wallet.VotingPower == 0 {
+		return
+	}
+	if core.TrustDimensionValue(wallet, core.DimensionGovernance) < validatorApplicationMinReputationToVote {
+		return
+	}
+	if uint64(validatorApplicationStore.SupportCountFor(tx.From)) >= validatorApplicationVoteCapFor(tx.From) {
 		return
 	}
 
@@ -189,7 +312,7 @@ func applyValidatorApplicationSupport(tx core.Transaction) {
 		return
 	}
 
-	requiredWeight := int64(governanceTotalWeight() * validatorApplicationSupportThresholdPercent / 100)
+	requiredWeight := int64(validatorApplicationRequiredWeight())
 	token := newConfirmToken()
 	expiresAt := tx.Timestamp + validatorApplicationTokenValiditySeconds
 	if !validatorApplicationStore.AdvanceToNodeProof(data.Address, token, expiresAt, requiredWeight) {

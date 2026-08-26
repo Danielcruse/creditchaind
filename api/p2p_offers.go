@@ -15,10 +15,10 @@ var p2pOfferStore = core.NewP2POfferStore()
 // wallets, no AMM involved, so CCT/REPT (which lookupCustomToken
 // doesn't resolve, since neither is ever pool-paired against itself)
 // need to be included here too.
-func resolveTokenStore(symbol string) (*core.TokenStore, error) {
+func resolveTokenStore(symbol string) (wholeUnitStore, error) {
 	switch symbol {
 	case "CCT":
-		return tokenStore, nil
+		return cctAdapter, nil
 	case "REPT":
 		return reptStore, nil
 	case "ETHB":
@@ -33,6 +33,26 @@ func resolveTokenStore(symbol string) (*core.TokenStore, error) {
 		// Same reasoning as ETHB - real bridged testnet BTC 1:1, never
 		// floated against CCT via an AMM pool.
 		return bridgedBtcStore, nil
+	case "ETH_CCC1":
+		// Real vault-locked ETH, unlike ETHB - see
+		// ccc1DecimalWholeUnitAdapter's doc comment (api/token.go) for
+		// why this needs an adapter instead of resolving directly.
+		// Lets a plain send.html/asset.html "send to a CreditChain
+		// user" flow move ETH_CCC1 balance-to-balance instantly (no
+		// burn, no validator co-sign) via the same generic
+		// /token/transfer path ETHB already uses - only a real-address
+		// withdrawal (vault-withdraw.html) needs the burn+release path.
+		return ethCcc1TransferAdapter, nil
+	case "USDC_CCC1":
+		return usdcCcc1TransferAdapter, nil
+	case "STETH_CCC1":
+		// Real vault-locked Lido stETH - see api/eth_liquid_stake.go's
+		// doc comment for the staking flow this backs.
+		return stethCcc1TransferAdapter, nil
+	case "BTC_CCC1":
+		// btcCcc1Store is already a plain *core.TokenStore - no adapter
+		// needed, same as BTCB above.
+		return btcCcc1Store, nil
 	}
 	store, _, err := lookupCustomToken(symbol)
 	return store, err

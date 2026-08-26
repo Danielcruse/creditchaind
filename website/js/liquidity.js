@@ -56,8 +56,11 @@ async function loadPoolInfo(symbol) {
             `/pool?symbol=${encodeURIComponent(symbol)}&address=${liqWallet ? liqWallet.address : ""}`
         );
 
+        // cctReserve/totalShares/yourShares are 18-decimal smallest-unit
+        // decimal strings now (see api/token_registry.go's poolInfo).
+        const cctReserveDisplay = cctFromSmallest(info.cctReserve);
         const statusLine = info.tradeable
-            ? `Tradeable - 1 ${symbol} = ${(info.cctReserve / info.tokenReserve).toFixed(4)} CCT`
+            ? `Tradeable - 1 ${symbol} = ${(parseFloat(cctReserveDisplay) / info.tokenReserve).toFixed(4)} CCT`
             : "Not tradeable yet - add liquidity below to give it a price.";
 
         let balanceLine = "";
@@ -66,13 +69,13 @@ async function loadPoolInfo(symbol) {
                 fetchTokenBalance(liqWallet, "CCT"),
                 fetchTokenBalance(liqWallet, symbol),
             ]);
-            balanceLine = `<p>Your balance: ${cctBalance.balance} CCT / ${tokenBalance.balance} ${symbol}</p>`;
+            balanceLine = `<p>Your balance: ${cctFromSmallest(cctBalance.balance)} CCT / ${tokenBalance.balance} ${symbol}</p>`;
         }
 
         document.getElementById("liqPoolInfo").innerHTML = `
-            <p>Reserves: ${info.cctReserve} CCT / ${info.tokenReserve} ${symbol}</p>
+            <p>Reserves: ${cctReserveDisplay} CCT / ${info.tokenReserve} ${symbol}</p>
             <p style="color:${info.tradeable ? "#059669" : "#dc2626"};">${statusLine}</p>
-            <p>Your LP shares: ${info.yourShares || 0} of ${info.totalShares} total</p>
+            <p>Your LP shares: ${info.yourShares ? cctFromSmallest(info.yourShares) : 0} of ${cctFromSmallest(info.totalShares)} total</p>
             ${balanceLine}
         `;
     } catch (e) {
@@ -82,7 +85,7 @@ async function loadPoolInfo(symbol) {
 
 async function addLiquidity() {
     const symbol = document.getElementById("liqPoolSymbol").value;
-    const cctAmount = parseInt(document.getElementById("liqAddCCT").value, 10);
+    const cctAmountStr = document.getElementById("liqAddCCT").value.trim();
     const tokenAmount = parseInt(document.getElementById("liqAddToken").value, 10);
     const statusEl = document.getElementById("liqPoolStatus");
 
@@ -94,7 +97,7 @@ async function addLiquidity() {
         statusEl.innerText = `${symbol} trades on the Order Book now - see order-book.html.`;
         return;
     }
-    if (!cctAmount || !tokenAmount) {
+    if (!cctAmountStr || !tokenAmount) {
         statusEl.innerText = "Enter both a CCT amount and a token amount.";
         return;
     }
@@ -102,7 +105,10 @@ async function addLiquidity() {
     try {
         const result = await apiPostSigned("/pool/add-liquidity", {
             symbol,
-            cctAmount,
+            // cctAmount is now an 18-decimal smallest-unit string (see
+            // api/token_registry.go's poolAddLiquidityData) - tokenAmount
+            // (the OTHER leg, always non-CCT) stays a plain whole uint64.
+            cctAmount: cctToSmallest(cctAmountStr),
             tokenAmount,
         });
         statusEl.innerText = `Liquidity pending confirmation (tx ${result.txId}).`;
@@ -114,20 +120,24 @@ async function addLiquidity() {
 
 async function removeLiquidity() {
     const symbol = document.getElementById("liqPoolSymbol").value;
-    const shares = parseInt(document.getElementById("liqRemoveShares").value, 10);
+    const sharesStr = document.getElementById("liqRemoveShares").value.trim();
     const statusEl = document.getElementById("liqPoolStatus");
 
     if (!symbol) {
         statusEl.innerText = "No token selected.";
         return;
     }
-    if (!shares) {
+    if (!sharesStr) {
         statusEl.innerText = "Enter shares to remove.";
         return;
     }
 
     try {
-        const result = await apiPostSigned("/pool/remove-liquidity", { symbol, shares });
+        // Shares use the same 18-decimal smallest-unit decimal string
+        // encoding as CCT (see core/liquidity_pool.go) - the user types
+        // the same human amount shown by loadPoolInfo's "Your LP shares"
+        // line, so it round-trips through cctToSmallest the same way.
+        const result = await apiPostSigned("/pool/remove-liquidity", { symbol, shares: cctToSmallest(sharesStr) });
         statusEl.innerText = `Removal pending confirmation (tx ${result.txId}).`;
         setTimeout(() => loadPoolInfo(symbol), 9000);
     } catch (e) {

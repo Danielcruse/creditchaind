@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
-	"time"
 
 	"github.com/creditchain/creditchaind/core"
 )
@@ -19,17 +18,14 @@ var delegationStore = core.NewDelegationStore()
 // something is immediately eligible.
 const MinValidatorReputation = 50
 
-// ProduceBlockReward is the flat CCT reward minted per block produced
-// by a registered validator via /validators/produce-block.
-const ProduceBlockReward = 10
-
 // ValidatorRegisterFeeCCT is a CCT anti-spam cost for registering as a
 // validator - same pattern as HubApplyFeeCCT/ModeratorRegisterFeeCCT,
 // paid to registrationFeeAddress (api/apply.go). Highest of the three
-// registration fees: a validator produces blocks and earns
-// ProduceBlockReward indefinitely, the most consequential and highest-
-// trust of the three roles - this is on top of, not instead of, the
-// existing core.MinValidatorStake CCT stake requirement.
+// registration fees: a validator produces blocks and earns the PoSR
+// block reward (see pendingBurnBasedBlockReward) indefinitely, the
+// most consequential and highest-trust of the three roles - this is
+// on top of, not instead of, the existing core.MinValidatorStake CCT
+// stake requirement.
 const ValidatorRegisterFeeCCT = 50
 
 // validatorScalingBlockSize/validatorScalingIncrementPercent implement
@@ -79,10 +75,10 @@ type ValidatorInfo struct {
 	// frontend can show "X / Y CCT staked" without hardcoding the
 	// threshold client-side.
 	MinStakeRequired uint64 `json:"minStakeRequired"`
-	// CurrentBlockReward is PoSR's controlled-inflation decaying
-	// reward (see blockRewardForTimestamp) for the current era - what
-	// a validator actually earns per block right now, not a fixed
-	// constant.
+	// CurrentBlockReward is PoSR's burn-based block reward (see
+	// pendingBurnBasedBlockReward) as it stands right now - 90% of the
+	// CCT burned from platform fees since the last block, not a fixed
+	// constant. Zero when no CCT has been burned since the last block.
 	CurrentBlockReward uint64 `json:"currentBlockReward"`
 
 	// Pool fields - see core.DelegationStore and
@@ -133,7 +129,7 @@ func toValidatorInfo(v *core.ValidatorStatus, totalEffectiveStakeAcrossAll uint6
 		EffectiveStake:     effectiveStake,
 		EstimatedAPY:       estimateDelegatorAPY(v, effectiveStake, totalDelegated, totalEffectiveStakeAcrossAll),
 		MinStakeRequired:   minValidatorStakeForCount(len(validatorStore.Validators)),
-		CurrentBlockReward: blockRewardForTimestamp(time.Now().Unix()),
+		CurrentBlockReward: pendingBurnBasedBlockReward(),
 	}
 }
 
@@ -148,13 +144,19 @@ func toValidatorInfo(v *core.ValidatorStatus, totalEffectiveStakeAcrossAll uint6
 // core's unexported validatorWeight here - transparently labeled as
 // an estimate in both this field's name and the frontend copy that
 // displays it.
+//
+// The per-block reward itself is now burn-based (see
+// pendingBurnBasedBlockReward), not a fixed constant, so this
+// projects forward using whatever the reward stands at right now -
+// an extra layer of approximation on top of the stake-share one
+// above, since real fee/burn activity varies block to block.
 func estimateDelegatorAPY(v *core.ValidatorStatus, effectiveStake, totalDelegated, totalEffectiveStakeAcrossAll uint64) float64 {
 	if !v.Active || effectiveStake == 0 || totalDelegated == 0 || totalEffectiveStakeAcrossAll == 0 {
 		return 0
 	}
 	share := float64(effectiveStake) / float64(totalEffectiveStakeAcrossAll)
 	blocksPerYear := float64(365*24*3600) / consensusTickInterval.Seconds()
-	annualPoolReward := blocksPerYear * share * float64(ProduceBlockReward)
+	annualPoolReward := blocksPerYear * share * float64(pendingBurnBasedBlockReward())
 	delegatorAnnualReward := annualPoolReward * float64(10000-v.CommissionBps) / 10000
 	return delegatorAnnualReward / float64(totalDelegated) * 100
 }
@@ -259,7 +261,7 @@ func HandleRegisterValidator(
 	}
 
 	registerFee := validatorRegisterFeeForCount(validatorCount)
-	if tokenStore.BalanceOf(address) < registerFee {
+	if !hasCctBalance(address, registerFee) {
 		http.Error(w, fmt.Sprintf("you need at least %d CCT to cover the validator registration fee", registerFee), http.StatusBadRequest)
 		return
 	}
@@ -417,8 +419,22 @@ func HandleDelegateToValidator(
 	// applyValidatorDelegate's Transfer call, same "spare the caller a
 	// pending tx that's certain to be dropped" courtesy every other
 	// handler in this codebase follows.
-	if tokenStore.BalanceOf(address) < req.Amount {
+	if !hasCctBalance(address, req.Amount) {
 		http.Error(w, "insufficient CCT balance to delegate", http.StatusBadRequest)
+		return
+	}
+
+	// An active moderator can't delegate away the staked CCT their own
+	// registration floor depends on - staking and delegating are
+	// separate pools (see core.DelegationStore's doc comment), so
+	// nothing else would otherwise stop a moderator from delegating
+	// their whole self-stake to a validator and silently dropping below
+	// the requirement they registered under.
+	if shortfall := activeModeratorStakeShortfall(address, req.Amount); shortfall > 0 {
+		http.Error(w, fmt.Sprintf(
+			"delegating %d CCT would drop your available staked CCT below your moderator requirement - stake at least %d more CCT first",
+			req.Amount, shortfall,
+		), http.StatusBadRequest)
 		return
 	}
 
@@ -472,7 +488,7 @@ func HandleUndelegateFromValidator(
 		map[string]any{
 			"status":                 "pending",
 			"txId":                   tx.ID,
-			"unbondingPeriodSeconds": core.UnbondingPeriodSeconds,
+			"unbondingPeriodSeconds": governanceParamsStore.GetOrDefault("UnbondingPeriodSeconds", uint64(core.UnbondingPeriodSeconds)),
 		},
 	)
 }

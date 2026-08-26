@@ -36,7 +36,7 @@ func HandleUnstake(
 		req.Symbol = "ETHTEST"
 	}
 	if _, err := stakeTokenStore(req.Symbol); err != nil {
-		http.Error(w, fmt.Sprintf("unsupported stake symbol %q - must be CCT, ETHTEST, or USDCTEST", req.Symbol), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("unsupported stake symbol %q - must be CCT, ETHB, ETH_CCC1, or a legacy ETHTEST/USDCTEST position", req.Symbol), http.StatusBadRequest)
 		return
 	}
 
@@ -53,7 +53,7 @@ func HandleUnstake(
 			"status":              "pending",
 			"txId":                tx.ID,
 			"symbol":              req.Symbol,
-			"unbondingPeriodSecs": core.UnbondingPeriodSeconds,
+			"unbondingPeriodSecs": governanceParamsStore.GetOrDefault("UnbondingPeriodSeconds", uint64(core.UnbondingPeriodSeconds)),
 		},
 	)
 }

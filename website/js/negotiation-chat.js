@@ -80,7 +80,7 @@ async function renderChatModal(id) {
     document.getElementById("chatMessages").innerHTML = (n.Messages || [])
         .map((m) => {
             const mine = m.Sender === wallet.address;
-            return `<div class="chat-message ${mine ? "mine" : "theirs"}"><span class="sender">${mine ? "You" : m.Sender.slice(0, 10)}</span>${m.Text}</div>`;
+            return `<div class="chat-message ${mine ? "mine" : "theirs"}"><span class="sender">${mine ? "You" : escapeHtml(m.Sender.slice(0, 10))}</span>${escapeHtmlMultiline(m.Text)}</div>`;
         })
         .join("");
 

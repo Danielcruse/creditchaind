@@ -75,6 +75,20 @@ func HandleAdminTransfer(
 // state alone" convention as every other apply function in this
 // file. Silently no-ops on insufficient balance or an unresolvable
 // symbol, matching TokenStore.Transfer's own established behavior.
+//
+// From/To are normalized before use, through both normalizers in
+// sequence - same incident class as creditVaultReleaseFeeToRelayer's
+// own doc comment (api/vault_fee.go): an operator typing a checksummed/
+// mixed-case ETH-style address into this admin tool would otherwise
+// move a balance to a key no normal ETH_CCC1/USDC_CCC1 balance query
+// could ever find again - exactly what happened using this tool to
+// "fix" the first incident, discovered immediately after by re-checking
+// the destination balance. A second, equivalent incident later hit a
+// CreditChain-native "cc"-prefixed address the same way (see
+// normalizeCreditChainAddress's own doc comment) - both normalizers are
+// applied unconditionally regardless of symbol, since each only touches
+// the address family it recognizes (0x-prefixed vs. cc-prefixed) and
+// passes anything else through completely unchanged.
 func applyAdminTransfer(tx core.Transaction) {
 	var data adminTransferData
 	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
@@ -83,9 +97,11 @@ func applyAdminTransfer(tx core.Transaction) {
 	if data.Amount == 0 || data.From == "" || data.To == "" {
 		return
 	}
+	data.From = normalizeEthAddress(normalizeCreditChainAddress(data.From))
+	data.To = normalizeEthAddress(normalizeCreditChainAddress(data.To))
 
 	if data.Symbol == "" || data.Symbol == "CCT" {
-		tokenStore.Transfer(data.From, data.To, data.Amount)
+		cctStore.Transfer(data.From, data.To, core.FormatCctSmallest(core.CctWholeToSmallest(data.Amount)))
 		return
 	}
 

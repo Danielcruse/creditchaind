@@ -4,18 +4,19 @@
 <meta charset="UTF-8">
 <meta
 name="viewport"
-content="width=device-width, initial-scale=1">
+content="width=device-width, initial-scale=1, maximum-scale=1">
 
 <title>OUTERNET</title>
 
-<link
-rel="stylesheet"
-<link rel="stylesheet" href="css/theme.css">
-href="css/style.css">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
 
 <link
 rel="stylesheet"
-href="css/outernet.css">
+href="css/style.css?v=fixaug5c">
+
+<link
+rel="stylesheet"
+href="css/outernet.css?v=fixaug5d">
 
 <script>
 
@@ -27,7 +28,7 @@ href="css/outernet.css">
 function logout() {
     if (confirm("Forget this browser's wallet? This does not delete anything on-chain - your address, balances and loans remain on the node.")) {
         clearWallet();
-        location.href = "login.html";
+        location.href = "login";
     }
 }
 
@@ -36,7 +37,8 @@ function logout() {
 </head>
 
 <body class="outernet-light">
-<script src="js/device-lock.js"></script>
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <div class="mobile-topbar">
     <button type="button" id="drawerToggleBtn" class="hamburger-btn" aria-label="Open menu">&#9776;</button>
@@ -59,66 +61,50 @@ function logout() {
     </div>
 
     <button
-    onclick="location.href='explorer.html'">
+    onclick="location.href='explorer'">
         Explorer
     </button>
 
     <button
-    class="sidebar-item-hide-mobile"
-    onclick="location.href='wallet.html'">
-        Wallet
-    </button>
-
-    <button
-    onclick="location.href='assets.html'">
+    onclick="location.href='assets'">
         Assets
     </button>
 
     <button
     class="sidebar-item-hide-mobile"
-    onclick="location.href='profile.html'">
+    onclick="location.href='profile'">
         Profile
     </button>
 
     <button
     class="sidebar-item-hide-mobile"
-    onclick="location.href='network.html'">
+    onclick="location.href='network'">
         Network
     </button>
 
     <button
-    onclick="location.href='governance.html'">
+    onclick="location.href='governance'">
         Governance
     </button>
 
     <button
-    onclick="location.href='reputation.html'">
+    onclick="location.href='reputation'">
         Reputation
     </button>
 
     <button
-    onclick="location.href='defi.html'">
-        DeFi Corner
-    </button>
-
-    <button
-    onclick="location.href='borrow.html'">
+    onclick="location.href='borrow'">
         Borrow
     </button>
 
     <button
-    onclick="location.href='lend.html'">
+    onclick="location.href='lend'">
         Lend
     </button>
 
     <button
-    onclick="location.href='explorer.html'">
+    onclick="location.href='explorer'">
         Transactions
-    </button>
-
-    <button
-    onclick="location.href='tokens.html'">
-        Token Creation
     </button>
 
     <button disabled title="Coming soon" style="opacity: 0.5; cursor: default;">
@@ -126,17 +112,17 @@ function logout() {
     </button>
 
     <button
-    onclick="location.href='p2p.html'">
+    onclick="location.href='p2p'">
         Marketplace (P2P)
     </button>
 
     <button
-    onclick="location.href='identity.html'">
+    onclick="location.href='identity'">
         Identity
     </button>
 
-    <button
-    onclick="location.href='companies.html'">
+    <button id="tradingHubNavBtn"
+    onclick="location.href='companies'">
         Trading Hub
     </button>
 
@@ -148,11 +134,11 @@ function logout() {
     <details class="sidebar-collapsible">
         <summary>Earning Services</summary>
         <button
-        onclick="location.href='moderation.html'">
+        onclick="location.href='moderation'">
             Moderation
         </button>
         <button
-        onclick="location.href='validator.html'">
+        onclick="location.href='validator'">
             Validator Dashboard
         </button>
     </details>
@@ -166,7 +152,7 @@ function logout() {
     </button>
 
     <button
-    onclick="location.href='settings.html'">
+    onclick="location.href='settings'">
         Settings
     </button>
 
@@ -199,7 +185,7 @@ function logout() {
 
             <span class="wallet-address-chip">
                 <button
-                onclick="showReceiveAddress()"
+                onclick="openReceivePicker()"
                 title="Show QR code for your address"
                 style="background:none;border:none;color:inherit;font:inherit;cursor:pointer;padding:0;">
                     <span id="wallet">-</span>
@@ -214,20 +200,20 @@ function logout() {
             <div class="wallet-balance-amount" id="balance">TODO</div>
             <p class="wallet-custody-note">
                 Self-custody - only this device holds your wallet's private key. CreditChain never sees it.
-                <a href="wallet.html" style="color:#0284c7;">View Full Wallet &rarr;</a>
+                <a href="wallet" style="color:#0284c7;">View Full Wallet &rarr;</a>
             </p>
         </div>
 
         <div class="quick-actions">
-            <button onclick="location.href='send.html'">
+            <button onclick="location.href='send'">
                 <span class="qa-icon">&#8593;</span>
                 Send
             </button>
-            <button onclick="showReceiveAddress()">
+            <button onclick="openReceivePicker()">
                 <span class="qa-icon">&#8595;</span>
                 Receive
             </button>
-            <button onclick="location.href='staking.html'">
+            <button onclick="location.href='staking'">
                 <span class="qa-icon">%</span>
                 Stake
             </button>
@@ -235,10 +221,24 @@ function logout() {
                 <span class="qa-icon">&#128167;</span>
                 Faucet
             </button>
+            <button onclick="location.href='swap-bridged'">
+                <span class="qa-icon">&#8646;</span>
+                Swap
+            </button>
+            <button onclick="location.href='buy-cct'">
+                <span class="qa-icon">$</span>
+                Buy CCT
+            </button>
         </div>
         <p id="faucetStatus"></p>
 
     </section>
+
+    <div id="btcNetworkMismatchBanner" style="display:none;background:rgba(255,176,32,0.12);border:1px solid #ffb020;border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.5;margin:0 0 16px;">
+        <strong>Your Bitcoin address needs re-deriving.</strong>
+        <span id="btcNetworkMismatchBannerText"></span>
+        <a href="btc-network-fix" style="color:#ffb020;font-weight:bold;">Fix it &rarr;</a>
+    </div>
 
     <div class="card dash-panel" data-title="Assets">
 
@@ -256,22 +256,6 @@ function logout() {
 
     <div class="grid">
 
-        <div class="card dash-panel" data-title="Blocks">
-
-            <h2>
-                Recent Blocks
-            </h2>
-
-            <pre id="blocks">
-Loading...
-            </pre>
-
-            <button onclick="location.href='explorer.html'">
-                View Full Explorer
-            </button>
-
-        </div>
-
         <div class="card dash-panel" data-title="Transactions">
 
             <h2>
@@ -282,8 +266,8 @@ Loading...
                 Loading...
             </div>
 
-            <button onclick="location.href='explorer.html'">
-                View Full Explorer
+            <button id="txViewOnExplorerBtn">
+                View My Address on Explorer
             </button>
 
         </div>
@@ -296,17 +280,20 @@ Loading...
 
     <div class="card">
         <h2>Engage</h2>
-        <p style="opacity:0.75;font-size:13px;">Borrow, lend, and trade with other CreditChain users.</p>
+        <p style="opacity:0.75;font-size:13px;">
+            Borrow, lend, and trade with other CreditChain users. This tab is a gateway - a quick glance at
+            your standing, not where the actual borrowing/lending happens. Every action below opens its own
+            dedicated page.
+        </p>
     </div>
 
     <div class="card">
 
-        <h2>Collateral</h2>
+        <h2>Borrow</h2>
 
-        <p style="opacity:0.8; font-size:13px;">
-            Collateral is locked from your STAKED CCT or your oETH balance (the receipt you got for
-            staking ETHTEST) - never your liquid/spendable CCT. Borrowed funds are paid out in YEN-e
-            (older loans drawn before this default changed still pay out/repay in USDCTEST).
+        <p style="opacity:0.8; font-size:13px;" id="collateralIntroText">
+            Lock collateral from your staked CCT, then borrow YEN-e against it - both steps, plus browsing
+            the loan marketplace, happen on the Borrow page.
         </p>
 
         <p>
@@ -314,7 +301,7 @@ Loading...
             <span id="stakedCct">0</span>
         </p>
 
-        <p>
+        <p id="oethBalanceRow">
             oETH - staked-ETHTEST receipt (lockable as collateral):
             <span id="oethBalance">0</span>
         </p>
@@ -322,46 +309,21 @@ Loading...
         <p>
             Locked Collateral - CCT:
             <span id="lockedCollateralCct">0</span>
-            &nbsp;|&nbsp; oETH:
-            <span id="lockedCollateralOeth">0</span>
+            <span id="lockedOethRow">&nbsp;|&nbsp; oETH: <span id="lockedCollateralOeth">0</span></span>
         </p>
-
-        <div class="engage-form-row">
-            <select id="lockSymbol">
-                <option value="CCT">Staked CCT</option>
-                <option value="OETH">oETH</option>
-            </select>
-            <input type="number" id="lockAmount" placeholder="Amount">
-        </div>
-
-        <button onclick="lockCollateral()">Lock Collateral</button>
-
-    </div>
-
-    <div class="card">
-
-        <h2>Borrow</h2>
 
         <p>
             YEN-e Balance (borrowed funds):
             <span id="yeneBalance">0</span>
         </p>
 
-        <p style="opacity:0.7;font-size:12px;">
+        <p style="opacity:0.7;font-size:12px;" id="usdcTestBalanceRow">
             USDCTEST Balance (legacy - only relevant if you have an older
             USDCTEST-denominated loan):
             <span id="usdcTestBalance">0</span>
         </p>
 
-        <input type="number" id="borrowAmount" placeholder="Amount">
-        <br><br>
-        <button onclick="borrow()">Borrow</button>
-        <p id="pendingStatus"></p>
-
-        <details class="sidebar-collapsible">
-            <summary>Your Loans</summary>
-            <div id="loanList">No Loans</div>
-        </details>
+        <a href="borrow"><button>Borrow &rarr;</button></a>
 
     </div>
 
@@ -369,68 +331,17 @@ Loading...
 
         <h2>Lend</h2>
 
-        <div id="lendKycNotice" style="display:none;">
-            <div id="kycStatusLine" class="explorer-empty">Checking your access...</div>
-            <div id="kycForm" style="display:none;margin-top:14px;">
-                <div class="kyc-field">
-                    <label for="kycFullName">Full name</label>
-                    <input type="text" id="kycFullName" maxlength="200" placeholder="Full name">
-                </div>
-                <div class="kyc-field">
-                    <label for="kycDob">Date of birth</label>
-                    <input type="date" id="kycDob">
-                </div>
-                <div class="kyc-field">
-                    <label for="kycCountry">Country</label>
-                    <input type="text" id="kycCountry" maxlength="100" placeholder="Country">
-                </div>
-                <div class="kyc-field">
-                    <label>
-                        <input type="checkbox" id="kycAgree">
-                        I confirm this information is accurate and agree to the lending marketplace terms.
-                    </label>
-                </div>
-                <button onclick="submitKYC()">Submit</button>
-                <p id="kycSubmitStatus"></p>
-            </div>
-        </div>
+        <p style="opacity:0.8;font-size:13px;">
+            Post a standing lend offer, or fund an open borrow request - both, plus the security pass/KYC
+            required to post an offer, happen on the Lend page.
+        </p>
 
-        <div id="lendPostForm" style="display:none;">
-            <p>Balance in selected token: <span id="lendBalance">0</span></p>
-            <div class="engage-form-row">
-                <select id="offerSymbol">
-                    <option value="CCT">CCT</option>
-                    <option value="ETHTEST">ETHTEST</option>
-                    <option value="USDCTEST" selected>USDCTEST</option>
-                    <option value="REPT">REPT</option>
-                </select>
-                <input type="number" id="offerRate" placeholder="Rate % (e.g. 5)" min="0">
-                <input type="number" id="offerAmount" placeholder="Capital to lend" min="0">
-                <input type="number" id="offerDurationDays" placeholder="Repay within (days)" min="0">
-                <button onclick="createLoanOffer()">Post Offer</button>
-            </div>
-            <p id="lendStatus"></p>
-        </div>
-
-        <details class="sidebar-collapsible">
-            <summary>Your Offers</summary>
-            <div id="myOfferList" class="explorer-empty">No offers yet.</div>
-        </details>
+        <a href="lend"><button>Lend &rarr;</button></a>
 
     </div>
 
     <div class="card">
-        <h2>Loan Marketplace</h2>
-        <div id="marketplaceList" class="explorer-empty">Loading...</div>
-    </div>
-
-    <details class="sidebar-collapsible">
-        <summary>Your Negotiations</summary>
-        <div id="negotiationList" class="explorer-empty">No negotiations yet.</div>
-    </details>
-
-    <div class="card">
-        <a href="p2p.html" style="color:#0284c7;">Open full Marketplace &rarr;</a>
+        <a href="p2p" style="color:#0284c7;">Open full Marketplace &rarr;</a>
         <p style="opacity:0.7;font-size:12px;margin-top:6px;">Trading Hubs, currency swaps, and P2P settlement chat live there.</p>
     </div>
 
@@ -481,28 +392,24 @@ Loading...
 
     <div class="card">
 
-        <h2>Recovery Email</h2>
+        <h2>Wallet Backup</h2>
 
         <p style="opacity:0.75;font-size:13px;">
-            Testnet placeholder - links a verified email to this wallet so it can later be migrated
-            (see <a href="login.html" style="color:var(--cc-accent-gold, #c9a227);">Login</a>) if you lose this browser.
+            Your 12-word BIP-39 backup phrase, shown once at registration, is the
+            <strong>only</strong> way to restore this wallet - no email recovery, no
+            alternative. CreditChain never stores it and can't show it to you again.
         </p>
-
-        <p id="recoveryEmailStatus"></p>
-
-        <input type="email" id="settingsRecoveryEmail" placeholder="Email">
-        <br><br>
-        <button onclick="requestSettingsEmailCode()">1. Request Code</button>
-        <p id="settingsCodeDisplay"></p>
-        <br>
-        <input type="text" id="settingsEmailCode" placeholder="Code shown above">
-        <br><br>
-        <button onclick="confirmSettingsEmail()">2. Confirm Email</button>
-        <p id="settingsEmailStatus"></p>
 
     </div>
 
-    <div class="card">
+    <div class="card" style="display:none;">
+        <!-- Direct self-service token registration is retired - CCT is the
+             protocol's native asset, and new tokens now only get created
+             via a passed TOKEN_CREATION governance proposal (see
+             api/token_creation_governance.go). This card's markup/IDs stay
+             in the DOM (not deleted) since js/tokens.js's registered-tokens
+             list and its own event-listener wiring still run unconditionally
+             off these elements - only visibility changes here. -->
         <p style="opacity:0.75;font-size:13px;">
             Register a new testnet token here. Requires staked test ETH plus a
             <span id="tkFeeAmount">5</span> ETHTEST creation fee.
@@ -515,7 +422,7 @@ Loading...
         <div id="tokensNotStaked" style="display:none;">
             <p class="explorer-empty">
                 You need some test ETH staked before you can register a token -
-                <a href="staking.html" style="color:var(--cc-accent-gold, #c9a227);">stake some here</a> first.
+                <a href="staking" style="color:var(--cc-accent-gold, #c9a227);">stake some here</a> first.
             </p>
         </div>
 
@@ -545,9 +452,9 @@ Loading...
 
     <div class="card">
         <h2>More</h2>
-        <p><a href="profile.html" style="color:#0284c7;">Profile &amp; Reputation &rarr;</a></p>
+        <p><a href="profile" style="color:#0284c7;">Profile &amp; Reputation &rarr;</a></p>
         <p style="opacity:0.7;font-size:12px;">Your credit tier, reputation score, and history.</p>
-        <p><a href="network.html" style="color:#0284c7;">Network Status &rarr;</a></p>
+        <p><a href="network" style="color:#0284c7;">Network Status &rarr;</a></p>
         <p style="opacity:0.7;font-size:12px;">Peers, block height, and node health.</p>
     </div>
 
@@ -581,13 +488,34 @@ Loading...
 </div>
 
 <div
+id="receivePickerOverlay"
+style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;z-index:10000;">
+    <div style="background:#ffffff;color:#111827;border-radius:16px;padding:25px;max-width:90vw;width:340px;text-align:center;">
+        <h3 style="margin-top:0;">Receive - Choose a Token</h3>
+        <p style="color:#6b7280;font-size:12px;margin-top:-8px;">
+            This shows your CreditChain-network address for the token you pick. To receive on a token's own
+            external network instead (e.g. real Bitcoin or Ethereum), open that token's page and use Receive there.
+        </p>
+        <div id="receivePickerList" style="display:flex;flex-direction:column;gap:8px;margin-top:15px;">
+            <button onclick="selectReceiveToken('CCT')" style="width:100%;text-align:left;padding:12px 14px;border-radius:10px;border:1px solid #e5e7eb;background:#f9fafb;color:#111827;cursor:pointer;font-size:14px;">CCT</button>
+            <button onclick="receiveEthPicked()" style="width:100%;text-align:left;padding:12px 14px;border-radius:10px;border:1px solid #e5e7eb;background:#f9fafb;color:#111827;cursor:pointer;font-size:14px;">ETH - choose network next</button>
+            <button onclick="location.href='asset?symbol=BTCB'" style="width:100%;text-align:left;padding:12px 14px;border-radius:10px;border:1px solid #e5e7eb;background:#f9fafb;color:#111827;cursor:pointer;font-size:14px;">BTC (bridged) - choose network next</button>
+            <button onclick="receiveUsdcPicked()" style="width:100%;text-align:left;padding:12px 14px;border-radius:10px;border:1px solid #e5e7eb;background:#f9fafb;color:#111827;cursor:pointer;font-size:14px;">USDC</button>
+            <button onclick="selectReceiveToken('YENE')" style="width:100%;text-align:left;padding:12px 14px;border-radius:10px;border:1px solid #e5e7eb;background:#f9fafb;color:#111827;cursor:pointer;font-size:14px;">YEN-e</button>
+        </div>
+        <button onclick="closeReceivePicker()" style="margin-top:15px;">Cancel</button>
+    </div>
+</div>
+
+<div
 id="qrModalOverlay"
 style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;z-index:10000;">
     <div style="background:#ffffff;color:#111827;border-radius:16px;padding:25px;max-width:90vw;text-align:center;">
-        <h3 style="margin-top:0;">Your Receive Address</h3>
+        <h3 id="qrModalTitle" style="margin-top:0;">Your Receive Address</h3>
         <canvas id="qrCanvas" style="max-width:80vw;height:auto;border-radius:8px;"></canvas>
         <p id="qrAddressText" style="word-break:break-all;font-family:monospace;font-size:13px;margin:15px 0;"></p>
         <p style="color:#6b7280;font-size:12px;">Copied to clipboard if supported. Anyone can send you test tokens by scanning this or entering the address on the Send page.</p>
+        <button onclick="backToReceivePicker()">&larr; Choose a different token</button>
         <button onclick="closeQrModal()">Close</button>
     </div>
 </div>
@@ -610,7 +538,7 @@ style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);align-ite
             <h2 style="margin-top:0;color:#ffd166;">Wallet Upgrade Available</h2>
             <p>
                 CreditChain now supports a single 12-word recovery phrase covering CreditChain,
-                Ethereum, and Bitcoin (testnet) accounts. Your current wallet predates this and
+                Ethereum, and Bitcoin accounts. Your current wallet predates this and
                 uses the old scheme.
             </p>
             <p>
@@ -641,20 +569,26 @@ style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);align-ite
     </div>
 </div>
 
-<script src="js/api.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/qrcode.js"></script>
-<script src="js/outernet.js"></script>
-<script src="js/assets.js"></script>
-<script src="js/borrow.js"></script>
-<script src="js/lend.js"></script>
-<script src="js/settings.js"></script>
-<script src="js/tokens.js"></script>
-<script src="js/vendor/bip39-wordlist.js"></script>
-<script src="js/vendor/hd-crypto.js"></script>
-<script src="js/hdwallet.js"></script>
-<script src="js/hd_migrate.js"></script>
-<script src="js/mobile-nav.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/ai-assistant.js?v=fixaug5b"></script>
+<script src="js/qrcode.js?v=fixaug5b"></script>
+<script src="js/currency.js?v=fixaug5b"></script>
+<script src="js/coin-icons.js?v=fixaug5b"></script>
+<script src="js/vault.js?v=sec0816c"></script>
+<script src="js/outernet.js?v=sec0816a"></script>
+<script src="js/assets.js?v=fixaug5c"></script>
+<script src="js/borrow.js?v=fixaug5s"></script>
+<script src="js/lend.js?v=fixaug5b"></script>
+<script src="js/settings.js?v=sec0816b"></script>
+<script src="js/tokens.js?v=sec0816a"></script>
+<script src="js/vendor/bip39-wordlist.js?v=fixaug5b"></script>
+<script src="js/vendor/hd-crypto.js?v=fixaug5b"></script>
+<script src="js/vendor/eth-tx.js?v=fixaug5b"></script>
+<script src="js/hdwallet.js?v=fixaug5b"></script>
+<script src="js/hd_migrate.js?v=fixaug5b"></script>
+<script src="js/mobile-nav.js?v=fixaug5b"></script>
+<script src="js/vault-lock-gate.js?v=sec0818a"></script>
 
 </body>
 </html>

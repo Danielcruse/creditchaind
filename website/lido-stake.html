@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Stake ETH - OUTERNET</title>
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+<link rel="stylesheet" href="css/style.css?v=fixaug5c">
+<link rel="stylesheet" href="css/outernet.css?v=fixaug5d">
+<style>
+    .stake-row{ display:flex; justify-content:space-between; padding:6px 0; }
+    .stake-warning{
+        background:rgba(255,176,32,0.12); border:1px solid #ffb020;
+        border-radius:8px; padding:10px; font-size:13px; margin:12px 0;
+    }
+    .stake-step-num{
+        display:inline-flex; align-items:center; justify-content:center;
+        width:22px; height:22px; border-radius:50%; background:#0284c7; color:#fff;
+        font-size:12px; font-weight:700; margin-right:8px;
+    }
+    .stake-step-done .stake-step-num{ background:#059669; }
+    .status-pill{ display:inline-block; padding:2px 8px; border-radius:999px; background:rgba(0,0,0,0.08); font-size:12px; }
+</style>
+</head>
+<body class="outernet-light">
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
+
+<div class="main" style="max-width:560px;margin:0 auto;padding:24px 16px;">
+
+<p><a href="assets" style="color:#0284c7;">&larr; Assets</a></p>
+
+<h1>Stake ETH</h1>
+
+<div class="card" style="border:2px solid #0284c7;">
+<p style="margin:0;font-size:13px;">
+Stakes your real vault-locked ETH through <a href="https://lido.fi" target="_blank" rel="noopener">Lido</a>, an
+established, audited liquid-staking protocol - CreditChain never runs its own validator or holds a staking key.
+Three separate real transactions, each one you sign and confirm yourself: <strong>unvault</strong> (get real ETH
+back to your own wallet), <strong>stake on Lido</strong> (receive real stETH, which grows over time as staking
+rewards accrue), and <strong>lock into the vault</strong> (mint STETH_CCC1 you can use on CreditChain, e.g. as
+loan collateral). You hold the real ETH/stETH in your own wallet at every point in between - nothing is stuck if
+you stop partway through.
+</p>
+</div>
+
+<!-- Step 1: Unvault -->
+<div class="card" id="step1Card">
+    <h3 style="margin-top:0;" class="stake-step-title" id="step1Title"><span class="stake-step-num">1</span>Unvault ETH_CCC1</h3>
+    <p style="font-size:12px;opacity:0.75;">Your ETH_CCC1 balance: <span id="ethCcc1Balance">Loading...</span></p>
+    <div id="step1Form">
+        <input type="number" id="unvaultAmount" placeholder="Amount of ETH_CCC1 to unvault" step="any">
+        <br><br>
+        <button onclick="startUnvault()">Unvault</button>
+        <p id="step1Status" style="opacity:0.75;font-size:13px;"></p>
+    </div>
+    <div id="step1Progress" style="display:none;">
+        <p>Validator signatures: <span id="unvaultSigCount">0</span> / <span id="unvaultSigThreshold">-</span> <span class="status-pill" id="unvaultStatusPill">PENDING</span></p>
+        <p id="step1ProgressNote" style="font-size:12px;opacity:0.75;"></p>
+    </div>
+</div>
+
+<!-- Step 2: Stake on Lido -->
+<div class="card" id="step2Card">
+    <h3 style="margin-top:0;" class="stake-step-title" id="step2Title"><span class="stake-step-num">2</span>Stake on Lido</h3>
+    <p style="font-size:12px;opacity:0.75;">
+        Real ETH in your self-custodial wallet: <span id="realEthBalance">Loading...</span>
+        <br><span id="stakeAddress" style="font-family:monospace;font-size:11px;opacity:0.6;"></span>
+    </p>
+    <div id="step2Form">
+        <input type="number" id="stakeAmount" placeholder="Amount of ETH to stake" step="any">
+        <p class="stake-warning" style="margin-top:6px;">
+            Leave some ETH unstaked to cover gas for this step and step 3 - staking your entire balance would
+            leave nothing to pay for the transactions that follow.
+        </p>
+        <button onclick="startLidoStake()">Stake on Lido</button>
+        <p id="step2Status" style="opacity:0.75;font-size:13px;"></p>
+    </div>
+    <div id="step2Progress" style="display:none;">
+        <p id="step2ProgressNote" style="font-size:12px;opacity:0.75;"></p>
+    </div>
+</div>
+
+<!-- Step 3: Lock stETH into vault -->
+<div class="card" id="step3Card">
+    <h3 style="margin-top:0;" class="stake-step-title" id="step3Title"><span class="stake-step-num">3</span>Lock stETH Into the Vault</h3>
+    <p style="font-size:12px;opacity:0.75;">Real stETH in your self-custodial wallet: <span id="stethBalance">Loading...</span></p>
+    <p style="font-size:12px;opacity:0.75;">Your STETH_CCC1 balance: <span id="stethCcc1Balance">Loading...</span></p>
+    <div id="step3Form">
+        <input type="number" id="lockAmount" placeholder="Amount of stETH to lock" step="any">
+        <br><br>
+        <button onclick="startLidoLock()">Lock Into Vault</button>
+        <p id="step3Status" style="opacity:0.75;font-size:13px;"></p>
+    </div>
+    <div id="step3Progress" style="display:none;">
+        <p>Validator attestations: <span id="lockAttestCount">0</span> / <span id="lockAttestThreshold">-</span> <span class="status-pill" id="lockStatusPill">PENDING</span></p>
+        <p id="step3ProgressNote" style="font-size:12px;opacity:0.75;"></p>
+    </div>
+</div>
+
+</div>
+
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/vendor/bip39-wordlist.js?v=fixaug5b"></script>
+<script src="js/vendor/hd-crypto.js?v=fixaug5b"></script>
+<script src="js/vendor/eth-tx.js?v=fixaug5b"></script>
+<script src="js/vendor/btc-tx.js?v=fixaug5b"></script>
+<script src="js/vault.js?v=sec0816c"></script>
+<script src="js/lido-stake.js?v=sec0816c"></script>
+
+</body>
+</html>

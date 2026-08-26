@@ -209,8 +209,11 @@ func TestOrderBookStore_CancelOnlyOwnerAndOnlyOpen(t *testing.T) {
 }
 
 func TestOrderCCTCost(t *testing.T) {
-	// 10 units at 2 CCT each (price scaled by 1e6) = 20 CCT.
-	if got := OrderCCTCost(10, 2_000_000); got != 20 {
-		t.Fatalf("expected OrderCCTCost(10, 2_000_000) = 20, got %d", got)
+	// 10 units at 2 CCT each (price scaled by 1e6) = 20 CCT, expressed
+	// in CCT's smallest unit (18 decimals) since the 18-decimal
+	// migration.
+	want := FormatCctSmallest(CctWholeToSmallest(20))
+	if got := OrderCCTCost(10, 2_000_000); got != want {
+		t.Fatalf("expected OrderCCTCost(10, 2_000_000) = %s, got %s", want, got)
 	}
 }

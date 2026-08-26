@@ -1,0 +1,39 @@
+/* auth-cover.css - the login/register "cover" background (people
+   floating, exchanging value) - see website/login.html and
+   website/register.html, the two auth-flow pages this is scoped to.
+   OUTERNET is a standalone app on top of the CreditChain protocol, so
+   its own entry pages get a distinct illustrated cover rather than the
+   plain card-on-gradient look every other page uses - still layered
+   over the SAME green gradient body background (style.css) so it reads
+   as an extension of the existing palette, not a different app.
+   Fixed, full-viewport, behind all real content (z-index -1) and
+   pointer-events:none so it never intercepts clicks/taps meant for the
+   form above it. */
+.auth-cover{
+    position:fixed;
+    inset:0;
+    z-index:-1;
+    pointer-events:none;
+    overflow:hidden;
+}
+.auth-cover img{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+}
+
+/* The card itself sits above the cover with a touch of its own
+   backdrop so form text stays fully legible over the illustration
+   beneath it, without needing to soften the illustration itself. */
+body.auth-cover-page .card{
+    position:relative;
+    z-index:1;
+    background:rgba(4,21,13,0.55);
+    backdrop-filter:blur(2px);
+}
+body.auth-cover-page > h1{
+    position:relative;
+    z-index:1;
+    text-shadow:0 2px 12px rgba(0,0,0,0.5);
+}

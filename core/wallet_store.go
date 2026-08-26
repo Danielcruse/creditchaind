@@ -2,7 +2,9 @@ package core
 
 // WalletStore is the canonical, address-keyed registry of Wallets.
 // Per the CreditChain "one owner per concept" rule, Wallet is the
-// single source of truth for an address's Reputation and (via
+// single source of truth for an address's trust score (Trust's six
+// dimensions post-TrustDimensionsCutoverUnixSeconds, the flat
+// Reputation field before it - see trust.go/reputation.go) and (via
 // StakingStore sync) its StakedETH balance. Every other subsystem
 // (Validator, CreditProfile, staking handlers, etc.) should read
 // reputation through here rather than keeping its own copy.

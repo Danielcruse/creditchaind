@@ -1,46 +1,22 @@
+// settingsLogout previously only removed a "loggedIn" key nothing else
+// in the app ever reads or sets - getWallet()/setWallet()/clearWallet()
+// (api.js) are the real session primitives, keyed on "cc_wallet", so
+// this never actually signed anyone out; login.html's returning-wallet
+// check would just show the same wallet again. Fixed to call the real
+// clearWallet() and land on login.html, which already supports signing
+// back in with either a 12-word phrase or a raw private key.
 function settingsLogout() {
-    localStorage.removeItem("loggedIn");
-    location.href = "login.html";
+    if (confirm("Sign out of this wallet? You'll need your 12-word phrase or private key to sign back in - this browser will forget it otherwise.")) {
+        clearWallet();
+        location.href = "login";
+    }
 }
 
 function resetWallet() {
     if (confirm("Forget this browser's wallet? This does not delete anything on-chain - your address, balances and loans remain on the node, you will just need to sign back in with the same address to see them again.")) {
         clearWallet();
         alert("Local wallet forgotten.");
-        location.href = "register.html";
-    }
-}
-
-async function requestSettingsEmailCode() {
-    const email = document.getElementById("settingsRecoveryEmail").value.trim();
-    const statusEl = document.getElementById("settingsCodeDisplay");
-    if (!email) {
-        statusEl.innerText = "Enter an email first.";
-        return;
-    }
-    try {
-        const result = await apiPostSigned("/recovery/request-email-code", { email });
-        statusEl.innerText = result.code
-            ? `Code: ${result.code} (${result.note})`
-            : `Code sent to ${email} - check your inbox.`;
-    } catch (e) {
-        statusEl.innerText = "Could not request code: " + e.message;
-    }
-}
-
-async function confirmSettingsEmail() {
-    const email = document.getElementById("settingsRecoveryEmail").value.trim();
-    const code = document.getElementById("settingsEmailCode").value.trim();
-    const statusEl = document.getElementById("settingsEmailStatus");
-    if (!email || !code) {
-        statusEl.innerText = "Enter both email and code.";
-        return;
-    }
-    try {
-        const result = await apiPostSigned("/recovery/confirm-email", { email, code });
-        statusEl.innerText = `Recovery email confirmed (tx ${result.txId}) - this wallet can now be migrated by email + creation year.`;
-    } catch (e) {
-        statusEl.innerText = "Could not confirm: " + e.message;
+        location.href = "register";
     }
 }
 
@@ -94,6 +70,67 @@ async function submitRating() {
 }
 
 loadExistingRating();
+
+// Contact email (see api/contact_email.go for the full backstory - this
+// is a verified NOTIFICATION address, not a recovery credential).
+async function loadContactEmailStatus() {
+    const wallet = getWallet();
+    const statusEl = document.getElementById("contactEmailStatus");
+    const confirmRow = document.getElementById("contactEmailConfirmRow");
+    if (!wallet || !statusEl) return;
+
+    try {
+        const result = await apiGet(`/contact-email/status?address=${wallet.address}`);
+        if (result.verified) {
+            statusEl.innerText = `Verified: ${result.email}`;
+            document.getElementById("contactEmailInput").value = result.email;
+            confirmRow.style.display = "none";
+        } else if (result.pending) {
+            statusEl.innerText = `Verification pending for ${result.pendingEmail} - enter the code we sent, or request a new one.`;
+            document.getElementById("contactEmailInput").value = result.pendingEmail;
+            confirmRow.style.display = "block";
+        } else {
+            statusEl.innerText = "No email on file yet.";
+            confirmRow.style.display = "none";
+        }
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function requestContactEmailCode() {
+    const statusEl = document.getElementById("contactEmailActionStatus");
+    const email = document.getElementById("contactEmailInput").value.trim();
+    if (!email || !email.includes("@")) {
+        statusEl.innerText = "Enter a valid email first.";
+        return;
+    }
+    try {
+        const result = await apiPostSigned("/contact-email/request-code", { email });
+        statusEl.innerText = `Code sent (tx ${result.txId}) - check your inbox once the next block confirms it.`;
+        document.getElementById("contactEmailConfirmRow").style.display = "block";
+    } catch (e) {
+        statusEl.innerText = "Could not send code: " + e.message;
+    }
+}
+
+async function confirmContactEmailCode() {
+    const statusEl = document.getElementById("contactEmailActionStatus");
+    const code = document.getElementById("contactEmailCodeInput").value.trim();
+    if (!code) {
+        statusEl.innerText = "Enter the code from your email first.";
+        return;
+    }
+    try {
+        const result = await apiPostSigned("/contact-email/confirm", { code });
+        statusEl.innerText = `Submitted (tx ${result.txId}) - confirming once the next block lands.`;
+        setTimeout(loadContactEmailStatus, 3000);
+    } catch (e) {
+        statusEl.innerText = "Could not confirm: " + e.message;
+    }
+}
+
+loadContactEmailStatus();
 
 async function initDisplayCurrencySelector() {
     const select = document.getElementById("displayCurrencySelect");

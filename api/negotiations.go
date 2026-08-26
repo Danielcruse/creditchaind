@@ -137,13 +137,13 @@ func HandleStartNegotiation(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "amount exceeds what's still available on this offer", http.StatusBadRequest)
 		return
 	}
-	if !hasEnoughCollateral(address, req.Amount) {
-		http.Error(w, "insufficient locked collateral - lock staked CCT or oETH covering at least this amount first", http.StatusBadRequest)
+	if !hasEnoughCollateral(address, req.Amount, time.Now().Unix()) {
+		http.Error(w, "insufficient locked collateral - lock staked CCT, oETH, or STETH_CCC1 covering at least this amount first", http.StatusBadRequest)
 		return
 	}
 
 	wallet := walletStore.Get(address)
-	if limit := core.BorrowLimit(wallet.Reputation); req.Amount > limit {
+	if limit := core.BorrowLimit(core.TrustDimensionValue(wallet, core.DimensionRepayment)); req.Amount > limit {
 		http.Error(w, "borrow limit exceeded", http.StatusBadRequest)
 		return
 	}
@@ -304,6 +304,13 @@ func HandleConfirmNegotiation(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "the underlying request is no longer open", http.StatusBadRequest)
 			return
 		}
+		// Fast-fail preview, not the security boundary -
+		// applyLoanRequestFulfill re-checks this for real at apply time
+		// (see lenderCanReceiveStethCcc1's doc comment).
+		if request.CollateralSymbol == "STETH_CCC1" && !lenderCanReceiveStethCcc1(address) {
+			http.Error(w, "you haven't registered a self-custodial ETH address yet, so you can't safely fund a STETH_CCC1-collateralized request right now", http.StatusBadRequest)
+			return
+		}
 
 		if _, ok := negotiationStore.Execute(n.ID); !ok {
 			http.Error(w, "negotiation is no longer open", http.StatusBadRequest)
@@ -331,6 +338,13 @@ func HandleConfirmNegotiation(w http.ResponseWriter, r *http.Request) {
 	offer, ok := loanOfferStore.Get(n.OfferID)
 	if !ok || offer.Status != core.LoanOfferOpen || n.Amount > offer.RemainingAmount {
 		http.Error(w, "the underlying offer no longer has enough capital available", http.StatusBadRequest)
+		return
+	}
+	// Fast-fail preview, not the security boundary - applyLoanOfferDraw
+	// re-checks this for real at apply time (see
+	// lenderCanReceiveStethCcc1's doc comment).
+	if symbol, ok := peekCollateralSymbolForLoan(n.Borrower, n.Amount, time.Now().Unix()); ok && symbol == "STETH_CCC1" && !lenderCanReceiveStethCcc1(n.Lender) {
+		http.Error(w, "this offer's lender hasn't registered a self-custodial ETH address yet, so a STETH_CCC1-collateralized draw against it can't be safely funded right now", http.StatusBadRequest)
 		return
 	}
 

@@ -12,13 +12,19 @@ var orderBookStore = core.NewOrderBookStore()
 var tradeHistoryStore = core.NewTradeHistoryStore()
 
 // orderBookSymbols is deliberately narrow - the order book replaces
-// the AMM as CCT's pricing mechanism only for the two native
-// "imported" tokens (see the plan's Context section for why).
+// the AMM as CCT's pricing mechanism only for the native "imported"
+// tokens (see the plan's Context section for why): ETHTEST/USDCTEST
+// on testnet, and their real mainnet equivalents ETH_CCC1/USDC_CCC1
+// (vault-locked, 1:1 backed - see api/vault_token.go). Both testnet
+// and mainnet symbols are allowlisted on every node regardless of
+// which network it's actually running, same as every other symbol
+// allowlist in this codebase - the token stores themselves are what's
+// actually absent/zero on the "wrong" network, not a gate here.
 // Developer-registered custom tokens keep trading through the
 // existing liquidity pool (see api/token_registry.go) - broadening
 // this is a separate, later decision, not something this type quietly
 // expands into on its own.
-var orderBookSymbols = map[string]bool{"ETHTEST": true, "USDCTEST": true}
+var orderBookSymbols = map[string]bool{"ETHTEST": true, "USDCTEST": true, "ETH_CCC1": true, "USDC_CCC1": true}
 
 type orderPlaceData struct {
 	Symbol string `json:"symbol"`
@@ -50,7 +56,15 @@ func HandlePlaceOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !orderBookSymbols[req.Symbol] {
-		http.Error(w, "symbol must be ETHTEST or USDCTEST", http.StatusBadRequest)
+		http.Error(w, "symbol must be ETHTEST, USDCTEST, ETH_CCC1, or USDC_CCC1", http.StatusBadRequest)
+		return
+	}
+	// mainnetBlockedSymbols' own doc comment already claims every
+	// token-resolution chokepoint enforces this - the order book was
+	// actually missing it until now, letting a mainnet node accept
+	// USDCTEST orders it should have refused outright.
+	if isMainnetBlockedSymbol(req.Symbol) {
+		http.Error(w, errTestOnlySymbolBlockedOnMainnet.Error(), http.StatusBadRequest)
 		return
 	}
 	side := core.OrderSide(req.Side)
@@ -76,8 +90,10 @@ func HandlePlaceOrder(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		cost := core.OrderCCTCost(req.Amount, req.Price)
-		if tokenStore.BalanceOf(address) < cost {
-			http.Error(w, fmt.Sprintf("insufficient CCT - this order needs %d CCT at your limit price", cost), http.StatusBadRequest)
+		costBig, _ := core.ParseCctSmallest(cost)
+		balanceBig, _ := core.ParseCctSmallest(cctStore.BalanceOf(address))
+		if balanceBig.Cmp(costBig) < 0 {
+			http.Error(w, fmt.Sprintf("insufficient CCT - this order needs %s CCT (smallest units) at your limit price", cost), http.StatusBadRequest)
 			return
 		}
 	}

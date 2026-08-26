@@ -31,7 +31,7 @@ async function loadWallet() {
         document.getElementById("creditScore").innerText = w.reputation;
         document.getElementById("ethBalance").innerText = w.stakedETH;
         document.getElementById("oethBalance").innerText = w.oethBalance;
-        document.getElementById("cctBalance").innerText = tokenBalance.balance;
+        document.getElementById("cctBalance").innerText = cctFromSmallest(tokenBalance.balance);
         document.getElementById("usdcTestBalance").innerText = usdcTestBalance.balance;
         document.getElementById("rewardBalance").innerText = w.rewards;
     } catch (e) {

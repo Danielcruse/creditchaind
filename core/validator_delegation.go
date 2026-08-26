@@ -58,6 +58,22 @@ func (d *DelegationStore) DelegatorCount(validator string) int {
 	return len(d.Delegations[validator])
 }
 
+// TotalDelegatedBy is how much delegator has delegated out in total,
+// summed across every validator they back - the "committed elsewhere"
+// figure that a delegator's own self-staked CCT (StakingStore.StakeOf)
+// says nothing about, since the two are tracked as separate pools (see
+// this type's own doc comment). Feeds the moderator stake-floor check
+// (api/moderators.go) and the delegated-stake display on a wallet's own
+// profile - both need "how much have I sent out," not "how much do I
+// personally still hold."
+func (d *DelegationStore) TotalDelegatedBy(delegator string) uint64 {
+	var total uint64
+	for _, delegators := range d.Delegations {
+		total += delegators[delegator]
+	}
+	return total
+}
+
 // Delegate records amount more CCT backing validator from delegator -
 // the caller (applyValidatorDelegate) has already moved the real CCT
 // into escrow before calling this; this only updates the ledger.

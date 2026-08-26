@@ -20,12 +20,28 @@ type hubRulesSetData struct {
 	// CannedReplies is the entire "logic" an automation-tier worker may
 	// post - see core.HubRules.CannedReplies's doc comment.
 	CannedReplies []core.CannedReply `json:"cannedReplies"`
+	// RequireKYC - see core.HubRules.RequireKYC's doc comment. Unlike
+	// every other field here, this one is actually enforced server-side
+	// (HandleRequestHubTrade), not just disclosure text.
+	RequireKYC bool `json:"requireKYC"`
+	// ServiceProviders - see core.HubRules.ServiceProviders's doc
+	// comment. Free text, hub-authored, powers the marketplace filter
+	// bar (api/hub_directory_filters.go).
+	ServiceProviders []string `json:"serviceProviders"`
 }
 
 // maxPaymentWindowMinutes caps a hub-set payment window at 24 hours -
 // long enough for any real off-app payment method, short enough that
 // an escrowed trade can't sit open indefinitely.
 const maxPaymentWindowMinutes = 1440
+
+// maxServiceProviders/maxServiceProviderLen keep the marketplace filter
+// bar's option list from growing unbounded off one hub's input - same
+// "cap the count and per-entry length" convention as CannedReplies.
+const (
+	maxServiceProviders   = 20
+	maxServiceProviderLen = 60
+)
 
 // HandleSetHubRules lets a verified Trading Hub post/replace its own
 // preset trading rules - shown to a trader before they can submit a
@@ -73,6 +89,16 @@ func HandleSetHubRules(w http.ResponseWriter, r *http.Request) {
 	for _, c := range req.CannedReplies {
 		if len(c.Text) == 0 || len(c.Text) > core.MaxCannedReplyLen {
 			http.Error(w, "each canned reply must be 1-280 characters", http.StatusBadRequest)
+			return
+		}
+	}
+	if len(req.ServiceProviders) > maxServiceProviders {
+		http.Error(w, "at most 20 service providers allowed", http.StatusBadRequest)
+		return
+	}
+	for _, sp := range req.ServiceProviders {
+		if len(sp) == 0 || len(sp) > maxServiceProviderLen {
+			http.Error(w, "each service provider name must be 1-60 characters", http.StatusBadRequest)
 			return
 		}
 	}

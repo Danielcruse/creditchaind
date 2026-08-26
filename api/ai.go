@@ -183,8 +183,11 @@ func executeAssistantTool(name string, input json.RawMessage, callerAddress stri
 		wallet := walletStore.Get(callerAddress)
 		profile := creditEngine.Profiles.Get(callerAddress)
 		result := map[string]any{
-			"address":     callerAddress,
-			"cctBalance":  wallet.CCTBalance,
+			"address": callerAddress,
+			// wallet.CCTBalance is dead state (see api/wallets.go's
+			// HandleWallet for the full explanation) - cctStore is the
+			// real ledger.
+			"cctBalance":  core.CctSmallestToWholeFloor(cctStore.BalanceOf(callerAddress)),
 			"reputation":  wallet.Reputation,
 			"creditTier":  core.TierForReputation(wallet.Reputation),
 			"votingPower": wallet.VotingPower,

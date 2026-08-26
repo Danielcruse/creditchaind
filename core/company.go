@@ -48,6 +48,19 @@ type CompanyApplication struct {
 	// submitted.
 	ModeratorAddress string
 
+	// CertificateFilePath/CertificateHash record a real uploaded
+	// certificate document (see api/companies.go's
+	// HandleUploadCertificate) - "" until the applicant has actually
+	// uploaded one. A moderator's Review approval is only meaningful
+	// once a certificate is on file; the hash is what's logged in the
+	// executive-only moderator verification ledger (see
+	// core/moderator_verification_log.go) so an executive reviewing a
+	// moderator's history can confirm exactly which document version
+	// they signed off on.
+	CertificateFilePath string
+	CertificateHash     string
+	CertificateUploadedAt int64
+
 	CreatedAt  int64
 	ReviewedAt int64
 }
@@ -121,6 +134,13 @@ func (s *CompanyStore) Review(address, moderator string, approve bool, at int64)
 	if !ok || a.ModeratorAddress != moderator || a.Status != CompanyPending {
 		return false
 	}
+	// An approval requires a real certificate already on file - a
+	// moderator can still reject a certificate-less application (it's
+	// simply not ready), but "Verified" is meant to mean "a moderator
+	// reviewed the actual uploaded document," not free-text alone.
+	if approve && a.CertificateHash == "" {
+		return false
+	}
 
 	if approve {
 		a.Status = CompanyVerified
@@ -128,6 +148,23 @@ func (s *CompanyStore) Review(address, moderator string, approve bool, at int64)
 		a.Status = CompanyRejected
 	}
 	a.ReviewedAt = at
+	return true
+}
+
+// SetCertificate records a real uploaded certificate document - only
+// while still PENDING, so a certificate can't be swapped out after
+// the moderator has already reviewed and decided.
+func (s *CompanyStore) SetCertificate(address, filePath, hash string, at int64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	a, ok := s.Applications[address]
+	if !ok || a.Status != CompanyPending {
+		return false
+	}
+	a.CertificateFilePath = filePath
+	a.CertificateHash = hash
+	a.CertificateUploadedAt = at
 	return true
 }
 

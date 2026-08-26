@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Swap - OUTERNET</title>
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+<link rel="stylesheet" href="css/style.css?v=fixaug5c">
+<link rel="stylesheet" href="css/outernet.css?v=fixaug5d">
+<style>
+    .swap-row{ display:flex; justify-content:space-between; padding:6px 0; }
+    .swap-warning{
+        background:rgba(255,176,32,0.12); border:1px solid #ffb020;
+        border-radius:8px; padding:10px; font-size:13px; margin:12px 0;
+    }
+    .swap-net-address{ font-family:monospace; font-size:12px; opacity:0.8; word-break:break-all; }
+    .swap-net-blank{ opacity:0.55; font-style:italic; font-size:12px; }
+</style>
+</head>
+<body class="outernet-light">
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
+
+<div class="main" style="max-width:520px;margin:0 auto;padding:24px 16px;">
+
+<p><a href="outernet" style="color:#0284c7;">&larr; OUTERNET</a></p>
+
+<h1>Swap</h1>
+
+<div class="card" style="border:2px solid #ff8a3d;" id="swapIntroCard">
+<p style="margin:0;font-size:13px;" id="swapIntroText">
+Fair-value conversion between real internal balances, priced off the live market rate (not a floating pool) -
+CCT is used only as the accounting unit shown below, your real value is protected either way. Any deposit that
+lands here (BTC, ETH) creates a real vault balance, and any vault balance can swap with any other, routed
+through CCT for pricing. Self-custodial ETH/USDC/BTC live on their own chains and have no CreditChain balance
+to move, so they're not part of this swap.
+</p>
+</div>
+
+<!-- Mainnet only: ETH_CCC1/BTC_CCC1 aren't swappable through the
+     fair-value endpoint (it mints on demand with no check against real
+     vault reserves - safe for YEN-e/legacy mirror tokens, not for
+     assets that are supposed to be redeemable 1:1 for something
+     actually locked). Real vault-to-vault trades go through the
+     Trading Hub marketplace instead, which only ever moves real
+     balances between two real parties. -->
+<div class="card" id="mainnetRedirectCard" style="display:none;">
+    <h3 style="margin-top:0;">Trade ETH/BTC Through the Marketplace</h3>
+    <p style="font-size:13px;opacity:0.85;">
+        Swapping between real vault-backed ETH and BTC happens through the Trading Hub marketplace's Native
+        Token Swap - find a hub that offers the pair you want, and it settles instantly, atomically, straight
+        from real balances (never newly minted). YEN-e trades still work below.
+    </p>
+    <a href="p2p"><button>Open Marketplace &rarr;</button></a>
+</div>
+
+<div class="card" id="formCard">
+    <label for="fromSymbol">From</label>
+    <select id="fromSymbol" onchange="onFromChange()"></select>
+    <p style="margin:4px 0 12px 0;font-size:13px;opacity:0.75;">Balance: <span id="fromBalance">Loading...</span></p>
+
+    <input type="number" id="amount" placeholder="Amount" step="any">
+    <br><br>
+
+    <label for="toSymbol">To</label>
+    <select id="toSymbol" onchange="onToChange()"></select>
+
+    <button onclick="preview()">Preview</button>
+    <p id="formStatus" style="opacity:0.75;font-size:13px;"></p>
+</div>
+
+<div class="card" id="reviewCard" style="display:none;">
+    <h3 style="margin-top:0;">Confirm Swap</h3>
+    <div class="swap-row"><span>You send</span><span id="reviewFrom"></span></div>
+    <div class="swap-row"><span>You receive (est.)</span><span id="reviewTo"></span></div>
+    <div class="swap-row"><span>Value (USD)</span><span id="reviewUsd"></span></div>
+    <div class="swap-row"><span>Value (CCT, accounting unit)</span><span id="reviewCct"></span></div>
+    <div class="swap-warning">
+        The final amount is computed again at confirmation time from the live rate - it may differ slightly from this estimate.
+    </div>
+    <button id="confirmSwapBtn" onclick="confirmSwap()">Confirm Swap</button>
+    <button onclick="cancelReview()">Back</button>
+    <p id="reviewStatus" style="opacity:0.75;font-size:13px;"></p>
+</div>
+
+<div class="card">
+    <h3 style="margin-top:0;">Network addresses</h3>
+    <p style="margin:0 0 8px 0;"><strong>BTC (bridged)</strong><br>
+        <span class="swap-net-address" id="btcNetAddress">Loading...</span>
+    </p>
+    <p style="margin:0 0 8px 0;"><strong>ETH (bridged)</strong><br>
+        <span class="swap-net-address" id="ethNetAddress">Loading...</span>
+    </p>
+    <p style="margin:0;"><strong>YEN-e</strong><br>
+        <span class="swap-net-blank" id="yeneNetAddress">Not yet bridged to an external network - YEN-e only exists on OUTERNET right now.</span>
+    </p>
+</div>
+
+</div>
+
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/vault.js?v=sec0816c"></script>
+<script src="js/swap-bridged.js?v=fixaug5d"></script>
+
+</body>
+</html>

@@ -2,11 +2,14 @@
 <html>
 <head>
     <title>Create Account</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/auth-cover.css?v=fixaug5a">
 </head>
-<body>
+<body class="auth-cover-page">
+
+<div class="auth-cover" aria-hidden="true"><img src="svg/auth-cover.svg?v=fixaug5a" alt=""></div>
 
 <h1>Create OUTERNET Account</h1>
 
@@ -44,7 +47,30 @@
 
     <br><br>
 
-    <button onclick="register()">
+    <div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:14px;font-size:13px;line-height:1.6;opacity:0.85;">
+        <strong>Terms of Use</strong>
+        <p style="margin:8px 0 0;">
+            By creating an account you agree that OUTERNET bridges the crypto you
+            deposit (ETH, BTC, and other supported assets) into CreditChain's own
+            tradeable representations (e.g. ETHB, BTCB) so it can be used across
+            the Crypto Marketplace (peer-to-peer trading) and the Loan Marketplace
+            (borrowing and lending). Balances shown on CreditChain reflect these
+            bridged representations, not a direct hold of the original asset on
+            its native chain. This is a testnet/demo environment - see the
+            site-wide banner for the current network's real-value status.
+        </p>
+    </div>
+
+    <br>
+
+    <label style="display:flex;gap:8px;align-items:flex-start;">
+        <input type="checkbox" id="termsAck" style="margin-top:4px;">
+        <span>I have read and agree to the Terms of Use above.</span>
+    </label>
+
+    <br>
+
+    <button id="createAccountBtn" disabled onclick="register()">
         Create Account
     </button>
 
@@ -56,16 +82,16 @@ style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);align-ite
     <div style="background:var(--cc-bg-2, #082616);border-radius:16px;padding:25px;max-width:600px;width:92vw;max-height:85vh;overflow-y:auto;">
         <h2 style="margin-top:0;color:#ffd166;">⚠ Save Your Backup Phrase</h2>
         <p>
-            This is the <strong>only time</strong> this backup phrase will ever be shown.
-            It's the only way to restore your wallet if you lose access to this browser
-            and haven't set up email recovery. Write it down and store it somewhere safe -
-            anyone who has it can control your wallet.
+            This is the <strong>only time</strong> this backup phrase will ever be shown, and
+            it is the <strong>only</strong> way to restore your wallet if you lose access to
+            this browser - there is no email recovery, no support-assisted recovery, no
+            alternative. Write it down and store it somewhere safe - anyone who has it can
+            control your wallet, and if you lose it, nobody (including us) can get it back for you.
         </p>
-        <p style="opacity:0.7;font-size:12px;">
+        <p style="opacity:0.7;font-size:12px;" id="seedPhraseNetworkNote">
             This is a standard 12-word BIP-39 recovery phrase - it's the master key for your
-            CreditChain, Ethereum, and Bitcoin (testnet) accounts, all derived from this one
-            phrase. See <a href="settings.html" style="color:var(--cc-accent-gold, #c9a227);">Settings</a> later for the
-            email-based recovery option too.
+            CreditChain, Ethereum, and Bitcoin accounts, all derived from this one phrase.
+            You can restore a wallet from it any time on the <a href="login" style="color:var(--cc-accent-gold, #c9a227);">Login</a> page.
         </p>
         <div id="seedPhraseText" style="font-family:monospace;font-size:13px;background:rgba(255,255,255,0.05);border-radius:10px;padding:15px;line-height:1.8;word-spacing:6px;"></div>
         <br>
@@ -80,11 +106,12 @@ style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);align-ite
     </div>
 </div>
 
-<script src="js/api.js"></script>
-<script src="js/vendor/bip39-wordlist.js"></script>
-<script src="js/vendor/hd-crypto.js"></script>
-<script src="js/hdwallet.js"></script>
-<script src="js/regions.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/vendor/bip39-wordlist.js?v=fixaug5b"></script>
+<script src="js/vendor/hd-crypto.js?v=fixaug5b"></script>
+<script src="js/hdwallet.js?v=fixaug5b"></script>
+<script src="js/regions.js?v=fixaug5b"></script>
 <script>
 
 populateRegionSelect(document.getElementById("region"));
@@ -98,7 +125,22 @@ if (refParam) {
     document.getElementById("referredBy").value = refParam;
 }
 
+// hub/intent come from a Trading Hub's own shareable link
+// (hub-link.html?hub=<address>) - kept separate from refParam above
+// even though they're usually the same address, since ConnectedHub and
+// ReferredBy are separate concepts server-side (see
+// core.Wallet.ConnectedHub's doc comment). intent=sell routes straight
+// to vaulting crypto after account creation instead of the normal
+// OUTERNET dashboard - see continueAfterSeedPhrase below.
+const hubParam = new URLSearchParams(window.location.search).get("hub") || "";
+const intentParam = new URLSearchParams(window.location.search).get("intent") || "";
+
 async function register() {
+
+    if (!document.getElementById("termsAck").checked) {
+        alert("Please agree to the Terms of Use first.");
+        return;
+    }
 
     let username =
         document.getElementById(
@@ -156,7 +198,14 @@ async function register() {
     // sent anywhere. The server only ever sees the CreditChain
     // account's address + public key (see api/wallet_create.go).
     const mnemonic = await HDWallet.generateMnemonic();
-    const accounts = await HDWallet.deriveAllAccounts(mnemonic, "");
+    // Derive BTC for BOTH networks while the mnemonic is in hand (it's
+    // never persisted after this function returns) - so switching the
+    // network selector later never requires re-entering the recovery
+    // phrase. See getHdAccounts() in api.js for how this gets resolved
+    // per-network on read.
+    const seed = await HDWallet.mnemonicToSeed(mnemonic, "");
+    const accounts = await HDWallet.deriveAllAccounts(mnemonic, "", "testnet");
+    const btcMainnet = await HDWallet.deriveBtcAddress(seed, "mainnet");
 
     const referredBy = document.getElementById("referredBy").value.trim();
 
@@ -165,6 +214,7 @@ async function register() {
             address: accounts.creditchain.address,
             publicKey: accounts.creditchain.publicKey,
             referredBy: referredBy,
+            connectedHub: hubParam,
         });
     } catch (e) {
         alert("Could not reach CreditChain node: " + e.message);
@@ -180,7 +230,7 @@ async function register() {
 
     localStorage.setItem("cc_hd_accounts", JSON.stringify({
         eth: accounts.eth,
-        btc: accounts.btc,
+        btc: { testnet: accounts.btc, mainnet: btcMainnet },
     }));
 
     document.getElementById("seedPhraseText").innerText = mnemonic;
@@ -191,8 +241,16 @@ document.getElementById("seedPhraseAck").addEventListener("change", (e) => {
     document.getElementById("seedPhraseContinueBtn").disabled = !e.target.checked;
 });
 
+document.getElementById("termsAck").addEventListener("change", (e) => {
+    document.getElementById("createAccountBtn").disabled = !e.target.checked;
+});
+
 function continueAfterSeedPhrase() {
-    location.href = "outernet.html";
+    // A hub-link "I have crypto to sell" signup lands straight on
+    // vaulting crypto rather than the general dashboard - assets.html
+    // already has direct links to both the ETH/USDC and BTC vault-
+    // deposit flows, so there's no need for a dedicated chooser page.
+    location.href = intentParam === "sell" ? "assets" : "outernet";
 }
 
 </script>

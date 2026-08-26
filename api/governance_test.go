@@ -1,6 +1,7 @@
 package api
 
 import (
+	"math/big"
 	"testing"
 
 	"github.com/creditchain/creditchaind/core"
@@ -36,6 +37,12 @@ func TestVotingWeight_FloorOneForActivatedZeroStakeZeroReputation(t *testing.T) 
 	w := walletStore.Get(addr)
 	w.VotingPower = 1
 	w.Reputation = 0
+	// walletStore.Get already auto-vivified via NewWallet(), which
+	// pre-seeds Trust to all-50 (see wallet.go) - reset it so
+	// votingWeight's TrustDimensionValue read correctly falls back to
+	// the Reputation value this test actually wants to exercise,
+	// rather than reading the stale pre-seeded 50.
+	w.Trust = core.TrustDimensions{}
 
 	if got := votingWeight(addr); got != 1 {
 		t.Fatalf("expected the floor of 1 for an activated wallet with zero stake and zero reputation, got %d", got)
@@ -49,6 +56,7 @@ func TestVotingWeight_ScalesWithStakeAndReputation(t *testing.T) {
 	w := walletStore.Get(addr)
 	w.VotingPower = 1
 	w.Reputation = 100
+	w.Trust = core.TrustDimensions{} // see the identical reset note in the floor test above
 	stakingStore.Stakes[addr] = map[string]uint64{"CCT": core.StakeCap}
 
 	// normalizedStake=100, reputation=100 -> 1 + 100*40/100 + 100*60/100 = 1+40+60 = 101
@@ -69,6 +77,14 @@ func newActivatedVoter(t *testing.T, addr string, reputation, stakeCCT uint64) {
 	w := walletStore.Get(addr)
 	w.VotingPower = 1
 	w.Reputation = reputation
+	// HighestTierReached must stay consistent with Reputation - left at
+	// its zero value here, any later call into IncreaseWalletReputation/
+	// IncreaseWalletTrust (e.g. the Governance Trust grant on a passed
+	// proposal) would wrongly see this wallet as never having reached
+	// ANY tier and mint the full cumulative tier-crossing REPT reward
+	// all over again, even for a wallet already sitting at Reputation
+	// 100 by test setup.
+	w.HighestTierReached = core.TierForReputation(reputation)
 	if stakeCCT > 0 {
 		stakingStore.Stakes[addr] = map[string]uint64{"CCT": stakeCCT}
 	}
@@ -252,6 +268,11 @@ func TestProcessProposalFinalization_ParamChangePassingUpdatesGovernanceParamsSt
 
 	newActivatedVoter(t, "voter-param", 100, core.StakeCap)
 
+	// CCTTransferFeeSmallestUnit is the key that actually controls what
+	// applyTransfer charges (see api/apply.go's doc comment on
+	// DefaultCCTTransferFeeSmallestUnit) - the legacy "CCTTransferFee"
+	// key only feeds the conservative whole-CCT pre-submission balance
+	// check now, not the real amount deducted.
 	p := &core.Proposal{
 		ID:         "prop-param-change",
 		CreatedBy:  "voter-param",
@@ -259,7 +280,7 @@ func TestProcessProposalFinalization_ParamChangePassingUpdatesGovernanceParamsSt
 		Quorum:     10,
 		Deadline:   1000,
 		Kind:       core.ProposalKindParamChange,
-		ParamKey:   "CCTTransferFee",
+		ParamKey:   "CCTTransferFeeSmallestUnit",
 		ParamValue: 7,
 	}
 	proposalStore.Create(p)
@@ -270,17 +291,21 @@ func TestProcessProposalFinalization_ParamChangePassingUpdatesGovernanceParamsSt
 	if p.Status != core.ProposalStatusPassed {
 		t.Fatalf("setup issue: expected the PARAM_CHANGE proposal to pass, got %q", p.Status)
 	}
-	if got := governanceParam("CCTTransferFee", CCTTransferFee); got != 7 {
-		t.Fatalf("expected governanceParam(\"CCTTransferFee\") to reflect the passed proposal's value 7, got %d", got)
+	if got := governanceParam("CCTTransferFeeSmallestUnit", DefaultCCTTransferFeeSmallestUnit); got != 7 {
+		t.Fatalf("expected governanceParam(\"CCTTransferFeeSmallestUnit\") to reflect the passed proposal's value 7, got %d", got)
 	}
 
-	// A subsequent fee-charging transfer must actually use the new fee.
+	// A subsequent fee-charging transfer must actually use the new fee -
+	// mint exactly amount(100 whole CCT) + fee(7 smallest units), so a
+	// zero balance afterward proves precisely 7 (not the old default)
+	// was what got charged.
 	const from = "param-change-sender"
-	tokenStore.Mint(from, 100+7)
+	seeded := new(big.Int).Add(core.CctWholeToSmallest(100), big.NewInt(7))
+	cctStore.Mint(from, core.FormatCctSmallest(seeded))
 	tx := core.Transaction{ID: "param-change-transfer", From: from, To: "param-change-recipient", Amount: 100, Type: core.TxExchange}
 	applyTransfer(tx)
-	if got := tokenStore.BalanceOf(from); got != 0 {
-		t.Fatalf("expected sender balance 0 after paying amount(100)+new fee(7) out of a 107 balance, got %d", got)
+	if got := cctStore.BalanceOf(from); got != "0" {
+		t.Fatalf("expected sender balance 0 after paying amount(100)+new fee(7 smallest units), got %s", got)
 	}
 }
 

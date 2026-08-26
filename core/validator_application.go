@@ -1,6 +1,9 @@
 package core
 
-import "sync"
+import (
+	"sort"
+	"sync"
+)
 
 // ValidatorApplication is the staged, harder-to-reach validator
 // onboarding pipeline - see api/validator_application.go's doc
@@ -150,6 +153,67 @@ func (s *ValidatorApplicationStore) IsApproved(address string) bool {
 
 	a, ok := s.Apps[address]
 	return ok && a.Status == ValidatorApplicationApproved
+}
+
+// ApprovedCount is how many applications have ever been approved -
+// the input to the stepped, count-based support-weight bar (see
+// api/validator_application.go's validatorApplicationRequiredWeight):
+// the first-ever applicant needs 1, the next needs 2, and so on.
+func (s *ValidatorApplicationStore) ApprovedCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	count := 0
+	for _, a := range s.Apps {
+		if a.Status == ValidatorApplicationApproved {
+			count++
+		}
+	}
+	return count
+}
+
+// SupportCountFor is how many distinct applications this wallet has
+// already thrown its support behind, across every application ever
+// created (not just currently-OPEN ones) - the input to the per-wallet
+// vote cap (see api/validator_application.go's
+// validatorApplicationMaxVotesPerWallet). Computed live from the
+// existing per-application Supporters map rather than a second
+// counter, so there's only ever one source of truth to keep in sync.
+func (s *ValidatorApplicationStore) SupportCountFor(wallet string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	count := 0
+	for _, a := range s.Apps {
+		if a.Supporters[wallet] {
+			count++
+		}
+	}
+	return count
+}
+
+// ListOpen returns every OPEN application - the "gathering support"
+// stage where Support() still does anything - sorted by CreatedAt
+// then Address for a stable, deterministic display order across
+// repeated calls (this is a plain read, not consensus-critical, but a
+// list that reorders itself on every poll is a bad user experience).
+func (s *ValidatorApplicationStore) ListOpen() []*ValidatorApplication {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	out := make([]*ValidatorApplication, 0, len(s.Apps))
+	for _, a := range s.Apps {
+		if a.Status == ValidatorApplicationOpen {
+			out = append(out, a)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt != out[j].CreatedAt {
+			return out[i].CreatedAt < out[j].CreatedAt
+		}
+		return out[i].Address < out[j].Address
+	})
+	return out
 }
 
 func (s *ValidatorApplicationStore) Snapshot() map[string]*ValidatorApplication {

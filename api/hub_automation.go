@@ -76,7 +76,7 @@ func HandleHubAutomationSubscribe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "only a verified Trading Hub can subscribe to Automation", http.StatusForbidden)
 		return
 	}
-	if tokenStore.BalanceOf(address) < AutomationTierMonthlyFeeCCT {
+	if !hasCctBalance(address, AutomationTierMonthlyFeeCCT) {
 		http.Error(w, "insufficient CCT balance for the Automation subscription fee", http.StatusBadRequest)
 		return
 	}
@@ -156,7 +156,7 @@ func applyHubAutomationSubscribe(tx core.Transaction) {
 	if !companyStore.IsVerified(tx.From) {
 		return
 	}
-	if !tokenStore.Transfer(tx.From, automationFeeSink(), AutomationTierMonthlyFeeCCT) {
+	if !transferCctWhole(tx.From, automationFeeSink(), AutomationTierMonthlyFeeCCT) {
 		return
 	}
 	hubAutomationStore.Subscribe(tx.From, tx.Timestamp+automationSubscriptionSeconds)

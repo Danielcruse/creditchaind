@@ -168,16 +168,16 @@ func TestRequireAdminAuthed_RejectsNeitherCredential(t *testing.T) {
 func TestApplyGenesisPoolWithdraw_MovesFromKeylessPoolOnly(t *testing.T) {
 	resetPoSRTestState()
 
-	tokenStore.Mint(genesisPoolAddress(genesisPoolValidatorReward), 1000)
+	cctStore.Mint(genesisPoolAddress(genesisPoolValidatorReward), cctW(1000))
 
 	data, _ := json.Marshal(genesisPoolWithdrawData{Pool: genesisPoolValidatorReward, To: "some-operator-address", Amount: 400})
 	applyGenesisPoolWithdraw(core.Transaction{ID: "genesis-withdraw-1", Data: string(data)})
 
-	if got := tokenStore.BalanceOf(genesisPoolAddress(genesisPoolValidatorReward)); got != 600 {
-		t.Fatalf("expected pool balance reduced to 600, got %d", got)
+	if got := cctStore.BalanceOf(genesisPoolAddress(genesisPoolValidatorReward)); got != cctW(600) {
+		t.Fatalf("expected pool balance reduced to 600, got %s", got)
 	}
-	if got := tokenStore.BalanceOf("some-operator-address"); got != 400 {
-		t.Fatalf("expected destination balance 400, got %d", got)
+	if got := cctStore.BalanceOf("some-operator-address"); got != cctW(400) {
+		t.Fatalf("expected destination balance 400, got %s", got)
 	}
 }
 

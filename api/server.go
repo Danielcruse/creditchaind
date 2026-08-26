@@ -75,7 +75,11 @@ func corsMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+		bodyLimit := int64(maxRequestBodyBytes)
+		if r.URL.Path == "/companies/upload-certificate" {
+			bodyLimit = maxCertificateUploadRequestBytes
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, bodyLimit)
 
 		next.ServeHTTP(w, r)
 
@@ -122,10 +126,33 @@ func StartServer(port string) {
 	}
 
 	LoadState()
+	nodeAdmissionStore.SeedGrandfatheredNodeAdmissions(grandfatheredNodeAdmissions)
 	InitDB()
 	InitEthSigner()
+	InitBtcVaultSigner()
 	InitEthRPC()
-	startEthBridgeDepositLoop()
+	// startEthBridgeDepositLoop() is RETIRED as of this session - it was
+	// deliberately kept running alongside the new lock-and-mint vault
+	// (Phase E of the bridge-vault plan, wiggly-moseying-horizon.md -
+	// see project memory "deploy all fix" 2026-08-02) only because the
+	// vault wasn't actually functional on this deployment yet at the
+	// time (no ETH_RPC_URL/VAULT_CONTRACT_ADDRESS/
+	// RELAYER_PRIVATE_KEY_HEX/bridge validators configured) - that same
+	// comment explicitly named "once the vault is actually configured
+	// and proven" as the retirement trigger. The vault is now fully
+	// configured AND proven on real mainnet (a real ETH deposit
+	// correctly minted ETH_CCC1, and a real withdrawal correctly
+	// released ETH, both confirmed on-chain this session). Kept
+	// running past that point, this loop's own per-address polling (one
+	// eth_getBalance call per registered address, every 30s - see
+	// pollAndReportBridgeDeposit) was competing with the vault's own
+	// RPC calls for the same provider quota and is the confirmed cause
+	// of an Infura 429 rate-limit that took down the ETH custodial
+	// corner AND the vault's own ETH watch/relay loops together.
+	// startBtcBridgeDepositLoop() is UNCHANGED - BTC uses a separate,
+	// unrelated RPC/API, wasn't implicated in this incident, and is left
+	// as a follow-up retirement decision rather than bundled into this
+	// urgent fix.
 	startBtcBridgeDepositLoop()
 	startPriceOracleLoop()
 	loadNodeIdentity()
@@ -460,6 +487,30 @@ func StartServer(port string) {
 		HandleConfirmTrade,
 	)
 	http.HandleFunc(
+		"/trade-review/submit",
+		HandleSubmitTradeReview,
+	)
+	http.HandleFunc(
+		"/trade-review/for-address",
+		HandleGetTradeReviewsForAddress,
+	)
+	http.HandleFunc(
+		"/trade-review/status",
+		HandleGetTradeReviewStatus,
+	)
+	http.HandleFunc(
+		"/dispute-fault-choice/pay",
+		HandleDisputeFaultChoicePay,
+	)
+	http.HandleFunc(
+		"/dispute-fault-choice/decline",
+		HandleDisputeFaultChoiceDecline,
+	)
+	http.HandleFunc(
+		"/dispute-fault-choice/status",
+		HandleGetDisputeFaultChoice,
+	)
+	http.HandleFunc(
 		"/p2p/offers/accept-external",
 		HandleAcceptExternalP2POffer,
 	)
@@ -470,6 +521,10 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/p2p/offers/seller-dispute",
 		HandleP2PSellerDispute,
+	)
+	http.HandleFunc(
+		"/p2p/offers/buyer-dispute",
+		HandleP2PBuyerDispute,
 	)
 	http.HandleFunc(
 		"/p2p/offers/buyer-mark-paid",
@@ -500,6 +555,10 @@ func StartServer(port string) {
 		HandleListCompanies,
 	)
 	http.HandleFunc(
+		"/companies/status",
+		HandleCompanyStatus,
+	)
+	http.HandleFunc(
 		"/companies/apply",
 		HandleApplyCompany,
 	)
@@ -508,12 +567,28 @@ func StartServer(port string) {
 		HandleReviewCompany,
 	)
 	http.HandleFunc(
+		"/companies/upload-certificate",
+		HandleUploadCertificate,
+	)
+	http.HandleFunc(
 		"/companies/reassign-moderator",
 		HandleReassignCompanyModerator,
 	)
 	http.HandleFunc(
+		"/governance/moderator-verifications",
+		HandleModeratorVerifications,
+	)
+	http.HandleFunc(
 		"/companies/update-contact",
 		HandleUpdateCompanyContact,
+	)
+	http.HandleFunc(
+		"/wallet/connect-hub",
+		HandleConnectHub,
+	)
+	http.HandleFunc(
+		"/wallet/connected-hub",
+		HandleGetConnectedHub,
 	)
 	http.HandleFunc(
 		"/buy-requests",
@@ -556,8 +631,28 @@ func StartServer(port string) {
 		HandleEthSelfCustodyBroadcast,
 	)
 	http.HandleFunc(
+		"/erc20/usdc-balance",
+		HandleUsdcSelfCustodyBalance,
+	)
+	http.HandleFunc(
+		"/erc20/balance",
+		HandleErc20SelfCustodyBalance,
+	)
+	http.HandleFunc(
+		"/swap/fair-value",
+		HandleFairValueSwap,
+	)
+	http.HandleFunc(
 		"/ethb/balance",
 		HandleEthbBalance,
+	)
+	http.HandleFunc(
+		"/eth-bridge/register-address",
+		HandleEthRegisterAddress,
+	)
+	http.HandleFunc(
+		"/eth-bridge/address",
+		HandleEthWatchedAddress,
 	)
 	http.HandleFunc(
 		"/eth-bridge/withdraw",
@@ -610,6 +705,10 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/hub-rates/rules/set",
 		HandleSetHubRules,
+	)
+	http.HandleFunc(
+		"/hub-directory-filters",
+		HandleListHubDirectoryFilters,
 	)
 	http.HandleFunc(
 		"/hub/notifications",
@@ -676,6 +775,14 @@ func StartServer(port string) {
 		HandleGetValidatorApplication,
 	)
 	http.HandleFunc(
+		"/validator-application/list",
+		HandleListValidatorApplications,
+	)
+	http.HandleFunc(
+		"/validator-application/my-votes",
+		HandleMyValidatorVotes,
+	)
+	http.HandleFunc(
 		"/hub-agents/apply",
 		HandleApplyHubAgent,
 	)
@@ -690,6 +797,18 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/hub-agents",
 		HandleListHubAgentApplications,
+	)
+	http.HandleFunc(
+		"/validator/join-request/submit",
+		HandleSubmitValidatorJoinRequest,
+	)
+	http.HandleFunc(
+		"/validator/join-requests",
+		HandleListValidatorJoinRequests,
+	)
+	http.HandleFunc(
+		"/validator/join-request/mark-handled",
+		HandleMarkValidatorJoinRequestHandled,
 	)
 	http.HandleFunc(
 		"/hub-storefront/set",
@@ -714,6 +833,22 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/recovery/recover",
 		HandleRecoverWallet,
+	)
+	// Contact-email verification (api/contact_email.go) - a separate,
+	// still-live mechanism from the retired recovery endpoints just
+	// above, despite sharing the same underlying store. See that
+	// file's own doc comment for why this exists.
+	http.HandleFunc(
+		"/contact-email/request-code",
+		HandleRequestContactEmailCode,
+	)
+	http.HandleFunc(
+		"/contact-email/confirm",
+		HandleConfirmContactEmail,
+	)
+	http.HandleFunc(
+		"/contact-email/status",
+		HandleGetContactEmailStatus,
 	)
 	http.HandleFunc(
 		"/wallet/hd-migrate",
@@ -749,6 +884,14 @@ func StartServer(port string) {
 		HandleAdminConfirmPurchase,
 	)
 	http.HandleFunc(
+		"/admin/treasury/purchase/send-instructions",
+		HandleAdminSendPurchaseInstructions,
+	)
+	http.HandleFunc(
+		"/treasury/purchase/confirm-payment",
+		HandleBuyerConfirmPurchasePayment,
+	)
+	http.HandleFunc(
 		"/admin/treasury/sale-price",
 		HandleAdminSetSalePrice,
 	)
@@ -759,6 +902,38 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/admin/treasury/address",
 		HandleAdminSetTreasuryAddress,
+	)
+	http.HandleFunc(
+		"/treasury/bank-accounts",
+		HandleListBankAccounts,
+	)
+	http.HandleFunc(
+		"/admin/treasury/bank-account",
+		HandleAdminSetBankAccount,
+	)
+	http.HandleFunc(
+		"/treasury/purchase/mark-paid",
+		HandleTreasuryMarkPaidByBuyer,
+	)
+	http.HandleFunc(
+		"/admin/params/set",
+		HandleAdminSetParam,
+	)
+	http.HandleFunc(
+		"/admin/params",
+		HandleGetAdminParams,
+	)
+	http.HandleFunc(
+		"/admin/bridge/excess-deposits",
+		HandleAdminBridgeExcessDeposits,
+	)
+	http.HandleFunc(
+		"/admin/aws-credentials/set",
+		HandleAdminSetAWSCredentials,
+	)
+	http.HandleFunc(
+		"/admin/protocol-manifest/set",
+		HandleSetProtocolManifest,
 	)
 	http.HandleFunc(
 		"/admin/whoami",
@@ -773,8 +948,44 @@ func StartServer(port string) {
 		HandleGenesisPoolWithdraw,
 	)
 	http.HandleFunc(
+		"/admin/tokenomics/migrate-decimals",
+		HandleTokenomicsDecimalMigration,
+	)
+	http.HandleFunc(
 		"/admin/token/transfer",
 		HandleAdminTransfer,
+	)
+	http.HandleFunc(
+		"/admin/token/normalize-ccc1-balance",
+		HandleAdminNormalizeCcc1Balance,
+	)
+	http.HandleFunc(
+		"/admin/vault/sweep-signing-key-eth",
+		HandleSweepVaultReleaseSigningKeyEth,
+	)
+	http.HandleFunc(
+		"/admin/vault/refund-stuck-burn",
+		HandleAdminRefundStuckVaultBurn,
+	)
+	http.HandleFunc(
+		"/admin/smtp/set",
+		HandleAdminSetSmtpConfig,
+	)
+	http.HandleFunc(
+		"/admin/smtp/status",
+		HandleAdminGetSmtpStatus,
+	)
+	http.HandleFunc(
+		"/hub-kyc/submit",
+		HandleSubmitHubKYC,
+	)
+	http.HandleFunc(
+		"/hub-kyc/list",
+		HandleListHubKYC,
+	)
+	http.HandleFunc(
+		"/hub-kyc/status",
+		HandleHubKYCStatus,
 	)
 	http.HandleFunc(
 		"/admin/multisig/proposals",
@@ -974,8 +1185,134 @@ func StartServer(port string) {
 		HandleConsensusStatus,
 	)
 
+	http.HandleFunc(
+		"/rc/leaderboard",
+		HandleRCLeaderboard,
+	)
+
+	http.HandleFunc(
+		"/rc/executive/am-i",
+		HandleAmIExecutive,
+	)
+
+	http.HandleFunc(
+		"/proposals/promote",
+		HandlePromoteProposal,
+	)
+
+	http.HandleFunc(
+		"/predictions/vote",
+		HandlePredictionVote,
+	)
+
+	http.HandleFunc(
+		"/predictions/pool",
+		HandleGetPredictionPool,
+	)
+
+	http.HandleFunc(
+		"/rc/infuse",
+		HandleInfuseRC,
+	)
+
+	http.HandleFunc(
+		"/rc/infusions/recent",
+		HandleRecentRCInfusions,
+	)
+
+	http.HandleFunc(
+		"/executive-proposals/create",
+		HandleCreateExecutiveProposal,
+	)
+
+	http.HandleFunc(
+		"/executive-proposals/vote",
+		HandleVoteExecutiveProposal,
+	)
+
+	http.HandleFunc(
+		"/executive-proposals/list",
+		HandleListExecutiveProposals,
+	)
+
+	http.HandleFunc(
+		"/bridge-validator/register",
+		HandleBridgeValidatorRegister,
+	)
+
+	http.HandleFunc(
+		"/bridge-validator/list",
+		HandleBridgeValidatorList,
+	)
+
+	http.HandleFunc(
+		"/vault/info",
+		HandleVaultInfo,
+	)
+
+	http.HandleFunc(
+		"/vault/balance",
+		HandleVaultBalance,
+	)
+
+	http.HandleFunc(
+		"/vault/lock-attest",
+		HandleVaultLockAttest,
+	)
+
+	http.HandleFunc(
+		"/vault/lock-status",
+		HandleVaultLockStatus,
+	)
+
+	http.HandleFunc(
+		"/vault/burn",
+		HandleVaultBurn,
+	)
+
+	http.HandleFunc(
+		"/vault/release-approve",
+		HandleVaultReleaseApprove,
+	)
+
+	http.HandleFunc(
+		"/vault/set-validators-relay",
+		HandleVaultSetValidatorsRelay,
+	)
+
+	http.HandleFunc(
+		"/vault/set-token-allowed-relay",
+		HandleVaultSetTokenAllowedRelay,
+	)
+
+	http.HandleFunc(
+		"/vault/set-per-depositor-caps-relay",
+		HandleVaultSetPerDepositorCapsRelay,
+	)
+
+	http.HandleFunc(
+		"/vault/release-status",
+		HandleVaultReleaseStatus,
+	)
+
+	http.HandleFunc(
+		"/vault/release-queue",
+		HandleVaultReleaseQueue,
+	)
+
+	http.HandleFunc(
+		"/vault/pending-approvals",
+		HandleVaultPendingApprovals,
+	)
+
 	startConsensusLoop()
 	startForkMonitor()
+	startVaultEthWatchLoop()
+	startBtcVaultWatchLoop()
+	startVaultReleaseApproveWatchLoop()
+	startVaultReleaseRelayLoop()
+	startBtcReleaseRelayLoop()
+	startVaultGasPriceOracleLoop()
 
 	fmt.Println(
 		"CreditChain API running on port",

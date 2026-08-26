@@ -81,9 +81,9 @@ func TestPhaseB_EndToEnd_HTTPAndConsensusIntegration(t *testing.T) {
 	walletStore.Get(lender).Reputation = 50
 
 	// Healthy starting reserves.
-	cctEthTestPool.CCTReserve = 2_000_000
+	cctEthTestPool.CCTReserve = core.FormatCctSmallest(core.CctWholeToSmallest(2_000_000))
 	cctEthTestPool.TokenReserve = 1_000_000
-	cctUsdcTestPool.CCTReserve = 1_000_000
+	cctUsdcTestPool.CCTReserve = core.FormatCctSmallest(core.CctWholeToSmallest(1_000_000))
 	cctUsdcTestPool.TokenReserve = 1_000_000
 
 	loan := &core.Loan{
@@ -162,9 +162,9 @@ func TestPhaseB_EndToEnd_HTTPAndConsensusIntegration(t *testing.T) {
 	}
 
 	// --- 3. Crash the OETH price and confirm /loans/health flags it ---
-	cctEthTestPool.CCTReserve = 600_000 // was 2,000,000 - OETH now worth ~3.3x less in CCT
+	cctEthTestPool.CCTReserve = core.FormatCctSmallest(core.CctWholeToSmallest(600_000)) // was 2,000,000 - OETH now worth ~3.3x less in CCT
 
-	collateralValue, ok := collateralValueInYen(loan.CollateralSymbol, loan.CollateralAmount)
+	collateralValue, ok := collateralValueInYen(loan.CollateralSymbol, loan.CollateralAmount, 1000)
 	if !ok {
 		t.Fatalf("expected a live (crashed) price to still be available")
 	}
@@ -259,10 +259,40 @@ func TestPhaseB_EndToEnd_HTTPAndConsensusIntegration(t *testing.T) {
 	if loan.RiskStage != core.LoanRiskDefaulted {
 		t.Fatalf("expected RiskStage DEFAULTED, got %q", loan.RiskStage)
 	}
-	if got := walletStore.Get(borrower).Reputation; got != 50-wantDelta {
-		t.Fatalf("expected borrower reputation decreased by %d (from 50), got %d", wantDelta, got)
+	// This test advances simulated time from a real time.Now() by real
+	// risk-ladder dwell periods (margin call + grace period + final
+	// redemption window), so whether the final block lands before or
+	// after TrustDimensionsCutoverUnixSeconds depends on wall-clock
+	// time at whatever moment this test happens to run - it will
+	// inevitably cross that fixed point as real calendar time passes.
+	// Compute the correct expectation for whichever path was actually
+	// taken rather than assuming the old flat-subtraction math, which
+	// is only correct pre-cutover.
+	wantBorrowerReputation := 50 - wantDelta
+	wantLenderReputation := 50 + wantDelta
+	if asOf >= TrustDimensionsCutoverUnixSeconds {
+		// Post-cutover: the default penalty/gain only ever touches ONE
+		// of the six dimensions (Repayment for the borrower,
+		// Contribution for the lender - see the mapping in
+		// core/credit_engine.go's DefaultLoan), seeded from the
+		// wallet's pre-cutover flat Reputation (50 here) - so the
+		// mirrored overall Reputation moves by less than wantDelta,
+		// weighted by that one dimension's share of DefaultTrustWeights.
+		borrowerTrust := core.TrustDimensions{
+			RepaymentTrust: 50 - wantDelta, TradingTrust: 50, GovernanceTrust: 50,
+			ContributionTrust: 50, VerificationTrust: 50, DisputeTrust: 50,
+		}
+		lenderTrust := core.TrustDimensions{
+			RepaymentTrust: 50, TradingTrust: 50, GovernanceTrust: 50,
+			ContributionTrust: 50 + wantDelta, VerificationTrust: 50, DisputeTrust: 50,
+		}
+		wantBorrowerReputation = core.ComputeTSI(borrowerTrust, core.DefaultTrustWeights)
+		wantLenderReputation = core.ComputeTSI(lenderTrust, core.DefaultTrustWeights)
 	}
-	if got := walletStore.Get(lender).Reputation; got != 50+wantDelta {
-		t.Fatalf("expected lender reputation increased by %d (from 50), got %d", wantDelta, got)
+	if got := walletStore.Get(borrower).Reputation; got != wantBorrowerReputation {
+		t.Fatalf("expected borrower reputation %d (delta %d, post-cutover=%v), got %d", wantBorrowerReputation, wantDelta, asOf >= TrustDimensionsCutoverUnixSeconds, got)
+	}
+	if got := walletStore.Get(lender).Reputation; got != wantLenderReputation {
+		t.Fatalf("expected lender reputation %d (delta %d, post-cutover=%v), got %d", wantLenderReputation, wantDelta, asOf >= TrustDimensionsCutoverUnixSeconds, got)
 	}
 }

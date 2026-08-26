@@ -111,6 +111,6 @@ func applyRatingSubmit(tx core.Transaction) {
 	})
 
 	if isFirst && data.Stars >= goodRatingStarsThreshold {
-		tokenStore.Transfer(treasuryStore.Treasury.FoundationAddress, tx.From, 1)
+		transferCctWhole(treasuryStore.Treasury.FoundationAddress, tx.From, 1)
 	}
 }

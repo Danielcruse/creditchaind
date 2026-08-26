@@ -2,37 +2,35 @@
 <html>
 <head>
     <title>Order Book</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/pool-light.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/pool-light.css?v=fixaug5c">
 </head>
 <body class="pool-light">
-<script src="js/device-lock.js"></script>
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <div class="pool-topbar">
-    <a class="pool-topbar-brand" href="pool.html">Pool</a>
+    <a class="pool-topbar-brand" href="pool">Pool</a>
     <div class="pool-topbar-links">
-        <a href="liquidity.html">Liquidity Pool</a>
-        <a href="outernet.html">Back to OUTERNET</a>
+        <a href="liquidity">Liquidity Pool</a>
+        <a href="outernet">Back to OUTERNET</a>
     </div>
 </div>
 
 <div class="pool-wrap">
-    <a class="pool-back-link" href="pool.html">&larr; Pool</a>
+    <a class="pool-back-link" href="pool">&larr; Pool</a>
 
     <div class="pool-card">
         <h2>CCT Order Book</h2>
         <p class="pool-muted">
-            CCT's price against ETHTEST and USDCTEST is set here, not by a pool's reserve ratio - post a
+            CCT's price against ETH and USDC is set here, not by a pool's reserve ratio - post a
             buy or sell limit order, and the market price is whatever the last completed trade agreed on.
             There is no central pool for CCT; every trade is between two real orders.
         </p>
 
         <div class="pool-row">
-            <select id="obSymbol">
-                <option value="ETHTEST">ETHTEST</option>
-                <option value="USDCTEST">USDCTEST</option>
-            </select>
+            <select id="obSymbol"></select>
         </div>
 
         <div id="obChartContainer"><p class="pool-empty">Loading...</p></div>
@@ -56,6 +54,7 @@
                 <input id="obAmount" type="number" placeholder="Amount" min="0">
                 <button class="pool-btn" id="obPlaceBtn">Place Order</button>
             </div>
+            <p class="pool-muted" id="obCcc1UnitNote" style="display:none;color:#b45309;"></p>
             <p class="pool-muted" id="obBalance"></p>
             <p class="pool-status" id="obPlaceStatus"></p>
         </div>
@@ -87,10 +86,12 @@
     </div>
 </div>
 
-<script src="js/api.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/price-chart.js"></script>
-<script src="js/order-book.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/vault.js?v=sec0816c"></script>
+<script src="js/ai-assistant.js?v=fixaug5b"></script>
+<script src="js/price-chart.js?v=fixaug5b"></script>
+<script src="js/order-book.js?v=fixaug5o"></script>
 
 </body>
 </html>

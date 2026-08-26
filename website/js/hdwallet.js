@@ -131,13 +131,24 @@
         };
     }
 
-    async function deriveBtcTestnetAddress(seed) {
-        const node = await global.HDCrypto.deriveSecp256k1Path(seed, [84 + H, 1 + H, 0 + H, 0, 0]);
+    // deriveBtcAddress derives a BIP-84 native-segwit BTC account for
+    // either network - "testnet" (coin type 1', bech32 "tb" prefix,
+    // today's only behavior) or "mainnet" (coin type 0', "bc" prefix).
+    // Mainnet transition: the two networks are otherwise byte-identical
+    // derivation - only the coin type and hrp differ, per BIP-44/BIP-84.
+    const BTC_NETWORKS = {
+        testnet: { coinType: 1, hrp: "tb" },
+        mainnet: { coinType: 0, hrp: "bc" },
+    };
+
+    async function deriveBtcAddress(seed, network) {
+        const net = BTC_NETWORKS[network] || BTC_NETWORKS.testnet;
+        const node = await global.HDCrypto.deriveSecp256k1Path(seed, [84 + H, net.coinType + H, 0 + H, 0, 0]);
         const priv = global.HDCrypto.bytesToBigInt(node.key);
         const pub = global.HDCrypto.scalarBaseMult(priv);
         const pubCompressed = global.HDCrypto.compressPoint(pub);
         const h160 = await global.HDCrypto.hash160(pubCompressed);
-        const address = global.HDCrypto.segwitAddrEncode("tb", 0, h160);
+        const address = global.HDCrypto.segwitAddrEncode(net.hrp, 0, h160);
         return {
             address,
             publicKey: global.HDCrypto.bytesToHex(pubCompressed),
@@ -145,14 +156,28 @@
         };
     }
 
+    // Thin wrapper preserving the original name/call shape - every
+    // existing caller (deriveAllAccounts included) keeps working
+    // unchanged; new mainnet-aware call sites use deriveBtcAddress
+    // directly with an explicit network.
+    async function deriveBtcTestnetAddress(seed) {
+        return deriveBtcAddress(seed, "testnet");
+    }
+
     // Derives all three chain accounts from one mnemonic in one call -
     // the primary entry point registration/migration flows should use.
-    async function deriveAllAccounts(mnemonic, passphrase) {
+    // btcNetwork defaults to "testnet" (today's exact behavior,
+    // unchanged for any caller not yet updated to pass it explicitly) -
+    // callers on a mainnet deployment pass "mainnet" (typically derived
+    // from window.CC_NETWORK, see network-config.js) so a freshly
+    // registered wallet's cached BTC address is genuinely a bc1...
+    // mainnet address, not a testnet one masquerading as real.
+    async function deriveAllAccounts(mnemonic, passphrase, btcNetwork) {
         const seed = await mnemonicToSeed(mnemonic, passphrase);
         const [creditchain, eth, btc] = await Promise.all([
             deriveCreditChainKeypair(seed),
             deriveEthAddress(seed),
-            deriveBtcTestnetAddress(seed),
+            deriveBtcAddress(seed, btcNetwork || "testnet"),
         ]);
         return { creditchain, eth, btc };
     }
@@ -164,6 +189,7 @@
         deriveCreditChainKeypair,
         deriveEthAddress,
         deriveBtcTestnetAddress,
+        deriveBtcAddress,
         deriveAllAccounts,
     };
 })(window);

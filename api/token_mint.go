@@ -40,6 +40,11 @@ func HandleTokenMint(
 ) {
 	enableCors(&w)
 
+	if mainnetMode() {
+		http.Error(w, errTokenMintDisabledOnMainnet.Error(), http.StatusServiceUnavailable)
+		return
+	}
+
 	var req tokenMintData
 	signedAuth, mode, err := requireAdminAuthed(r, &req)
 	if err != nil {

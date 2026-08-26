@@ -152,6 +152,76 @@ func TestP2POffer_ResolveDispute_RefundSeller(t *testing.T) {
 	}
 }
 
+// --- Buyer's own escalation path (DisputeAwaitingPaymentByBuyer) ---
+
+func TestP2POffer_BuyerDispute_TooEarlyFails(t *testing.T) {
+	o := newExternalOffer("o1")
+	s := storeWithOffer(o)
+	beginAwaitingPayment(t, s, "o1")
+	s.MarkBuyerPaid("o1", testBuyer, 1100)
+
+	// One second short of the window - must still fail.
+	if _, ok := s.DisputeAwaitingPaymentByBuyer("o1", testBuyer, 1100+DisputeEligibleAfterSeconds-1); ok {
+		t.Fatal("expected buyer dispute to fail before DisputeEligibleAfterSeconds has elapsed")
+	}
+	if o.SettlementStatus != SettlementAwaitingPayment {
+		t.Fatalf("expected status to remain AWAITING_PAYMENT, got %s", o.SettlementStatus)
+	}
+}
+
+func TestP2POffer_BuyerDispute_AfterWindowSucceeds(t *testing.T) {
+	o := newExternalOffer("o1")
+	s := storeWithOffer(o)
+	beginAwaitingPayment(t, s, "o1")
+	s.MarkBuyerPaid("o1", testBuyer, 1100)
+
+	if _, ok := s.DisputeAwaitingPaymentByBuyer("o1", testBuyer, 1100+DisputeEligibleAfterSeconds); !ok {
+		t.Fatal("expected buyer dispute to succeed once DisputeEligibleAfterSeconds has elapsed")
+	}
+	if o.SettlementStatus != SettlementDisputed {
+		t.Fatalf("expected DISPUTED, got %s", o.SettlementStatus)
+	}
+
+	// The moderator can resolve it exactly like a seller-initiated
+	// dispute - DisputeAwaitingPaymentByBuyer lands on the same
+	// terminal-pending status ResolveDispute already knows how to
+	// adjudicate.
+	if _, ok := s.ResolveDispute("o1", testModerator, true); !ok {
+		t.Fatal("expected the assigned moderator to resolve the buyer-initiated dispute")
+	}
+	if o.SettlementStatus != SettlementResolvedRelease {
+		t.Fatalf("expected RESOLVED_RELEASE, got %s", o.SettlementStatus)
+	}
+}
+
+func TestP2POffer_BuyerDispute_WrongCallerFails(t *testing.T) {
+	o := newExternalOffer("o1")
+	s := storeWithOffer(o)
+	beginAwaitingPayment(t, s, "o1")
+	s.MarkBuyerPaid("o1", testBuyer, 1100)
+
+	if _, ok := s.DisputeAwaitingPaymentByBuyer("o1", testOtherAddr, 1100+DisputeEligibleAfterSeconds); ok {
+		t.Fatal("expected a non-buyer to be rejected from the buyer's own dispute path")
+	}
+	// The seller itself must also be rejected here - this is
+	// specifically the BUYER's escalation path; the seller already has
+	// its own immediate DisputeAwaitingPayment.
+	if _, ok := s.DisputeAwaitingPaymentByBuyer("o1", testSeller, 1100+DisputeEligibleAfterSeconds); ok {
+		t.Fatal("expected the seller to be rejected from the buyer's own dispute path")
+	}
+}
+
+func TestP2POffer_BuyerDispute_NoPaymentClaimFails(t *testing.T) {
+	o := newExternalOffer("o1")
+	s := storeWithOffer(o)
+	beginAwaitingPayment(t, s, "o1")
+
+	// Buyer never called MarkBuyerPaid - nothing to escalate.
+	if _, ok := s.DisputeAwaitingPaymentByBuyer("o1", testBuyer, 1000+DisputeEligibleAfterSeconds); ok {
+		t.Fatal("expected buyer dispute to fail when no payment claim is on record")
+	}
+}
+
 // --- Authorization: only the right party can act at each step ---
 
 func TestP2POffer_OnlyAssignedBuyerCanMarkPaid(t *testing.T) {

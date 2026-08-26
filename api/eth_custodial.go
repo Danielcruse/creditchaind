@@ -13,6 +13,30 @@ import (
 
 var ethCustodialStore = core.NewEthCustodialStore()
 
+// EthCustodialAccountFeeCCT is an anti-Sybil cost for provisioning a new
+// custodial signing key - unlike Hub/Moderator/Validator registration fees
+// (10-50 CCT, pure anti-spam), this specific action creates a real,
+// recurring-cost external resource the operator pays for (one AWS KMS key
+// per account, ~$1/month indefinitely once created - see
+// ops/ETH_CUSTODIAL_SETUP.md's cost note). CreditChain wallet creation
+// itself is free and instant (client-side, no signup cost - see the HD
+// wallet work in core/address.go), so without this fee a script could
+// generate unlimited wallets and call this endpoint once per wallet,
+// each call provisioning a real KMS key with no requirement to ever fund
+// or use it - a real, unbounded cost-exhaustion vector against the
+// operator's AWS bill, not just a spam nuisance. Charged directly and
+// synchronously in the handler (not via the usual recordTx/apply
+// pending-tx pipeline) because this entire feature is already,
+// deliberately, a synchronous/node-local exception to that pipeline (see
+// this file's own top-of-file doc comment). Set higher than the flat
+// registration fees since it's funding an ongoing cost, not a one-time
+// anti-spam cost - a judgment call, not derived from any specified
+// value; still only a partial fix (a one-time fee doesn't stop an
+// abandoned/never-funded account from costing the operator money forever
+// after that single charge) - see audit/KNOWN_GAPS.md's entry on the
+// still-needed recurring-renewal + ScheduleKeyDeletion-on-lapse follow-up.
+const EthCustodialAccountFeeCCT = 100
+
 // Unlike every other economic action in this app (see
 // audit/ARCHITECTURE.md's money-movement path), ETH-custodial account
 // creation and withdrawal are handled synchronously, directly in the HTTP
@@ -33,59 +57,32 @@ var ethCustodialStore = core.NewEthCustodialStore()
 
 type ethCustodialCreateData struct{}
 
-// HandleCreateEthCustodialAccount provisions a new Sepolia-testnet
-// signing key (via ethSigner - AWS KMS in production, a clearly-labeled
-// local dev-only fallback otherwise, see eth_signer.go) for the
-// requesting wallet, and records the resulting address. One custodial
-// account per CreditChain address, created once.
+// HandleCreateEthCustodialAccount is RETIRED as a live account-creation
+// path. Outernet's ETH story is now exactly two things: self-custodial
+// ETH (the user's own HD-derived key, never seen by CreditChain - see
+// api/eth_selfcustody.go) and ETHB, the bridged ledger credit that
+// mirrors that same self-custodial address's balance (see
+// api/eth_bridge.go's ethAddressStore/HandleEthRegisterAddress, the
+// same free, non-custodial watched-address model core/btc_address.go
+// already used for BTCB). A CreditChain-generated, CreditChain-held
+// signing key has no place in that story, so this endpoint no longer
+// provisions one - it returns a clear, disclosed redirect instead of a
+// bare 404, matching this project's "disclose, don't silently break"
+// convention (see api/token_registry.go's HandleRegisterToken for the
+// precedent this mirrors).
+//
+// The underlying core.EthCustodialStore/EthCustodialAccount type and
+// the read/withdraw endpoints below are deliberately NOT deleted -
+// never strand funds: if any account was already provisioned under the
+// old design (see api/eth_bridge.go's deposit-detection loop, which
+// still polls ethCustodialStore for backward compatibility), that
+// account's owner can still see its balance and withdraw it via those
+// endpoints - just no NEW account can ever be created, and this
+// mechanism is no longer surfaced anywhere in the product UI as an
+// account a user is meant to actively use.
 func HandleCreateEthCustodialAccount(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w)
-
-	if r.Method != http.MethodPost {
-		http.Error(w, "POST only", http.StatusMethodNotAllowed)
-		return
-	}
-	if ethSigner == nil {
-		http.Error(w, "ETH custodial signer not initialized", http.StatusServiceUnavailable)
-		return
-	}
-
-	var req ethCustodialCreateData
-	envelope, address, err := requireSignedRequest(r, &req)
-	if err != nil {
-		writeUnauthorized(w, err)
-		return
-	}
-
-	if existing, ok := ethCustodialStore.Get(address); ok {
-		json.NewEncoder(w).Encode(map[string]string{
-			"status":     "already exists",
-			"ethAddress": existing.EthAddress,
-		})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
-	defer cancel()
-
-	keyRef, ethAddress, err := ethSigner.NewKey(ctx)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to provision signing key: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	ethCustodialStore.Create(&core.EthCustodialAccount{
-		CreditChainAddress:   address,
-		CreditChainPublicKey: envelope.PublicKey,
-		EthAddress:           ethAddress,
-		KeyRef:               keyRef,
-		CreatedAt:            time.Now().Unix(),
-	})
-
-	json.NewEncoder(w).Encode(map[string]string{
-		"status":     "created",
-		"ethAddress": ethAddress,
-	})
+	http.Error(w, "custodial ETH accounts are retired - CreditChain never holds an ETH signing key on your behalf. Use your self-custodial ETH account (derived from your own recovery phrase) instead; ETHB automatically mirrors its balance once you register it via /eth-bridge/register-address.", http.StatusGone)
 }
 
 // HandleEthCustodialBalance returns the account's real, live Sepolia

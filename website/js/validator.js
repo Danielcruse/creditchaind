@@ -51,6 +51,8 @@ async function loadLeaderboard() {
 
         const mine = list.find((v) => v.address === wallet.address);
         renderMyValidatorCard(mine);
+
+        maybeOpenDelegateFromQueryString();
     } catch (e) {
         console.error(e);
     }
@@ -79,6 +81,43 @@ function renderMyValidatorCard(mine) {
     document.getElementById("myCommission").innerText = fmtPct(mine.commissionBps);
     document.getElementById("myTotalDelegated").innerText = mine.totalDelegated;
     document.getElementById("myDelegatorCount").innerText = mine.delegatorCount;
+
+    const joinLinkInput = document.getElementById("myValidatorJoinLink");
+    if (joinLinkInput) {
+        joinLinkInput.value = `${location.origin}${location.pathname}?delegate=${mine.address}`;
+    }
+}
+
+// copyMyValidatorJoinLink lets a validator share one link to recruit
+// delegators instead of asking them to find/paste the address
+// themselves - opening it pre-fills the delegate form below via the
+// ?delegate= handling at the bottom of this file.
+function copyMyValidatorJoinLink() {
+    const input = document.getElementById("myValidatorJoinLink");
+    const statusEl = document.getElementById("myValidatorJoinLinkStatus");
+    if (!input || !input.value) return;
+    input.select();
+    navigator.clipboard
+        .writeText(input.value)
+        .then(() => {
+            if (statusEl) statusEl.innerText = "Copied to clipboard.";
+        })
+        .catch(() => {
+            if (statusEl) statusEl.innerText = "Couldn't copy automatically - select and copy the link manually.";
+        });
+}
+
+// A validator's own shared join link (?delegate=<address>) pre-fills
+// the delegate form the moment the leaderboard has loaded, so a
+// recruited delegator doesn't have to find/paste the address
+// themselves. Only fires once per page load.
+let delegateParamHandled = false;
+function maybeOpenDelegateFromQueryString() {
+    if (delegateParamHandled) return;
+    const address = new URLSearchParams(window.location.search).get("delegate");
+    if (!address) return;
+    delegateParamHandled = true;
+    openValidatorDetail(address);
 }
 
 async function openValidatorDetail(address) {
@@ -314,14 +353,40 @@ async function refreshConsensusStatus() {
 async function becomeValidator() {
     if (!wallet) return;
 
+    // The node whose identity gets delegated to must be the validator's
+    // OWN node (the one they built from the download step and pointed at
+    // this network via SELF_URL/PEERS) - not whatever backend this
+    // website itself happens to talk to (API_BASE, the operator's own
+    // node). Without asking for it explicitly here, every validator
+    // following the download instructions would silently re-register the
+    // operator's node instead of their own.
+    const nodeUrlInput = document.getElementById("becomeValidatorNodeUrl");
+    const nodeUrl = nodeUrlInput ? nodeUrlInput.value.trim().replace(/\/+$/, "") : "";
+
+    if (!nodeUrl) {
+        alert("Enter your own node's URL first - see the field above the Become Validator button.");
+        return;
+    }
+
     try {
         // You must explicitly sign WHICH node you're delegating
         // block-production to, rather than just trusting whichever
         // node happens to receive the request to fill that in itself -
         // otherwise a malicious relay could rewrite that delegation in
-        // transit. Fetch this node's own identity first so it's part
-        // of what actually gets signed.
-        const node = await apiGet("/node");
+        // transit. Fetch THAT node's own identity first (not this
+        // website's own API backend's) so it's part of what actually
+        // gets signed.
+        let node;
+        try {
+            const res = await fetch(nodeUrl + "/node");
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            node = await res.json();
+        } catch (fetchErr) {
+            throw new Error(
+                `Could not reach ${nodeUrl}/node (${fetchErr.message}). ` +
+                "Check the URL is correct, your node is running, and it's reachable over HTTPS from a browser."
+            );
+        }
 
         const result = await apiPostSigned("/validators/register", {
             nodeId: node.nodeId,
@@ -332,6 +397,34 @@ async function becomeValidator() {
         setTimeout(loadLeaderboard, 9000);
     } catch (e) {
         alert("Could not become a validator: " + e.message);
+    }
+}
+
+// submitValidatorJoinRequest replaces the old ad-hoc "ask the operator
+// over chat/email" step with a real, persisted request the operator
+// can see and act on (api/validator_join_request.go) - it does NOT
+// hand out NETWORK_SECRET or peer anyone automatically, that stays a
+// manual operator action same as always (see downloadNodeCard's own
+// doc text). This just gives the operator a queue instead of nothing.
+async function submitValidatorJoinRequest() {
+    if (!wallet) return;
+
+    const nodeUrl = document.getElementById("joinRequestNodeUrl").value.trim();
+    const note = document.getElementById("joinRequestNote").value.trim();
+    const statusEl = document.getElementById("joinRequestStatus");
+
+    if (!nodeUrl) {
+        statusEl.innerText = "Enter your node's URL first.";
+        return;
+    }
+
+    try {
+        await apiPostSigned("/validator/join-request/submit", { nodeUrl, note });
+        statusEl.innerText = "Request submitted - the operator will reach out with a NETWORK_SECRET once they've reviewed it.";
+        document.getElementById("joinRequestNodeUrl").value = "";
+        document.getElementById("joinRequestNote").value = "";
+    } catch (e) {
+        statusEl.innerText = "Could not submit: " + e.message;
     }
 }
 
@@ -446,7 +539,7 @@ async function loadValidatorPageRatings() {
         }
         el.innerHTML = ratings
             .slice(0, 5)
-            .map((r) => `<div class="explorer-row"><span>${"&#9733;".repeat(r.Stars)}</span><span>${r.Comment || ""}</span></div>`)
+            .map((r) => `<div class="explorer-row"><span>${"&#9733;".repeat(r.Stars)}</span><span>${escapeHtml(r.Comment || "")}</span></div>`)
             .join("");
     } catch (e) {
         console.error(e);
@@ -464,7 +557,7 @@ async function loadValidatorPageHubAds() {
         }
         el.innerHTML = verified
             .slice(0, 5)
-            .map((c) => `<div class="explorer-row"><span>${c.Name}</span><a href="p2p.html">Visit &rarr;</a></div>`)
+            .map((c) => `<div class="explorer-row"><span>${escapeHtml(c.Name)}</span><a href="p2p">Visit &rarr;</a></div>`)
             .join("");
     } catch (e) {
         console.error(e);

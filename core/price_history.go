@@ -1,5 +1,7 @@
 package core
 
+import "math/big"
+
 // PricePoint is one historical price sample for a liquidity pool -
 // price is expressed as CCT per one unit of the paired token (matches
 // the "1 SYMBOL = X CCT" convention pool.html already shows as its
@@ -49,10 +51,28 @@ const MaxPricePointsPerSymbol = 500
 // proportional add/remove-liquidity that doesn't move price at all -
 // only when the ratio actually changes).
 func (s *PriceHistoryStore) Record(symbol string, pool *LiquidityPool, timestamp int64) {
-	if pool == nil || pool.CCTReserve == 0 || pool.TokenReserve == 0 {
+	if pool == nil || pool.TokenReserve == 0 {
 		return
 	}
-	price := (pool.CCTReserve * priceScale) / pool.TokenReserve
+	cctReserve := bigCct(pool.CCTReserve)
+	if cctReserve.Sign() == 0 {
+		return
+	}
+	// CCTReserve is smallest-unit (18 decimals), so the ratio itself is
+	// computed in big.Int to avoid overflowing the intermediate
+	// multiplication, then reduced to a uint64 chart value - this is
+	// purely observational display data (see the doc comment above),
+	// so clamping to MaxUint64 on an absurdly large ratio is an
+	// acceptable, disclosed simplification rather than a correctness
+	// issue for anything that actually moves funds.
+	priceBig := new(big.Int).Mul(cctReserve, big.NewInt(priceScale))
+	priceBig.Div(priceBig, new(big.Int).SetUint64(pool.TokenReserve))
+	var price uint64
+	if priceBig.IsUint64() {
+		price = priceBig.Uint64()
+	} else {
+		price = ^uint64(0)
+	}
 
 	points := s.History[symbol]
 	if len(points) > 0 && points[len(points)-1].Price == price {
@@ -69,6 +89,30 @@ func (s *PriceHistoryStore) Record(symbol string, pool *LiquidityPool, timestamp
 // Get returns symbol's full recorded history, oldest first.
 func (s *PriceHistoryStore) Get(symbol string) []PricePoint {
 	return s.History[symbol]
+}
+
+// CurrentPoolPriceScaled computes a pool's live CCT-per-unit price
+// straight from its current reserves, scaled by priceScale - the same
+// formula Record uses internally, exported for callers (e.g.
+// api/prediction_vote.go's processPredictionResolution) that need a
+// live read at a specific moment rather than the last recorded chart
+// point, which may be stale or never populated for a thinly-traded
+// pool. Returns 0 for an empty/untraded pool - "no meaningful price
+// yet," never a fabricated value.
+func CurrentPoolPriceScaled(pool *LiquidityPool) uint64 {
+	if pool == nil || pool.TokenReserve == 0 {
+		return 0
+	}
+	cctReserve := bigCct(pool.CCTReserve)
+	if cctReserve.Sign() == 0 {
+		return 0
+	}
+	priceBig := new(big.Int).Mul(cctReserve, big.NewInt(priceScale))
+	priceBig.Div(priceBig, new(big.Int).SetUint64(pool.TokenReserve))
+	if priceBig.IsUint64() {
+		return priceBig.Uint64()
+	}
+	return ^uint64(0)
 }
 
 // RecordPrice is Record's sibling for a symbol whose price comes from

@@ -2,10 +2,13 @@
 <html>
 <head>
     <title>OUTERNET Validator Pools</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
     <style>
+        html{
+            scroll-behavior:smooth;
+        }
         .explorer-search{
             display:flex;
             gap:10px;
@@ -81,8 +84,8 @@
             border:1px solid rgba(255,255,255,0.2);
         }
         .validator-badge.active{
-            color:#00ff95;
-            border-color:#00ff95;
+            color:#0f9d58;
+            border-color:#0f9d58;
         }
         .validator-badge.inactive{
             color:#888;
@@ -92,6 +95,62 @@
             color:#ffd166;
             border-color:#ffd166;
             margin-left:6px;
+        }
+
+        /* Dashboard nav tile grid - same visual pattern pool.html's
+           function hub already uses, reused here so this page reads
+           as a dashboard with quick jump-to-section navigation
+           instead of one long stacked scroll. These tiles scroll to
+           the existing card sections below (anchor links) rather than
+           toggling visibility, so none of the existing conditional
+           show/hide logic in validator.js (approval-gating,
+           application-status boxes, etc.) needs to change. */
+        .validator-nav-grid{
+            display:grid;
+            grid-template-columns:repeat(3, 1fr);
+            gap:14px;
+            margin:18px 0 24px;
+        }
+        @media (max-width:640px){
+            .validator-nav-grid{
+                grid-template-columns:1fr 1fr;
+            }
+        }
+        .validator-nav-tile{
+            display:block;
+            background:rgba(255,255,255,0.05);
+            border:1px solid rgba(255,255,255,0.12);
+            border-radius:14px;
+            padding:16px;
+            text-decoration:none;
+            color:inherit;
+            transition:transform .15s ease, background .15s ease;
+        }
+        .validator-nav-tile:hover{
+            transform:translateY(-2px);
+            background:rgba(255,255,255,0.09);
+        }
+        .validator-nav-tile-icon{
+            width:34px;
+            height:34px;
+            border-radius:10px;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size:16px;
+            margin-bottom:8px;
+            background:rgba(15,157,88,0.15);
+            color:var(--cc-accent-1, #0f9d58);
+        }
+        .validator-nav-tile h3{
+            margin:0 0 4px;
+            font-size:14px;
+        }
+        .validator-nav-tile p{
+            margin:0;
+            font-size:11px;
+            opacity:0.65;
+            line-height:1.4;
         }
 
         @media (max-width:700px){
@@ -123,16 +182,54 @@
     </style>
 </head>
 <body>
-<script src="js/device-lock.js"></script>
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <h1>Validator Pools</h1>
 
 <p style="opacity:0.7;font-size:13px;">
     Every registered validator's pool - delegate CCT to one to back its PoSR selection weight and share in
     its block rewards (net of its own commission), without running a node yourself. See
-    <a href="reputation.html#math" style="color:var(--cc-accent-gold, #c9a227);">how PoSR selection actually works</a> for what really
+    <a href="reputation#math" style="color:var(--cc-accent-gold, #c9a227);">how PoSR selection actually works</a> for what really
     drives who gets picked (stake is only 25% of it).
 </p>
+
+<!-- ================= Dashboard nav: jump to any section below instead
+     of scrolling through everything - each tile is an anchor link to
+     an existing card, not a new page or a visibility toggle, so none
+     of validator.js's existing approval-gating/status logic changes. ================= -->
+<div class="validator-nav-grid">
+    <a class="validator-nav-tile" href="#validatorApplicationCard">
+        <div class="validator-nav-tile-icon">&#128221;</div>
+        <h3>Application</h3>
+        <p>Staged onboarding, support &amp; ratings</p>
+    </a>
+    <a class="validator-nav-tile" href="#leaderboardCard">
+        <div class="validator-nav-tile-icon">&#127942;</div>
+        <h3>Leaderboard</h3>
+        <p>Every validator pool, sortable</p>
+    </a>
+    <a class="validator-nav-tile" href="#myValidatorCard">
+        <div class="validator-nav-tile-icon">&#128737;</div>
+        <h3>My Validator</h3>
+        <p>Your own stats &amp; rewards</p>
+    </a>
+    <a class="validator-nav-tile" href="#myDelegationsCard">
+        <div class="validator-nav-tile-icon">&#129309;</div>
+        <h3>My Delegations</h3>
+        <p>Validators you're backing</p>
+    </a>
+    <a class="validator-nav-tile" href="#consensusStatusCard">
+        <div class="validator-nav-tile-icon">&#9889;</div>
+        <h3>Consensus Status</h3>
+        <p>Chain height, current leader</p>
+    </a>
+    <a class="validator-nav-tile" href="#becomeValidatorCard">
+        <div class="validator-nav-tile-icon">&#10133;</div>
+        <h3>Become Validator</h3>
+        <p>Requirements &amp; registration</p>
+    </a>
+</div>
 
 <!-- ================= Validator Application (staged onboarding) ================= -->
 <div class="card" id="validatorApplicationCard">
@@ -155,7 +252,7 @@
         <div id="applicationPendingBox" style="display:none;">
             <p style="opacity:0.7;font-size:12px;">
                 You've reached the required support - check your recovery email for a confirmation link, or paste
-                the link's page here: <a href="validator-confirm.html">validator-confirm.html</a>.
+                the link's page here: <a href="validator-confirm">validator-confirm.html</a>.
             </p>
         </div>
 
@@ -278,11 +375,94 @@
     <p>Commission: <span id="myCommission">0</span>%</p>
     <p>Total Delegated to Me: <span id="myTotalDelegated">0</span> CCT (<span id="myDelegatorCount">0</span> delegators)</p>
 
+    <div id="myValidatorJoinLinkBox" style="margin-top:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,0.1);">
+        <h3 style="margin-bottom:4px;">Invite delegators</h3>
+        <p style="opacity:0.7;font-size:12px;margin-top:0;">
+            Share this link instead of asking people to find/paste your address - it pre-fills the
+            delegate form on this page with your validator's address.
+        </p>
+        <div class="explorer-search">
+            <input id="myValidatorJoinLink" readonly style="flex:1;min-width:200px;">
+            <button onclick="copyMyValidatorJoinLink()">Copy Link</button>
+        </div>
+        <p id="myValidatorJoinLinkStatus" style="font-size:12px;opacity:0.75;"></p>
+    </div>
+
 </div>
 
 <br>
 
-<div class="card">
+<div class="card" id="downloadNodeCard">
+
+    <h2>Download &amp; Run Node Software</h2>
+
+    <p style="opacity:0.85;">
+        Validating means running your own <code>creditchaind</code> node - a separate, ordinary process from
+        this website - not just staking CCT through the browser.
+    </p>
+
+    <h3 style="margin-bottom:4px;">Fastest way: precompiled binary (Linux x86-64)</h3>
+    <p style="opacity:0.7;font-size:12px;margin-top:0;">
+        No Go toolchain needed - just download and run. Built from the exact same source as the live network.
+    </p>
+    <pre style="background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:14px;overflow-x:auto;font-size:12.5px;line-height:1.5;">curl -O https://creditchain.site/downloads/creditchaind-linux-amd64
+chmod +x creditchaind-linux-amd64
+
+PORT=8080 DATA_DIR=./data PEERS=&lt;operator's node URL&gt; NETWORK_SECRET=&lt;from operator&gt; SELF_URL=&lt;your reachable URL&gt; ./creditchaind-linux-amd64</pre>
+
+    <h3 style="margin-bottom:4px;">Or build from source</h3>
+    <p style="opacity:0.7;font-size:12px;margin-top:0;">
+        Full environment-variable reference, Docker Compose setup, and how to verify your node has actually
+        converged with the network: see <code>ops/NODE_OPERATOR.md</code> inside the
+        <a href="downloads/creditchaind-source.tar.gz" style="color:var(--cc-accent-gold, #c9a227);">project source download</a>.
+        The project's source repository is private - this tarball, built from the same source running the
+        live network, is how it's distributed instead.
+    </p>
+    <pre style="background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:14px;overflow-x:auto;font-size:12.5px;line-height:1.5;">curl -O https://creditchain.site/downloads/creditchaind-source.tar.gz
+mkdir creditchaind-source
+tar xzf creditchaind-source.tar.gz -C creditchaind-source
+cd creditchaind-source
+go build -o creditchaind .
+
+PORT=8080 DATA_DIR=./data PEERS=&lt;operator's node URL&gt; NETWORK_SECRET=&lt;from operator&gt; SELF_URL=&lt;your reachable URL&gt; ./creditchaind</pre>
+
+    <p style="opacity:0.75;font-size:13px;">
+        <strong>This network is currently permissioned, not self-serve.</strong> Running the binary is free and
+        open to anyone, but actually joining the live gossip network (rather than starting your own isolated
+        chain) requires the operator to hand you a <code>NETWORK_SECRET</code> and add your node's
+        <code>SELF_URL</code> to their own <code>PEERS</code> list. Once your node is running and peered, the
+        "Become Validator" step below is what actually registers it for block production - simply running the
+        software isn't enough on its own.
+    </p>
+    <p style="opacity:0.75;font-size:13px;">
+        Once running, your dashboard above ("My Validator") shows real, live data for whichever node your
+        registration authorized - stake, uptime, blocks produced/missed, and delegator totals - and you can
+        generate the invite link above to recruit delegators without them needing to find your address
+        manually.
+    </p>
+
+    <div style="margin-top:16px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.1);">
+        <h3 style="margin-bottom:4px;">Request to Join</h3>
+        <p style="opacity:0.7;font-size:12px;margin-top:0;">
+            Once your node is up and reachable, submit its URL here instead of reaching the operator over chat
+            or email - it's queued for the operator to review and hand you a <code>NETWORK_SECRET</code> once
+            approved.
+        </p>
+        <div class="explorer-search">
+            <input id="joinRequestNodeUrl" placeholder="Your node's URL (SELF_URL)">
+        </div>
+        <div class="explorer-search">
+            <input id="joinRequestNote" placeholder="Note for the operator (optional)">
+            <button onclick="submitValidatorJoinRequest()">Request to Join</button>
+        </div>
+        <p id="joinRequestStatus" style="font-size:12px;opacity:0.75;"></p>
+    </div>
+
+</div>
+
+<br>
+
+<div class="card" id="consensusStatusCard">
 
     <h2>Consensus Status</h2>
 
@@ -302,7 +482,7 @@
 
 <br>
 
-<div class="card">
+<div class="card" id="becomeValidatorCard">
 
     <h2>Become Validator</h2>
 
@@ -317,13 +497,27 @@
         once you have one.
     </p>
 
+    <p style="opacity:0.85;font-size:13px;">
+        Enter the URL of the <code>creditchaind</code> node <strong>you are running</strong> (the
+        <code>SELF_URL</code> from the download step above) - this is what tells the network which physical
+        node your stake is delegating block production to. Leaving this blank registers whichever node this
+        website itself talks to, not yours.
+    </p>
+    <div class="explorer-search" style="margin-bottom:10px;">
+        <input id="becomeValidatorNodeUrl" placeholder="https://your-node-address:8080">
+    </div>
+    <p style="opacity:0.6;font-size:12px;">
+        Must be reachable over HTTPS from a browser (a plain <code>http://</code> node URL will be blocked by
+        mixed-content rules on this page) - put your node behind a reverse proxy/TLS if it isn't already.
+    </p>
+
     <button onclick="becomeValidator()">Become Validator</button>
 
 </div>
 
 <br>
 
-<div class="card">
+<div class="card" id="manualNudgeCard">
 
     <h2>Manual Nudge</h2>
 
@@ -340,11 +534,12 @@
 
 <br>
 
-<button onclick="location.href='outernet.html'">Back To Wallet</button>
+<button onclick="location.href='outernet'">Back To Wallet</button>
 
-<script src="js/api.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/validator.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/ai-assistant.js?v=fixaug5b"></script>
+<script src="js/validator.js?v=sec0816a"></script>
 
 </body>
 </html>

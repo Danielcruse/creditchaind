@@ -124,7 +124,7 @@ function openGovBurst() {
         const time = status.Timestamp ? new Date(status.Timestamp * 1000).toLocaleString() : "";
         panel.innerHTML = `
             <div class="gov-float-panel-meta">${status.Address ? shortGovAddr(status.Address) : "Community"}${time ? " &middot; " + time : ""}</div>
-            <div class="gov-float-panel-text">${status.Text}</div>
+            <div class="gov-float-panel-text">${escapeHtml(status.Text)}</div>
         `;
         overlay.appendChild(panel);
     });
@@ -143,7 +143,7 @@ function openGovBurst() {
     const fullBtn = document.createElement("a");
     fullBtn.id = "govBurstFullBtn";
     fullBtn.className = "gov-burst-full";
-    fullBtn.href = "governance.html";
+    fullBtn.href = "governance";
     fullBtn.setAttribute("aria-label", "Open the full Governance page");
     fullBtn.innerText = "View full Governance →";
     overlay.appendChild(fullBtn);

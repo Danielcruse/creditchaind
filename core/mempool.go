@@ -1,5 +1,26 @@
 package core
 
+import "time"
+
+// MaxFutureMempoolTxDrift bounds how far ahead of this node's own
+// wall clock an incoming transaction's Timestamp may claim to be -
+// same window as MaxFutureBlockDrift (block_validation.go), for the
+// same reason: generous enough for real clock skew between
+// independently-run nodes, but not so generous a malicious peer can
+// dodge Prune's expiry by stamping a transaction arbitrarily far in
+// the future (see audit finding M-01 - Prune only drops a transaction
+// once `now - tx.Timestamp` exceeds MempoolTxExpiry, so an
+// unvalidated future timestamp never ages out at all).
+const MaxFutureMempoolTxDrift = 120 * time.Second
+
+// ValidateMempoolTimestamp reports whether tx's Timestamp is plausible
+// relative to this node's own wall clock - called on every transaction
+// a node receives from a peer (see api/peer.go's HandlePeerTx) before
+// it's ever admitted to the mempool at all, not just at Prune time.
+func ValidateMempoolTimestamp(tx Transaction, now int64) bool {
+	return tx.Timestamp <= now+int64(MaxFutureMempoolTxDrift.Seconds())
+}
+
 // MaxMempoolSize bounds unbounded memory growth from spam or a
 // stalled network (no leader confirming blocks) - once full, Add
 // evicts the single oldest pending transaction to make room. There's

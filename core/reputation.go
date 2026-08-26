@@ -69,3 +69,62 @@ func DecreaseWalletReputation(w *Wallet, amount uint64) {
 func DecreaseReputation(v *Validator, amount uint64) {
 	DecreaseWalletReputation(&v.Wallet, amount)
 }
+
+// IncreaseWalletTrust/DecreaseWalletTrust are the dimension-aware
+// counterparts to IncreaseWalletReputation/DecreaseWalletReputation
+// above - see trust.go's TrustDimensions doc comment for why the flat
+// score is being split. These are the NEW behavior; the old flat
+// functions above are kept unchanged and still used for any
+// transaction timestamped before TrustDimensionsCutoverUnixSeconds
+// (api/apply.go) - every call site picks between the two based on its
+// own timestamp check, the same pattern this codebase already
+// established for H01FixCutoverUnixSeconds/H03FixCutoverUnixSeconds.
+// These functions are NOT themselves cutover-aware - that decision
+// belongs to the caller, matching the existing convention (the
+// cutover constants live in api/apply.go, not core, and core has no
+// business importing api's cutover schedule).
+//
+// Wallet.Reputation is kept in sync as a live MIRROR on every call
+// (ComputeTSI(w.Trust, DefaultTrustWeights)) - see wallet.go's doc
+// comment on the Reputation field for why. Tier-crossing REPT reward
+// logic is unchanged from IncreaseWalletReputation above: it still
+// keys off the mirrored Reputation value crossing into a new
+// CreditTier, since CreditTier/BorrowLimit/InterestRate reading
+// overall TSI (not a single dimension) is this pass's explicitly
+// deferred scope, not something changed here.
+func IncreaseWalletTrust(w *Wallet, dim TrustDimension, amount uint64) uint64 {
+	seedTrustIfNeeded(w)
+
+	current := w.Trust.get(dim)
+	var next uint64
+	if current+amount < current {
+		// overflow guard, same as IncreaseWalletReputation above.
+		next = MaxReputation
+	} else {
+		next = clampReputation(current + amount)
+	}
+	w.Trust.set(dim, next)
+	w.Reputation = ComputeTSI(w.Trust, DefaultTrustWeights)
+
+	newTier := TierForReputation(w.Reputation)
+	if TierRank(newTier) <= TierRank(w.HighestTierReached) {
+		return 0
+	}
+	reward := cumulativeTierReward(w.HighestTierReached, newTier)
+	w.HighestTierReached = newTier
+	return reward
+}
+
+func DecreaseWalletTrust(w *Wallet, dim TrustDimension, amount uint64) {
+	seedTrustIfNeeded(w)
+
+	current := w.Trust.get(dim)
+	var next uint64
+	if amount >= current {
+		next = MinReputation
+	} else {
+		next = clampReputation(current - amount)
+	}
+	w.Trust.set(dim, next)
+	w.Reputation = ComputeTSI(w.Trust, DefaultTrustWeights)
+}

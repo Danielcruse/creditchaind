@@ -74,6 +74,7 @@ var reservedSymbols = map[string]bool{
 	"YENE":     true,
 	"ETHB":     true,
 	"BTCB":     true,
+	"BTCTEST":  true,
 }
 
 // ValidateTokenSymbol enforces the same symbol shape a handler needs

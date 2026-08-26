@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,10 +44,39 @@ func requireNetworkSecret(r *http.Request) bool {
 	return subtle.ConstantTimeCompare([]byte(got), []byte(expected)) == 1
 }
 
+// nodeAdmissionEnforced gates whether HandlePeerHandshake actually
+// REJECTS an unadmitted public key, vs. only logging what it would
+// have done - see the node-admission plan's own recommended log-only
+// sub-phase before flipping this on for real, given a bug here could
+// disconnect every legitimate peer at once. Deliberately the OPPOSITE
+// default direction from networkSecret()'s fail-closed convention:
+// this feature's risk is in enforcing too early on live infrastructure,
+// not in being open too long, so it defaults to log-only (false) until
+// explicitly turned on, not the reverse.
+func nodeAdmissionEnforced() bool {
+	return os.Getenv("NODE_ADMISSION_ENFORCE_HANDSHAKE") == "true"
+}
+
 type handshakeMsg struct {
 	NodeID    string `json:"nodeId"`
 	PublicKey string `json:"publicKey"`
 	Address   string `json:"address"`
+
+	// Timestamp/Signature prove the caller genuinely holds the private
+	// key matching the claimed PublicKey - see handshakeCanonicalMessage/
+	// signHandshake/verifyHandshakeSignature. Before this,
+	// HandlePeerHandshake accepted ANY NodeID/PublicKey pair a
+	// NETWORK_SECRET holder claimed, unconditionally recording it via
+	// peerStore.Add - letting an attacker impersonate a specific known
+	// identity (e.g. a real validator's public NodeID) in every node's
+	// peer list with zero proof. This alone doesn't defend consensus -
+	// verifyBlockProducer (this file) deliberately never trusts
+	// peerStore's PublicKey for signature verification, checking
+	// ValidatorStore's own on-chain-verified AuthorizedNodePublicKey
+	// instead - it defends the peer-list/gossip layer itself against
+	// cheap identity spoofing.
+	Timestamp int64  `json:"timestamp"`
+	Signature string `json:"signature"`
 
 	// KnownPeers lets both sides of a handshake learn about each
 	// other's OTHER peers, not just each other - the actual mechanism
@@ -56,6 +86,47 @@ type handshakeMsg struct {
 	// never be introduced to the network by just one other node
 	// vouching for it.
 	KnownPeers []core.Peer `json:"knownPeers"`
+}
+
+// handshakeCanonicalMessage is exactly what gets signed/verified - see
+// core.SignedEnvelope.CanonicalMessage's identical reasoning for why
+// byte-for-byte reconstruction of the claimed fields (not a hash of
+// separately-trusted state) is what the signature actually has to
+// bind to.
+func handshakeCanonicalMessage(nodeID, publicKeyHex, address string, timestamp int64) []byte {
+	return []byte(nodeID + "|" + publicKeyHex + "|" + address + "|" + strconv.FormatInt(timestamp, 10))
+}
+
+func signHandshake(nodeID, publicKeyHex, address string, timestamp int64) string {
+	sig := core.SignMessage(nodeIdentity.PrivateKey, handshakeCanonicalMessage(nodeID, publicKeyHex, address, timestamp))
+	return hex.EncodeToString(sig)
+}
+
+// verifyHandshakeSignature proves the caller genuinely holds the
+// private key for the PublicKey it claims to be presenting - same
+// ±60s freshness window every other signed request in this codebase
+// uses (core.RequestTimestampWindow), so a captured/replayed handshake
+// can't be reused indefinitely either. Does NOT prove the claimed
+// NodeID is "genuine" in any deeper sense (NodeID is an
+// operator-chosen label here, not derived from the key) - that's why
+// verifyBlockProducer never trusts peerStore for anything
+// consensus-critical regardless of this check passing.
+func verifyHandshakeSignature(msg handshakeMsg) bool {
+	age := time.Since(time.Unix(msg.Timestamp, 0))
+	if age < -core.RequestTimestampWindow || age > core.RequestTimestampWindow {
+		return false
+	}
+
+	pub, err := hex.DecodeString(msg.PublicKey)
+	if err != nil {
+		return false
+	}
+	sig, err := hex.DecodeString(msg.Signature)
+	if err != nil {
+		return false
+	}
+
+	return core.VerifySignature(pub, handshakeCanonicalMessage(msg.NodeID, msg.PublicKey, msg.Address, msg.Timestamp), sig)
 }
 
 // peerDiscoveryInterval is how often a node re-handshakes with every
@@ -129,10 +200,14 @@ func discoverPeers(candidates []core.Peer) {
 }
 
 func handshakeWith(addr string) {
+	timestamp := time.Now().Unix()
+	publicKeyHex := hex.EncodeToString(nodeIdentity.PublicKey)
 	msg := handshakeMsg{
 		NodeID:     config.NodeID,
-		PublicKey:  hex.EncodeToString(nodeIdentity.PublicKey),
+		PublicKey:  publicKeyHex,
 		Address:    selfBaseURL,
+		Timestamp:  timestamp,
+		Signature:  signHandshake(config.NodeID, publicKeyHex, selfBaseURL, timestamp),
 		KnownPeers: peerStore.List(),
 	}
 
@@ -148,6 +223,11 @@ func handshakeWith(addr string) {
 
 	var reply handshakeMsg
 	if err := json.NewDecoder(resp.Body).Decode(&reply); err != nil {
+		peerStore.RecordFailure(addr)
+		return
+	}
+	if !verifyHandshakeSignature(reply) {
+		fmt.Println("handshake reply from", addr, "failed signature verification - not adding as peer")
 		peerStore.RecordFailure(addr)
 		return
 	}
@@ -180,18 +260,55 @@ func HandlePeerHandshake(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if msg.Address != "" {
+		if !verifyHandshakeSignature(msg) {
+			http.Error(w, "handshake signature invalid or stale", http.StatusUnauthorized)
+			return
+		}
+		if !nodeAdmissionStore.IsAdmitted(msg.PublicKey) {
+			if nodeAdmissionEnforced() {
+				fmt.Printf("node admission (ENFORCED): rejected handshake from unadmitted public key %s (NodeID %q) from %s\n", msg.PublicKey, msg.NodeID, r.RemoteAddr)
+				http.Error(w, "node not admitted - requires a passed NODE_ADMISSION proposal (or the grandfather seed list)", http.StatusForbidden)
+				return
+			}
+			// Log-only sub-phase (see the node-admission plan's own
+			// recommendation): observe what enforcement WOULD reject
+			// against real production traffic before actually turning
+			// it on - NODE_ADMISSION_ENFORCE_HANDSHAKE unset/false never
+			// rejects here, only logs.
+			fmt.Printf("node admission (log-only): would reject handshake from unadmitted public key %s (NodeID %q) - set NODE_ADMISSION_ENFORCE_HANDSHAKE=true to actually enforce\n", msg.PublicKey, msg.NodeID)
+		}
 		peerStore.Add(core.Peer{ID: msg.NodeID, Address: msg.Address, PublicKey: msg.PublicKey})
 		discoverPeers(msg.KnownPeers)
 	}
 
+	timestamp := time.Now().Unix()
+	publicKeyHex := hex.EncodeToString(nodeIdentity.PublicKey)
 	json.NewEncoder(w).Encode(handshakeMsg{
 		NodeID:     config.NodeID,
-		PublicKey:  hex.EncodeToString(nodeIdentity.PublicKey),
+		PublicKey:  publicKeyHex,
 		Address:    selfBaseURL,
+		Timestamp:  timestamp,
+		Signature:  signHandshake(config.NodeID, publicKeyHex, selfBaseURL, timestamp),
 		KnownPeers: peerStore.List(),
 	})
 }
 
+// HandlePeerTx used to insert any deserialized transaction from a
+// party holding NETWORK_SECRET straight into the mempool with zero
+// signature or semantic validation - audit finding M-01. The shared
+// secret proves the caller is a handshook peer, never that the
+// transaction it's relaying is genuinely signed, well-formed, or even
+// plausible: an attacker with that secret (or a peer relaying
+// something it never itself validated) could continually fill the
+// FIFO mempool with invalid/future-dated transactions, evicting
+// legitimate pending ones and burning block capacity on garbage that
+// only fails once a producer gets around to including it. Every
+// admitted transaction now has to pass the exact same authentication
+// verifyTxAuth (api/apply.go) will independently re-run at apply time -
+// rejecting here, before admission, means a forged transaction never
+// occupies mempool space at all - plus a future-timestamp bound so a
+// transaction can't dodge Prune's expiry by claiming to be from later
+// than it plausibly could be.
 func HandlePeerTx(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w)
 
@@ -213,6 +330,18 @@ func HandlePeerTx(w http.ResponseWriter, r *http.Request) {
 
 	if mempool.Has(tx.ID) {
 		json.NewEncoder(w).Encode(map[string]bool{"accepted": true})
+		return
+	}
+
+	if !core.ValidateMempoolTimestamp(tx, time.Now().Unix()) {
+		fmt.Println("rejected peer transaction with implausible future timestamp:", tx.ID)
+		http.Error(w, "Timestamp too far in the future", http.StatusBadRequest)
+		return
+	}
+
+	if !verifyTxAuth(tx) {
+		fmt.Println("rejected peer transaction with invalid/mismatched authentication:", tx.ID, tx.Type)
+		http.Error(w, "Invalid transaction authentication", http.StatusBadRequest)
 		return
 	}
 
@@ -299,6 +428,11 @@ func adoptBlock(block core.Block) bool {
 			return false
 		}
 
+		if !verifyLeaderOrFallback(block, latest) {
+			fmt.Println("rejected block", block.Index, "- producer", block.Validator, "was not the elected leader and the missed-block fallback window has not elapsed")
+			return false
+		}
+
 		blockchain.Blocks = append(blockchain.Blocks, block)
 		ApplyBlock(block)
 		removeFromMempool(block.Transactions)
@@ -327,45 +461,85 @@ func adoptBlock(block core.Block) bool {
 // key-holder authorized to produce on their behalf. A rogue node has
 // a perfectly valid signing key of its OWN; that doesn't entitle it
 // to produce for somebody else's validator.
+// Verified against ValidatorStore's own AuthorizedNodeID/
+// AuthorizedNodePublicKey - set ONLY via a cryptographically-verified
+// on-chain TxValidatorRegister (core.ValidatorStore.Register, called
+// from applyValidatorRegister, which independently re-checks the
+// registration was actually signed by the validator address's own
+// key - see verifyTxAuth's TxValidatorRegister case, api/apply.go).
+// Deliberately NEVER falls back to peerStore's self-asserted PublicKey
+// for this check (an earlier version of this function did, and it was
+// a real hole): HandlePeerHandshake accepts any NodeID/PublicKey a
+// NETWORK_SECRET holder claims - now with a proof-of-possession
+// signature (see verifyHandshakeSignature), but still no proof the
+// claimed NodeID itself is genuine, since NodeID is an operator-chosen
+// label, not derived from the key. Trusting peerStore here would let
+// an attacker who merely knows a real validator's public
+// AuthorizedNodeID (visible via GET /validators) self-sign a forged
+// block, hand-craft a handshake claiming that same NodeID under their
+// OWN PublicKey, and have the forged block wrongly verify against it.
+// Anchoring to ValidatorStore instead closes that off entirely - the
+// only way to become a validator's AuthorizedNodePublicKey is for that
+// validator's own wallet key to sign a TxValidatorRegister naming it.
 func verifyBlockProducer(block core.Block) bool {
-	if !isAuthorizedProducer(block.Validator, block.ProducerNodeID) {
+	if nonAddressValidators[block.Validator] {
+		// No ValidatorStore entry exists for genesis / the legacy
+		// "mine" placeholder - every node mints its own genesis
+		// locally (never gossiped from a peer), so the only
+		// legitimate producer for one of these is this node itself.
+		return block.ProducerNodeID == config.NodeID &&
+			core.VerifyBlockSignature(block, nodeIdentity.PublicKey, block.Signature)
+	}
+
+	status, ok := validatorStore.Get(block.Validator)
+	if !ok || status.AuthorizedNodeID != block.ProducerNodeID {
 		return false
 	}
 
-	for _, p := range peerStore.List() {
-		if p.ID == block.ProducerNodeID {
-			pub, err := hex.DecodeString(p.PublicKey)
-			if err != nil {
-				return false
-			}
-			return core.VerifyBlockSignature(block, pub, block.Signature)
-		}
+	pub, err := hex.DecodeString(status.AuthorizedNodePublicKey)
+	if err != nil {
+		return false
 	}
-
-	// Self-produced blocks (this node is both producer and the one
-	// calling adoptBlock, e.g. via chain sync) verify against our own key.
-	if block.ProducerNodeID == config.NodeID {
-		return core.VerifyBlockSignature(block, nodeIdentity.PublicKey, block.Signature)
-	}
-
-	return false
+	return core.VerifyBlockSignature(block, pub, block.Signature)
 }
 
-// isAuthorizedProducer reports whether nodeID is the specific node
-// validatorAddress's key-holder delegated block-production to.
-// Non-address producer placeholders (genesis, the bootstrap "mine"
-// path) have no ValidatorStore entry and aren't gated by this at all.
-func isAuthorizedProducer(validatorAddress, nodeID string) bool {
-	if nonAddressValidators[validatorAddress] {
+// verifyLeaderOrFallback closes audit finding C-02's second half:
+// verifyBlockProducer above only proves the block is genuinely signed
+// by a validator's own authorized node - it says nothing about
+// whether that validator was actually the one PoSR selection elected
+// for this round. Without this, any registered validator could
+// produce arbitrary consecutive blocks out of turn, collecting every
+// reward and pre-empting the real leader. This recomputes the same
+// deterministic selection every honest node reaches (now that
+// core.ValidatorStore.List sorts by address instead of relying on Go's
+// randomized map order) and requires an exact match for the normal
+// case.
+//
+// An out-of-turn block is only ever legitimate as the missed-block
+// liveness fallback (see consensus_loop.go's startConsensusLoop/
+// localAuthorizedValidator) - production intentionally does not
+// re-run the weighted draw for that path, so this can't check for a
+// SPECIFIC expected fallback producer, only that the fallback
+// condition itself is real. That's verified against this node's own
+// wall clock, never the block's self-reported Timestamp field: a
+// producer fully controls Timestamp before signing (it's part of
+// core.ComputeBlockHash's preimage), so trusting the block's own claim
+// about how much time has passed would let an attacker simply assert
+// the fallback window elapsed and produce out-of-turn immediately -
+// exactly the attack this function exists to close. Requiring THIS
+// node's independently-ticking clock to agree the window has passed
+// means a forged early timestamp gains an attacker nothing.
+func verifyLeaderOrFallback(block, previous core.Block) bool {
+	if nonAddressValidators[block.Validator] {
+		return true // genesis/bootstrap placeholder - no PoSR leader exists to compare against
+	}
+
+	if leader := currentLeader(); leader != nil && leader.Wallet.Address == block.Validator {
 		return true
 	}
 
-	status, ok := validatorStore.Get(validatorAddress)
-	if !ok {
-		return false
-	}
-
-	return status.AuthorizedNodeID == nodeID
+	fallbackWindowSeconds := int64(missedRoundsBeforeFallback) * int64(consensusTickInterval.Seconds())
+	return time.Now().Unix()-previous.Timestamp >= fallbackWindowSeconds
 }
 
 // reportDoubleSign submits a slash report carrying both conflicting
@@ -471,8 +645,16 @@ func syncChainFromPeer(addr string) {
 			return
 		}
 
-		if !blockWithinLimits(b, blockchain.LatestBlock()) {
+		prevBlock := blockchain.LatestBlock()
+
+		if !blockWithinLimits(b, prevBlock) {
 			fmt.Println("aborting chain sync from", addr, "- block", b.Index, "exceeds size or timestamp limits")
+			peerStore.RecordFailure(addr)
+			return
+		}
+
+		if !verifyLeaderOrFallback(b, prevBlock) {
+			fmt.Println("aborting chain sync from", addr, "- block", b.Index, "producer", b.Validator, "was not the elected leader and the missed-block fallback window has not elapsed")
 			peerStore.RecordFailure(addr)
 			return
 		}

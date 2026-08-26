@@ -69,7 +69,7 @@ func TestApplyOrderPlace_BuyMatchesRestingSellSettlesBothLegs(t *testing.T) {
 		t.Fatalf("expected sell order's escrow to hold 10 ETHTEST, got %d", got)
 	}
 
-	tokenStore.Mint(buyer.address, 20) // exact cost at 2 CCT/unit * 10 units
+	cctStore.Mint(buyer.address, cctW(20)) // exact cost at 2 CCT/unit * 10 units
 
 	buyTx := core.Transaction{
 		ID:            "buy-1",
@@ -81,11 +81,11 @@ func TestApplyOrderPlace_BuyMatchesRestingSellSettlesBothLegs(t *testing.T) {
 	}
 	applyOrderPlace(buyTx)
 
-	if got := tokenStore.BalanceOf(buyer.address); got != 0 {
-		t.Fatalf("expected buyer's CCT fully spent (exact price match, no surplus), got %d", got)
+	if got := cctStore.BalanceOf(buyer.address); got != "0" {
+		t.Fatalf("expected buyer's CCT fully spent (exact price match, no surplus), got %s", got)
 	}
-	if got := tokenStore.BalanceOf(seller.address); got != 20 {
-		t.Fatalf("expected seller to receive 20 CCT, got %d", got)
+	if got := cctStore.BalanceOf(seller.address); got != cctW(20) {
+		t.Fatalf("expected seller to receive 20 CCT, got %s", got)
 	}
 	buyerETHSide := resolveBalanceAddress(buyer.address, buyer.pubHex, "ETHTEST")
 	if got := ethTestStore.BalanceOf(buyerETHSide); got != 10 {
@@ -94,8 +94,8 @@ func TestApplyOrderPlace_BuyMatchesRestingSellSettlesBothLegs(t *testing.T) {
 	if got := ethTestStore.BalanceOf(orderEscrowAddress("sell-1")); got != 0 {
 		t.Fatalf("expected sell order's escrow drained, got %d", got)
 	}
-	if got := tokenStore.BalanceOf(orderEscrowAddress("buy-1")); got != 0 {
-		t.Fatalf("expected buy order's escrow drained, got %d", got)
+	if got := cctStore.BalanceOf(orderEscrowAddress("buy-1")); got != "0" {
+		t.Fatalf("expected buy order's escrow drained, got %s", got)
 	}
 
 	sellOrder, ok := orderBookStore.Get("sell-1")
@@ -135,7 +135,7 @@ func TestApplyOrderPlace_BuyAtBetterPriceThanRestingAskGetsSurplusRefunded(t *te
 	// Buyer's limit (2 CCT/unit) is worse than the resting ask (1
 	// CCT/unit) - the trade should execute at the maker's (seller's)
 	// price, and the buyer should get the difference refunded.
-	tokenStore.Mint(buyer.address, 10) // worst-case cost at their own 2 CCT/unit limit
+	cctStore.Mint(buyer.address, cctW(10)) // worst-case cost at their own 2 CCT/unit limit
 
 	buyTx := core.Transaction{
 		ID:            "buy-pricier",
@@ -147,14 +147,14 @@ func TestApplyOrderPlace_BuyAtBetterPriceThanRestingAskGetsSurplusRefunded(t *te
 	}
 	applyOrderPlace(buyTx)
 
-	if got := tokenStore.BalanceOf(buyer.address); got != 5 {
-		t.Fatalf("expected buyer refunded the 5 CCT price-improvement surplus (10 escrowed - 5 actual cost), got %d", got)
+	if got := cctStore.BalanceOf(buyer.address); got != cctW(5) {
+		t.Fatalf("expected buyer refunded the 5 CCT price-improvement surplus (10 escrowed - 5 actual cost), got %s", got)
 	}
-	if got := tokenStore.BalanceOf(seller.address); got != 5 {
-		t.Fatalf("expected seller paid at the resting price (5 units * 1 CCT), got %d", got)
+	if got := cctStore.BalanceOf(seller.address); got != cctW(5) {
+		t.Fatalf("expected seller paid at the resting price (5 units * 1 CCT), got %s", got)
 	}
-	if got := tokenStore.BalanceOf(orderEscrowAddress("buy-pricier")); got != 0 {
-		t.Fatalf("expected buy order's escrow fully drained after settlement + refund, got %d", got)
+	if got := cctStore.BalanceOf(orderEscrowAddress("buy-pricier")); got != "0" {
+		t.Fatalf("expected buy order's escrow fully drained after settlement + refund, got %s", got)
 	}
 }
 
@@ -177,7 +177,7 @@ func TestApplyOrderCancel_ReleasesExactRemainingEscrow(t *testing.T) {
 	}
 	applyOrderPlace(sellTx)
 
-	tokenStore.Mint(buyer.address, 4)
+	cctStore.Mint(buyer.address, cctW(4))
 	buyTx := core.Transaction{
 		ID:            "buy-partial",
 		From:          buyer.address,
@@ -237,11 +237,68 @@ func TestApplyOrderPlace_InsufficientBalanceMovesNothing(t *testing.T) {
 	}
 }
 
+// TestApplyOrderPlace_EthCcc1AcceptedAsMainnetEquivalent proves the
+// order book now works with ETH_CCC1 (mainnet's real, vault-locked
+// equivalent of testnet's ETHTEST) - same resting-order mechanics as
+// every other symbol, no special-casing needed since resolveTokenStore
+// already handles ETH_CCC1 generically.
+func TestApplyOrderPlace_EthCcc1AcceptedAsMainnetEquivalent(t *testing.T) {
+	resetOrderBookTestState()
+
+	buyer := newTestWallet(t)
+	cctStore.Mint(buyer.address, cctW(10))
+
+	buyTx := core.Transaction{
+		ID:            "buy-ccc1",
+		From:          buyer.address,
+		Type:          core.TxOrderPlace,
+		Timestamp:     100,
+		AuthPublicKey: buyer.pubHex,
+		Data:          orderTxData("ETH_CCC1", "BUY", 1_000_000, 10),
+	}
+	applyOrderPlace(buyTx)
+
+	open := orderBookStore.OpenOrders("ETH_CCC1")
+	if len(open) != 1 || open[0].ID != "buy-ccc1" {
+		t.Fatalf("expected the ETH_CCC1 buy order to rest in the book, got %+v", open)
+	}
+	if got := cctStore.BalanceOf(orderEscrowAddress("buy-ccc1")); got != cctW(10) {
+		t.Fatalf("expected the full 10 CCT cost escrowed, got %s", got)
+	}
+}
+
+// TestApplyOrderPlace_USDCTESTBlockedOnMainnet closes a real gap: the
+// order book never checked isMainnetBlockedSymbol before, so a mainnet
+// node would have accepted USDCTEST orders despite
+// mainnetBlockedSymbols' own doc comment claiming every chokepoint
+// enforces this (api/mainnet_gate.go).
+func TestApplyOrderPlace_USDCTESTBlockedOnMainnet(t *testing.T) {
+	resetOrderBookTestState()
+	t.Setenv("MAINNET_MODE", "true")
+
+	seller := newTestWallet(t)
+	usdcTestStore.Mint(seller.address, 100)
+
+	sellTx := core.Transaction{
+		ID:            "sell-blocked",
+		From:          seller.address,
+		Type:          core.TxOrderPlace,
+		Timestamp:     100,
+		AuthPublicKey: seller.pubHex,
+		Data:          orderTxData("USDCTEST", "SELL", 1_000_000, 5),
+	}
+	applyOrderPlace(sellTx)
+
+	if _, ok := orderBookStore.Get("sell-blocked"); ok {
+		t.Fatalf("expected no USDCTEST order to be created under MAINNET_MODE")
+	}
+}
+
 func TestApplyOrderPlace_NoCrossRestsInBook(t *testing.T) {
 	resetOrderBookTestState()
 
 	buyer := newTestWallet(t)
-	tokenStore.Mint(buyer.address, 10)
+	cctStore.Mint(buyer.address, cctW(10))
 
 	buyTx := core.Transaction{
 		ID:            "buy-resting",
@@ -253,8 +310,8 @@ func TestApplyOrderPlace_NoCrossRestsInBook(t *testing.T) {
 	}
 	applyOrderPlace(buyTx)
 
-	if got := tokenStore.BalanceOf(orderEscrowAddress("buy-resting")); got != 10 {
-		t.Fatalf("expected the full 10 CCT cost escrowed with no counterparty to match, got %d", got)
+	if got := cctStore.BalanceOf(orderEscrowAddress("buy-resting")); got != cctW(10) {
+		t.Fatalf("expected the full 10 CCT cost escrowed with no counterparty to match, got %s", got)
 	}
 	open := orderBookStore.OpenOrders("ETHTEST")
 	if len(open) != 1 || open[0].ID != "buy-resting" {

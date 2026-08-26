@@ -1,6 +1,9 @@
 package core
 
-import "sort"
+import (
+	"math/big"
+	"sort"
+)
 
 // OrderSide is expressed relative to the base token (Order.Symbol),
 // the same way a real exchange labels a BTC/USD pair - BUY means
@@ -22,13 +25,19 @@ const (
 	OrderCancelled OrderStatus = "CANCELLED"
 )
 
-// OrderCCTCost is how much CCT a BUY order of amount at price actually
-// costs - the same priceScale-based math as the pool-reserve price
-// (core/price_history.go), exported here so api/order_book.go never
-// needs to know priceScale's value directly, only that this is "the"
-// conversion between a scaled Price and a real CCT amount.
-func OrderCCTCost(amount, price uint64) uint64 {
-	return amount * price / priceScale
+// OrderCCTCost is how much CCT (smallest-unit decimal string) a BUY
+// order of amount (Symbol units, unaffected by CCT's decimals - stays
+// uint64) at price (the priceScale-scaled CCT-per-unit ratio,
+// core/price_history.go) actually costs. Computed in big.Int since the
+// result is a smallest-unit CCT amount (up to 18 decimals) even though
+// both inputs stay plain uint64 - Price is a bounded ratio, not a raw
+// CCT balance, so it never itself needed to grow past uint64; only the
+// CCT amount it implies does.
+func OrderCCTCost(amount, price uint64) string {
+	cost := new(big.Int).Mul(new(big.Int).SetUint64(amount), new(big.Int).SetUint64(price))
+	cost.Mul(cost, cctSmallestPerWhole)
+	cost.Div(cost, big.NewInt(priceScale))
+	return FormatCctSmallest(cost)
 }
 
 // Order is a resting (or once-resting) limit order. Price is CCT per

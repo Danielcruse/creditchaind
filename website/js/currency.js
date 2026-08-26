@@ -52,42 +52,54 @@ async function fetchCctRate() {
     return _cctRateCache;
 }
 
+// fiatValue returns the raw numeric value (in the user's selected
+// display currency) for the given symbol/balance, or null if no
+// conversion path exists yet (e.g. a freshly-registered custom token
+// with no trades) - the shared numeric core fiatLine formats and
+// outernet.js's total-balance aggregation sums directly, so the
+// conversion chain per symbol lives in exactly one place.
+async function fiatValue(symbol, balance) {
+    const currency = getDisplayCurrency();
+    const rates = await fetchRates(currency);
+    const amount = Number(balance);
+    if (!isFinite(amount) || amount < 0) return null;
+
+    let valueInCurrency = null;
+
+    if (symbol === "ETH" || symbol === "ETHB" || symbol === "ETHTEST") {
+        valueInCurrency = amount * rates.eth;
+    } else if (symbol === "BTC" || symbol === "BTCB") {
+        valueInCurrency = amount * rates.btc;
+    } else if (symbol === "USDC" || symbol === "USDCTEST" || symbol === "YENE") {
+        valueInCurrency = amount * rates.usdc;
+    } else if (symbol === "CCT") {
+        const cct = await fetchCctRate();
+        valueInCurrency = amount * cct.cctPerEth * rates.eth;
+    } else {
+        // Custom/independent token - chain through its own CCT-per-
+        // unit trade price (if any) -> CCT -> ETH -> display currency.
+        const history = await apiGet(`/pool/price-history?symbol=${encodeURIComponent(symbol)}`);
+        if (!history || history.length < 1) return null;
+        const cctPerToken = history[history.length - 1].price / 1e6;
+        if (!(cctPerToken > 0)) return null;
+        const cct = await fetchCctRate();
+        valueInCurrency = amount * cctPerToken * cct.cctPerEth * rates.eth;
+    }
+
+    if (valueInCurrency === null || !isFinite(valueInCurrency)) return null;
+    return valueInCurrency;
+}
+
 // fiatLine returns a formatted "≈ $1,234.56" string for the given
-// symbol/balance, or "" if no conversion path exists yet (e.g. a
-// freshly-registered custom token with no trades) - honest "no price"
-// rather than a fabricated one, same convention assets.js's existing
-// priceLine() already uses for "No trades yet".
+// symbol/balance, or "" if no conversion path exists yet - honest "no
+// price" rather than a fabricated one, same convention assets.js's
+// existing priceLine() already uses for "No trades yet".
 async function fiatLine(symbol, balance) {
     try {
+        const value = await fiatValue(symbol, balance);
+        if (value === null) return "";
         const currency = getDisplayCurrency();
-        const rates = await fetchRates(currency);
-        const amount = Number(balance);
-        if (!isFinite(amount) || amount < 0) return "";
-
-        let valueInCurrency = null;
-
-        if (symbol === "ETH" || symbol === "ETHB" || symbol === "ETHTEST") {
-            valueInCurrency = amount * rates.eth;
-        } else if (symbol === "BTC" || symbol === "BTCB") {
-            valueInCurrency = amount * rates.btc;
-        } else if (symbol === "USDCTEST" || symbol === "YENE") {
-            valueInCurrency = amount * rates.usdc;
-        } else if (symbol === "CCT") {
-            const cct = await fetchCctRate();
-            valueInCurrency = amount * cct.cctPerEth * rates.eth;
-        } else {
-            // Custom/independent token - chain through its own CCT-per-
-            // unit trade price (if any) -> CCT -> ETH -> display currency.
-            const history = await apiGet(`/pool/price-history?symbol=${encodeURIComponent(symbol)}`);
-            if (!history || history.length < 1) return "";
-            const cctPerToken = history[history.length - 1].price / 1e6;
-            if (!(cctPerToken > 0)) return "";
-            const cct = await fetchCctRate();
-            valueInCurrency = amount * cctPerToken * cct.cctPerEth * rates.eth;
-        }
-
-        if (valueInCurrency === null || !isFinite(valueInCurrency)) return "";
-        return `≈ ${currencySymbolFor(currency)}${valueInCurrency.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
+        return `≈ ${currencySymbolFor(currency)}${value.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
     } catch (e) {
         return "";
     }

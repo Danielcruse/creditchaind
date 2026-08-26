@@ -24,8 +24,15 @@ type UnbondingEntry struct {
 }
 
 // Stakes is address -> symbol -> amount, so one account can have
-// independent CCT, ETHTEST, and USDCTEST positions at once rather than
-// a single undifferentiated number.
+// independent CCT/ETHTEST/USDCTEST positions at once rather than a
+// single undifferentiated number. CCT staking accounting deliberately
+// stays here (plain uint64, whole units) even after the 18-decimal
+// migration gave CCT's general ledger big-int precision - see
+// core/staking_sync.go's doc comment for why (MaxTestStakePerAccount
+// bounds any account's stake far below where that would matter). Only
+// the real escrow balance backing a CCT stake moved to the new
+// cctStore (api/apply.go's applyStake/applyUnstake/slashStake
+// convert at the boundary via CctWholeToSmallest).
 type StakingStore struct {
 	Stakes    map[string]map[string]uint64
 	Unbonding []UnbondingEntry
@@ -44,4 +51,20 @@ func NewStakingStore() *StakingStore {
 // readable shorthand, not a nil-guard.
 func (s *StakingStore) StakeOf(address, symbol string) uint64 {
 	return s.Stakes[address][symbol]
+}
+
+// ReduceStakeDirect removes amount of symbol from address's bonded
+// stake immediately, with no unbonding entry queued - unlike a normal
+// unstake (BeginUnbond), this is for the legacy-stake migration sweep
+// (api/legacy_stake_migration.go), an involuntary, protocol-initiated
+// closure rather than a user withdrawal request, so the unbonding
+// period's anti-flash-unstake rationale doesn't apply. Bounds-checked:
+// returns false (no-op) if address doesn't have at least amount of
+// symbol staked, matching every other fail-closed mutator in this file.
+func (s *StakingStore) ReduceStakeDirect(address, symbol string, amount uint64) bool {
+	if s.Stakes[address][symbol] < amount {
+		return false
+	}
+	s.Stakes[address][symbol] -= amount
+	return true
 }

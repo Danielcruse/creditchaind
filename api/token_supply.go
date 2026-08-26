@@ -12,10 +12,8 @@ func HandleTokenSupply(
 	enableCors(&w)
 
 	json.NewEncoder(w).Encode(
-		map[string]uint64{
-			"supply":
-				tokenStore.Token.
-					TotalSupply,
+		map[string]string{
+			"supply": cctStore.TotalSupply,
 		},
 	)
 }

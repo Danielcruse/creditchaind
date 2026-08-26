@@ -3,8 +3,9 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
+	"math/big"
 	"net/http"
+	"strconv"
 
 	"github.com/creditchain/creditchaind/core"
 )
@@ -41,72 +42,23 @@ func tokenCreationFeeAddress() string {
 	return "FEE:TOKEN_CREATION"
 }
 
-// HandleRegisterToken lets any wallet register a new named token - the
-// developer-facing entry point on explorer.html's tools bar. This only
-// creates the ledger and mints the creator's own initial supply; it
-// does NOT give the token a price (see core/token_registry.go's doc
-// comment) - that's HandlePoolAddLiquidity's job.
+// HandleRegisterToken previously let any wallet register a new named
+// token directly, self-service. That path is retired - token creation
+// now requires a passed TOKEN_CREATION governance proposal (see
+// api/governance.go's HandleCreateProposal and
+// api/token_creation_governance.go for what a PASSED outcome actually
+// does) - deliberately hard to find and expensive, per this project's
+// own "token creation should require community vote, not a cheap
+// self-service form" decision. This handler is kept live (not deleted,
+// not a 404) purely so a client still calling the old endpoint gets a
+// clear, actionable error instead of a confusing generic 404 - matches
+// this codebase's "disclose, don't silently break" convention.
+// core.TxTokenRegister and applyTokenRegister themselves are untouched
+// and stay in the codebase - old already-recorded registrations must
+// still replay identically from blockchain.json.
 func HandleRegisterToken(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w)
-
-	if r.Method != http.MethodPost {
-		http.Error(w, "POST only", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req tokenRegisterData
-
-	auth, address, err := requireSignedRequest(r, &req)
-	if err != nil {
-		writeUnauthorized(w, err)
-		return
-	}
-
-	// Requiring some ETH staked before creating a token is the same
-	// "skin in the game" gate applyBorrow already uses via
-	// hasCollateral - a cheap anti-spam bar (this checks the existing
-	// stakingStore, not a new lock), re-checked again at apply time
-	// since stake can move between submission and confirmation.
-	if stakingStore.StakeOf(address, "ETHTEST") == 0 {
-		http.Error(w, "you must stake some test ETH before creating a token", http.StatusBadRequest)
-		return
-	}
-	ethTestSide := resolveBalanceAddress(address, auth.PublicKey, "ETHTEST")
-	if ethTestStore.BalanceOf(ethTestSide) < TokenCreationFeeETHTest {
-		http.Error(w, fmt.Sprintf("you need at least %d ETHTEST to cover the token creation fee", TokenCreationFeeETHTest), http.StatusBadRequest)
-		return
-	}
-	if !core.ValidateTokenSymbol(req.Symbol) {
-		http.Error(w, "symbol must be 2-10 uppercase letters and not already reserved (CCT/ETHTEST/USDCTEST/REPT)", http.StatusBadRequest)
-		return
-	}
-	if !core.ValidateTokenName(req.Name) {
-		http.Error(w, "name must be 1-64 characters", http.StatusBadRequest)
-		return
-	}
-	if req.InitialSupply == 0 || req.InitialSupply > core.MaxCustomTokenSupply {
-		http.Error(w, "initial supply must be positive and at most 1,000,000,000", http.StatusBadRequest)
-		return
-	}
-	if _, exists := tokenRegistry.Meta[req.Symbol]; exists {
-		http.Error(w, "symbol already registered", http.StatusBadRequest)
-		return
-	}
-	if req.Standard == "" {
-		req.Standard = "C1"
-	}
-	if !tokenStandardRegistry.IsCreatable(req.Standard) {
-		http.Error(w, "standard must be a real, user-creatable token standard (see GET /token-standards)", http.StatusBadRequest)
-		return
-	}
-
-	data, _ := json.Marshal(req)
-	tx := recordTx(auth, address, "", 0, core.TxTokenRegister, string(data))
-
-	json.NewEncoder(w).Encode(map[string]string{
-		"status": "pending",
-		"txId":   tx.ID,
-	})
+	http.Error(w, "direct token registration has been retired - create and pass a TOKEN_CREATION governance proposal instead (see /governance)", http.StatusGone)
 }
 
 type customTokenInfo struct {
@@ -115,7 +67,7 @@ type customTokenInfo struct {
 	Creator       string `json:"creator"`
 	InitialSupply uint64 `json:"initialSupply"`
 	TotalSupply   uint64 `json:"totalSupply"`
-	CCTReserve    uint64 `json:"cctReserve"`
+	CCTReserve    string `json:"cctReserve"`
 	TokenReserve  uint64 `json:"tokenReserve"`
 	// Tradeable is true once someone has deposited liquidity into this
 	// token's pool - see isTradeable's doc comment for why this is
@@ -135,7 +87,11 @@ type customTokenInfo struct {
 // it's describing is worse than just asking the reserves directly
 // every time.
 func isTradeable(pool *core.LiquidityPool) bool {
-	return pool != nil && pool.CCTReserve > 0 && pool.TokenReserve > 0
+	if pool == nil || pool.TokenReserve == 0 {
+		return false
+	}
+	cctReserve, _ := core.ParseCctSmallest(pool.CCTReserve)
+	return cctReserve.Sign() > 0
 }
 
 // HandleListTokens lists every developer-registered token alongside
@@ -183,7 +139,7 @@ func HandleTokenStandards(w http.ResponseWriter, r *http.Request) {
 // one round-trip instead of querying each pool individually.
 type poolSummary struct {
 	Symbol       string `json:"symbol"`
-	CCTReserve   uint64 `json:"cctReserve"`
+	CCTReserve   string `json:"cctReserve"`
 	TokenReserve uint64 `json:"tokenReserve"`
 	Tradeable    bool   `json:"tradeable"`
 }
@@ -249,10 +205,10 @@ func HandleCustomTokenBalance(w http.ResponseWriter, r *http.Request) {
 
 type poolInfo struct {
 	Symbol       string `json:"symbol"`
-	CCTReserve   uint64 `json:"cctReserve"`
+	CCTReserve   string `json:"cctReserve"`
 	TokenReserve uint64 `json:"tokenReserve"`
-	TotalShares  uint64 `json:"totalShares"`
-	YourShares   uint64 `json:"yourShares,omitempty"`
+	TotalShares  string `json:"totalShares"`
+	YourShares   string `json:"yourShares,omitempty"`
 	Tradeable    bool   `json:"tradeable"`
 }
 
@@ -299,9 +255,23 @@ func HandlePoolPriceHistory(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(priceHistoryStore.Get(symbol))
 }
 
+// parseUint64Field parses a plain (non-CCT) token amount submitted as
+// a decimal string - every amount field that can ever be CCT-
+// denominated moved to string as part of the 18-decimal migration
+// (see core/cct_amount.go), and non-CCT amount fields sharing the same
+// JSON field (e.g. poolSwapData.AmountIn, used for either leg
+// depending on Direction) followed suit for one consistent wire shape
+// rather than forking the type per-symbol.
+func parseUint64Field(s string) (uint64, error) {
+	if s == "" {
+		return 0, nil
+	}
+	return strconv.ParseUint(s, 10, 64)
+}
+
 type poolAddLiquidityData struct {
 	Symbol      string `json:"symbol"`
-	CCTAmount   uint64 `json:"cctAmount"`
+	CCTAmount   string `json:"cctAmount"`
 	TokenAmount uint64 `json:"tokenAmount"`
 }
 
@@ -336,11 +306,13 @@ func HandlePoolAddLiquidity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.CCTAmount == 0 || req.TokenAmount == 0 {
+	cctAmount, err := core.ParseCctSmallest(req.CCTAmount)
+	if err != nil || cctAmount.Sign() == 0 || req.TokenAmount == 0 {
 		http.Error(w, "both cctAmount and tokenAmount must be positive", http.StatusBadRequest)
 		return
 	}
-	if tokenStore.BalanceOf(address) < req.CCTAmount {
+	cctBalance, _ := core.ParseCctSmallest(cctStore.BalanceOf(address))
+	if cctBalance.Cmp(cctAmount) < 0 {
 		http.Error(w, "insufficient CCT balance", http.StatusBadRequest)
 		return
 	}
@@ -349,7 +321,8 @@ func HandlePoolAddLiquidity(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "insufficient token balance", http.StatusBadRequest)
 		return
 	}
-	if pool.TotalShares > 0 && !ratioMatches(req.CCTAmount, req.TokenAmount, pool.CCTReserve, pool.TokenReserve) {
+	poolTotalShares, _ := core.ParseCctSmallest(pool.TotalShares)
+	if poolTotalShares.Sign() > 0 && !ratioMatches(req.CCTAmount, req.TokenAmount, pool.CCTReserve, pool.TokenReserve) {
 		http.Error(w, "deposit ratio does not match the pool's current price - adjust cctAmount/tokenAmount to match the existing reserve ratio", http.StatusBadRequest)
 		return
 	}
@@ -368,28 +341,30 @@ func HandlePoolAddLiquidity(w http.ResponseWriter, r *http.Request) {
 // when a user reads the price and when their transaction confirms, so
 // requiring an exact match would make depositing into an active pool
 // practically impossible.
-func ratioMatches(cctAmount, tokenAmount, cctReserve, tokenReserve uint64) bool {
-	left := cctAmount * tokenReserve
-	right := tokenAmount * cctReserve
+func ratioMatches(cctAmountStr string, tokenAmount uint64, cctReserveStr string, tokenReserve uint64) bool {
+	cctAmount, err := core.ParseCctSmallest(cctAmountStr)
+	if err != nil {
+		return false
+	}
+	cctReserve, _ := core.ParseCctSmallest(cctReserveStr)
 
-	var diff uint64
-	if left > right {
-		diff = left - right
-	} else {
-		diff = right - left
+	left := new(big.Int).Mul(cctAmount, new(big.Int).SetUint64(tokenReserve))
+	right := new(big.Int).Mul(new(big.Int).SetUint64(tokenAmount), cctReserve)
+
+	diff := new(big.Int).Sub(left, right)
+	diff.Abs(diff)
+
+	tolerance := new(big.Int).Div(right, big.NewInt(100))
+	if tolerance.Sign() == 0 {
+		tolerance = big.NewInt(1)
 	}
 
-	tolerance := right / 100
-	if tolerance == 0 {
-		tolerance = 1
-	}
-
-	return diff <= tolerance
+	return diff.Cmp(tolerance) <= 0
 }
 
 type poolRemoveLiquidityData struct {
 	Symbol string `json:"symbol"`
-	Shares uint64 `json:"shares"`
+	Shares string `json:"shares"`
 }
 
 func HandlePoolRemoveLiquidity(w http.ResponseWriter, r *http.Request) {
@@ -414,11 +389,13 @@ func HandlePoolRemoveLiquidity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Shares == 0 {
+	sharesReq, err := core.ParseCctSmallest(req.Shares)
+	if err != nil || sharesReq.Sign() == 0 {
 		http.Error(w, "shares must be positive", http.StatusBadRequest)
 		return
 	}
-	if pool.Shares[address] < req.Shares {
+	sharesHeld, _ := core.ParseCctSmallest(pool.Shares[address])
+	if sharesHeld.Cmp(sharesReq) < 0 {
 		http.Error(w, "insufficient LP shares", http.StatusBadRequest)
 		return
 	}
@@ -435,7 +412,11 @@ func HandlePoolRemoveLiquidity(w http.ResponseWriter, r *http.Request) {
 type poolSwapData struct {
 	Symbol    string `json:"symbol"`
 	Direction string `json:"direction"` // "cct_to_token" or "token_to_cct"
-	AmountIn  uint64 `json:"amountIn"`
+	// AmountIn is a decimal string regardless of direction - CCT
+	// smallest units for "cct_to_token", plain whole units of Symbol
+	// for "token_to_cct" (parsed via parseUint64Field) - one wire shape
+	// for both, decoded per-direction server-side.
+	AmountIn string `json:"amountIn"`
 }
 
 func HandlePoolSwap(w http.ResponseWriter, r *http.Request) {
@@ -460,20 +441,26 @@ func HandlePoolSwap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.AmountIn == 0 {
-		http.Error(w, "amountIn must be positive", http.StatusBadRequest)
-		return
-	}
-
 	switch req.Direction {
 	case "cct_to_token":
-		if tokenStore.BalanceOf(address) < req.AmountIn {
+		amountIn, err := core.ParseCctSmallest(req.AmountIn)
+		if err != nil || amountIn.Sign() == 0 {
+			http.Error(w, "amountIn must be positive", http.StatusBadRequest)
+			return
+		}
+		cctBalance, _ := core.ParseCctSmallest(cctStore.BalanceOf(address))
+		if cctBalance.Cmp(amountIn) < 0 {
 			http.Error(w, "insufficient CCT balance", http.StatusBadRequest)
 			return
 		}
 	case "token_to_cct":
+		amountIn, err := parseUint64Field(req.AmountIn)
+		if err != nil || amountIn == 0 {
+			http.Error(w, "amountIn must be positive", http.StatusBadRequest)
+			return
+		}
 		tokenSide := resolveBalanceAddress(address, auth.PublicKey, req.Symbol)
-		if tokenStoreForSymbol.BalanceOf(tokenSide) < req.AmountIn {
+		if tokenStoreForSymbol.BalanceOf(tokenSide) < amountIn {
 			http.Error(w, "insufficient token balance", http.StatusBadRequest)
 			return
 		}
@@ -494,7 +481,11 @@ func HandlePoolSwap(w http.ResponseWriter, r *http.Request) {
 type swapViaCCTData struct {
 	FromSymbol string `json:"fromSymbol"` // "CCT" or any resolvable token symbol
 	ToSymbol   string `json:"toSymbol"`
-	AmountIn   uint64 `json:"amountIn"`
+	// AmountIn is a decimal string - CCT smallest units when FromSymbol
+	// is "CCT", plain whole units of FromSymbol otherwise (parsed via
+	// parseUint64Field). Same one-wire-shape-for-both convention as
+	// poolSwapData.AmountIn.
+	AmountIn string `json:"amountIn"`
 }
 
 // HandleSwapViaCCT is the universal swap entry point: any resolvable
@@ -520,10 +511,6 @@ func HandleSwapViaCCT(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.AmountIn == 0 {
-		http.Error(w, "amountIn must be positive", http.StatusBadRequest)
-		return
-	}
 	if req.FromSymbol == req.ToSymbol {
 		http.Error(w, "fromSymbol and toSymbol must differ", http.StatusBadRequest)
 		return
@@ -535,14 +522,27 @@ func HandleSwapViaCCT(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "unknown fromSymbol", http.StatusNotFound)
 			return
 		}
+		amountIn, err := parseUint64Field(req.AmountIn)
+		if err != nil || amountIn == 0 {
+			http.Error(w, "amountIn must be positive", http.StatusBadRequest)
+			return
+		}
 		fromSide := resolveBalanceAddress(address, auth.PublicKey, req.FromSymbol)
-		if fromStore.BalanceOf(fromSide) < req.AmountIn {
+		if fromStore.BalanceOf(fromSide) < amountIn {
 			http.Error(w, "insufficient balance", http.StatusBadRequest)
 			return
 		}
-	} else if tokenStore.BalanceOf(address) < req.AmountIn {
-		http.Error(w, "insufficient CCT balance", http.StatusBadRequest)
-		return
+	} else {
+		amountIn, err := core.ParseCctSmallest(req.AmountIn)
+		if err != nil || amountIn.Sign() == 0 {
+			http.Error(w, "amountIn must be positive", http.StatusBadRequest)
+			return
+		}
+		cctBalance, _ := core.ParseCctSmallest(cctStore.BalanceOf(address))
+		if cctBalance.Cmp(amountIn) < 0 {
+			http.Error(w, "insufficient CCT balance", http.StatusBadRequest)
+			return
+		}
 	}
 
 	if req.ToSymbol != "CCT" {
@@ -574,9 +574,14 @@ var errUnknownToken = errors.New("unknown token symbol")
 // universal hub currency rather than something only custom tokens
 // participate in.
 func lookupCustomToken(symbol string) (*core.TokenStore, *core.LiquidityPool, error) {
+	if isMainnetBlockedSymbol(symbol) {
+		return nil, nil, errTestOnlySymbolBlockedOnMainnet
+	}
 	switch symbol {
 	case "ETHTEST":
 		return ethTestStore, cctEthTestPool, nil
+	case "BTCTEST":
+		return btcTestStore, cctBtcTestPool, nil
 	case "USDCTEST":
 		return usdcTestStore, cctUsdcTestPool, nil
 	case "YENE":

@@ -1,5 +1,7 @@
 package core
 
+import "sort"
+
 // ValidatorStatus is a lightweight, shared record of an address's
 // validator registration. Stake and Reputation are deliberately not
 // duplicated here - callers read those from StakingStore/WalletStore
@@ -129,11 +131,22 @@ func (vs *ValidatorStore) Get(address string) (*ValidatorStatus, bool) {
 	return v, ok
 }
 
+// List returns every registered validator sorted by address - the
+// underlying map iterates in randomized order, so without this sort
+// two honest nodes holding byte-identical validator state could still
+// build differently-ordered slices, and since selectFrom's weighted
+// draw walks the pool in order, a different order can pick a
+// different leader from the same previous-block hash (see audit
+// finding C-02, KNOWN_GAPS.md). Sorting by address is an arbitrary but
+// canonical key every node can independently reproduce.
 func (vs *ValidatorStore) List() []*ValidatorStatus {
 	list := make([]*ValidatorStatus, 0, len(vs.Validators))
 	for _, v := range vs.Validators {
 		list = append(list, v)
 	}
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].Address < list[j].Address
+	})
 	return list
 }
 

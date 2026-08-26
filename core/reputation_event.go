@@ -24,6 +24,15 @@ type ReputationEvent struct {
 	Delta     int64 // positive = gain, negative = loss
 	Reason    string
 	Timestamp int64
+
+	// Dimension is which of the six TrustDimensions (trust.go) this
+	// event targeted - empty for every event recorded before
+	// TrustDimensionsCutoverUnixSeconds (api/apply.go), since those
+	// applied through the old flat-Reputation-only path and have no
+	// single dimension to attribute to. No backfill needed for
+	// historical events - Restore below already round-trips whatever
+	// fields a given persisted event happens to have.
+	Dimension string
 }
 
 type ReputationEventStore struct {

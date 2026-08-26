@@ -53,8 +53,8 @@ func NewBlock(index uint64, previousHash string, validator string, txs []Transac
 // ComputeBlockHash derives a block's hash from its own content, so
 // PreviousHash linkage between blocks (used for fork resolution and
 // double-sign detection) actually means something. A block's Hash
-// must be computed with its own Hash field left empty/ignored, so
-// this only ever reads Index/Timestamp/PreviousHash/Validator/Transactions.
+// must be computed with its own Hash field left empty/ignored, so this
+// only ever reads Index/Timestamp/PreviousHash/Validator/Transactions.
 func ComputeBlockHash(b Block) string {
 	msg := fmt.Sprintf(
 		"%d|%d|%s|%s",

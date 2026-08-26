@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Trading Hub Invite - OUTERNET</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/auth-cover.css?v=fixaug5a">
+</head>
+<body class="auth-cover-page">
+
+<div class="auth-cover" aria-hidden="true"><img src="svg/auth-cover.svg?v=fixaug5a" alt=""></div>
+
+<h1>OUTERNET</h1>
+
+<div class="card" id="loadingCard">
+    <p>Checking this hub link...</p>
+</div>
+
+<div class="card" id="invalidCard" style="display:none;">
+    <p>This link doesn't point to a currently-verified Trading Hub, so it can't be used right now.</p>
+    <button onclick="location.href='p2p'">Browse the Marketplace instead</button>
+</div>
+
+<div class="card" id="choiceCard" style="display:none;">
+    <p id="hubIntro" style="margin-bottom:16px;"></p>
+
+    <button onclick="goCreate('buy')">Create a wallet to buy crypto</button>
+    <p style="opacity:0.6;font-size:12px;margin:6px 0 18px;">
+        New here and want to buy crypto from this hub - get a self-custodial CreditChain wallet in
+        under a minute, no email or ID required to start.
+    </p>
+
+    <button onclick="goCreate('sell')">I have crypto to sell - create a wallet</button>
+    <p style="opacity:0.6;font-size:12px;margin:6px 0 18px;">
+        Also creates a new wallet, then takes you straight to vaulting your ETH, USDC, or BTC onto
+        the CreditChain network so it's ready to trade.
+    </p>
+
+    <button onclick="goExisting()">I already have a wallet</button>
+    <p style="opacity:0.6;font-size:12px;margin:6px 0 0;">
+        Connect your existing wallet to this hub instead of creating a new one.
+    </p>
+</div>
+
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script>
+
+const hubAddress = new URLSearchParams(window.location.search).get("hub") || "";
+
+async function init() {
+    if (!hubAddress) {
+        showInvalid();
+        return;
+    }
+    try {
+        const status = await apiGet(`/companies/status?address=${encodeURIComponent(hubAddress)}`);
+        if (!status.exists || !status.verified) {
+            showInvalid();
+            return;
+        }
+        document.getElementById("hubIntro").innerHTML =
+            `You've been invited by a <strong>verified Trading Hub</strong>. Choose how you'd like to get started:`;
+        document.getElementById("loadingCard").style.display = "none";
+        document.getElementById("choiceCard").style.display = "block";
+    } catch (e) {
+        console.error(e);
+        showInvalid();
+    }
+}
+
+function showInvalid() {
+    document.getElementById("loadingCard").style.display = "none";
+    document.getElementById("invalidCard").style.display = "block";
+}
+
+function goCreate(intent) {
+    location.href = `register?ref=${encodeURIComponent(hubAddress)}&hub=${encodeURIComponent(hubAddress)}&intent=${intent}`;
+}
+
+function goExisting() {
+    location.href = `login?hub=${encodeURIComponent(hubAddress)}`;
+}
+
+init();
+
+</script>
+
+</body>
+</html>

@@ -45,13 +45,22 @@ func HandleBtcRegisterAddress(w http.ResponseWriter, r *http.Request) {
 	}
 
 	btcAddress := strings.TrimSpace(req.BtcAddress)
-	// Loose shape check only - native segwit testnet addresses are the
-	// only kind this bridge ever watches or later sends from (see the
-	// send flow's own scope note), a wrong/malformed value here just
-	// means deposit-detection harmlessly never finds a match, never a
+	// Loose shape check only - native segwit addresses are the only
+	// kind this bridge ever watches or later sends from (see the send
+	// flow's own scope note), a wrong/malformed value here just means
+	// deposit-detection harmlessly never finds a match, never a
 	// security concern (see core.BtcWatchedAddress's doc comment).
-	if !strings.HasPrefix(btcAddress, "tb1") || len(btcAddress) < 14 || len(btcAddress) > 90 {
-		http.Error(w, "btcAddress must be a native segwit testnet address (tb1...)", http.StatusBadRequest)
+	// Expected prefix depends on which real Bitcoin network this node
+	// is configured against (bc1... mainnet, tb1... testnet) - this
+	// used to hardcode tb1 unconditionally, which meant a real mainnet
+	// bc1... address could never be registered for deposit-watching at
+	// all on a mainnet deployment.
+	expectedPrefix := "tb1"
+	if mainnetMode() {
+		expectedPrefix = "bc1"
+	}
+	if !strings.HasPrefix(btcAddress, expectedPrefix) || len(btcAddress) < 14 || len(btcAddress) > 90 {
+		http.Error(w, "btcAddress must be a native segwit "+expectedPrefix+"... address for this network", http.StatusBadRequest)
 		return
 	}
 
@@ -177,20 +186,38 @@ func HandleBtcFeeEstimate(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]float64{"satsPerVByte": rate})
 }
 
+// btcBroadcastData is now a signed request (see HandleBtcBroadcast's
+// doc comment for why this changed from the original unauthenticated
+// relay) - To/AmountSats/FeeSats are purely descriptive metadata for
+// the withdrawal RECORD this handler now creates; they play no part in
+// validating or authorizing the raw Bitcoin broadcast itself, which
+// remains governed entirely by RawTxHex's own independent, already-
+// complete Bitcoin-level signature.
 type btcBroadcastData struct {
-	RawTxHex string `json:"rawTxHex"`
+	RawTxHex   string `json:"rawTxHex"`
+	To         string `json:"to"`
+	AmountSats uint64 `json:"amountSats"`
+	FeeSats    uint64 `json:"feeSats"`
 }
 
-// HandleBtcBroadcast is a pure relay to the real Bitcoin testnet
-// network - never constructs, signs, or holds a key, same as
-// api/eth_selfcustody.go's HandleEthSelfCustodyBroadcast. Deliberately
-// NOT gated behind requireSignedRequest, for the identical reasoning
-// that handler documents: the real authorization boundary is Bitcoin
-// itself - this relay can only ever move funds if the caller already
+// HandleBtcBroadcast relays an already-fully-signed raw Bitcoin
+// transaction to the real testnet network - it never constructs,
+// signs, or holds a Bitcoin key, same as
+// api/eth_selfcustody.go's HandleEthSelfCustodyBroadcast. The real
+// authorization boundary for the MONEY MOVEMENT itself is still Bitcoin
+// alone: this relay can only ever move funds if the caller already
 // supplies a validly-signed raw transaction, which every Bitcoin node
-// re-verifies independently, not just this relay. Residual risk is
-// pure spam/abuse, already covered by this server's existing per-IP
-// rate limiter.
+// re-verifies independently regardless of what wraps this call.
+//
+// This IS now gated behind requireSignedRequest, though - a change from
+// this handler's original design - purely to learn WHICH CreditChain
+// wallet is claiming responsibility for the withdrawal, so it can be
+// recorded (see core.TxBridgeBtcWithdraw's doc comment: today a BTCB
+// withdrawal is otherwise completely invisible to the explorer, with no
+// record anywhere that it ever happened). This tightens rather than
+// loosens the endpoint - a broadcast now requires BOTH a genuine
+// CreditChain wallet signature AND a genuine already-complete Bitcoin
+// signature, not fewer checks than before.
 func HandleBtcBroadcast(w http.ResponseWriter, r *http.Request) {
 	enableCors(&w)
 
@@ -200,8 +227,9 @@ func HandleBtcBroadcast(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req btcBroadcastData
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	auth, from, err := requireSignedRequest(r, &req)
+	if err != nil {
+		writeUnauthorized(w, err)
 		return
 	}
 	if req.RawTxHex == "" {
@@ -217,6 +245,19 @@ func HandleBtcBroadcast(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	// The broadcast already succeeded and txid is already known, so
+	// unlike the ETH side this is a single recordTx call - no earlier
+	// placeholder transaction and no later follow-up needed.
+	withdrawData, _ := json.Marshal(bridgeBtcWithdrawData{
+		bridgeBtcWithdrawRequest: bridgeBtcWithdrawRequest{
+			To:         req.To,
+			AmountSats: req.AmountSats,
+			FeeSats:    req.FeeSats,
+		},
+		BtcTxid: txid,
+	})
+	recordTx(auth, from, req.To, req.AmountSats, core.TxBridgeBtcWithdraw, string(withdrawData))
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "broadcast",

@@ -40,6 +40,19 @@ type BtcWatchedAddress struct {
 	// amounts.
 	LastCreditedSats uint64
 	CreatedAt        int64
+
+	// UncreditedExcessSats accumulates (never overwritten) the portion
+	// of any deposit that would have pushed this account's total
+	// BTCB+ETHB USD holdings over the admin-set
+	// "AccountHoldingsCapUsdCents" limit at the time it was observed -
+	// see api/apply.go's applyBridgeBtcDeposit and
+	// api/account_holdings_cap.go. Same role as
+	// EthCustodialAccount.UncreditedExcessWei - if the admin hasn't set
+	// both EthUsdCentsPerEth/BtcUsdCentsPerBtc rates, this never
+	// accumulates anything; real sats this address genuinely received
+	// but only partially credited, recoverable via manual admin
+	// follow-up (GET /admin/bridge/excess-deposits), not lost.
+	UncreditedExcessSats uint64
 }
 
 type BtcAddressStore struct {

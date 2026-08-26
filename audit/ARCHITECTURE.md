@@ -118,7 +118,16 @@ single shared secret (`NETWORK_SECRET`, checked with
 a **permissioned network**: joining requires an operator to hand you the
 secret and add your node's URL to every existing node's `PEERS` config by
 hand (see `ops/NODE_OPERATOR.md`). There is no self-serve join flow, no
-Sybil resistance, no reputation-weighted peer scoring.
+reputation-weighted peer scoring, and holding the secret carries no
+economic/reputation cost — so this is still not Sybil-resistant in the
+sense of "expensive to mint many identities." As of 2026-08-10, the
+handshake itself (`HandlePeerHandshake`) requires a proof-of-possession
+signature over the claimed `NodeID`/`PublicKey`/`Address`, and block
+adoption (`verifyBlockProducer`) verifies against `ValidatorStore`'s own
+on-chain-registered `AuthorizedNodePublicKey` rather than `peerStore`'s
+self-asserted one — closing the specific escalation where a
+`NETWORK_SECRET` holder could impersonate a known validator's `NodeID` and
+have a self-forged block wrongly verify (see `KNOWN_GAPS.md`).
 
 **Fork resolution** (`core/replace_chain.go`): `ValidateChain` checks
 internal hash-chain consistency (each block's `Hash` really is

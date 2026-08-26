@@ -74,6 +74,10 @@ func HandleFaucet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
 		return
 	}
+	if mainnetMode() {
+		http.Error(w, errFaucetDisabledOnMainnet.Error(), http.StatusServiceUnavailable)
+		return
+	}
 
 	type Request struct{}
 	var req Request

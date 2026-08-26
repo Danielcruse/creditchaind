@@ -76,7 +76,7 @@ func TestApplySlashReport_MissedBlock_RequiresCorroborationWhenMultipleNodesExis
 	w := walletStore.Get(target)
 	w.Reputation = 100
 	stakingStore.Stakes[target] = map[string]uint64{"CCT": 10000}
-	tokenStore.Mint(stakeEscrowAddress("CCT"), 10000)
+	cctStore.Mint(stakeEscrowAddress("CCT"), cctW(10000))
 
 	// 3 distinct nodes known network-wide (the target validator plus
 	// two others delegated to different nodes) - majority of 3 is 2.
@@ -141,7 +141,7 @@ func TestApplySlashReport_MissedBlock_SingleNodeNetworkStillSlashesOnOneReport(t
 	w := walletStore.Get(target)
 	w.Reputation = 100
 	stakingStore.Stakes[target] = map[string]uint64{"CCT": 10000}
-	tokenStore.Mint(stakeEscrowAddress("CCT"), 10000)
+	cctStore.Mint(stakeEscrowAddress("CCT"), cctW(10000))
 
 	validatorStore.Register(target, "node-1", "abc")
 

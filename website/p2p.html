@@ -2,9 +2,10 @@
 <html>
 <head>
     <title>Marketplace (P2P)</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/outernet.css?v=fixaug5d">
     <style>
         .explorer-search{
             display:flex;
@@ -44,36 +45,63 @@
             padding:10px 0;
         }
 
-        /* --- Hub directory: each hub is its own bold rectangular card --- */
+        /* --- Hub directory: a dense scrollable list, not one big card
+             per hub - with real hub counts, the old 20px-padded/2px-
+             bordered card design meant scrolling past 3-4 hubs filled
+             the whole screen. Compact rows (like a real market list)
+             fit far more per screen and scroll faster - a future
+             ranking algorithm can reorder these rows, this only changes
+             how densely each one renders. --- */
         .hub-directory{
             display:flex;
             flex-direction:column;
-            gap:14px;
+            border:1px solid rgba(255,255,255,0.12);
+            border-radius:10px;
+            overflow:hidden;
+            max-height:420px;
+            overflow-y:auto;
         }
         .hub-card{
             display:flex;
             justify-content:space-between;
             align-items:center;
-            gap:16px;
-            padding:20px 24px;
-            border:2px solid rgba(255,255,255,0.25);
-            border-radius:16px;
+            gap:10px;
+            padding:9px 14px;
+            border-bottom:1px solid rgba(255,255,255,0.08);
+            background:rgba(255,255,255,0.02);
+            flex-wrap:nowrap;
+        }
+        .hub-card:last-child{
+            border-bottom:none;
+        }
+        .hub-card:hover{
             background:rgba(255,255,255,0.06);
-            flex-wrap:wrap;
+        }
+        .hub-card-namerow{
+            display:flex;
+            align-items:baseline;
+            gap:8px;
+            min-width:0;
+            overflow:hidden;
         }
         .hub-card-name{
-            font-size:20px;
-            font-weight:800;
-            letter-spacing:0.3px;
+            font-size:14px;
+            font-weight:700;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
         }
         .hub-card-badge{
-            font-size:13px;
-            margin-top:4px;
+            font-size:11px;
+            white-space:nowrap;
+            flex-shrink:0;
         }
         .hub-view-btn{
-            padding:10px 22px;
-            font-weight:700;
-            border-radius:10px;
+            padding:6px 16px;
+            font-weight:600;
+            font-size:12px;
+            border-radius:8px;
+            flex-shrink:0;
         }
 
         /* --- Hub detail: Buy/Sell native-token marketplace panel ---
@@ -116,11 +144,45 @@
             background:rgba(255,255,255,0.05);
             border:1px solid rgba(255,255,255,0.1);
             border-radius:12px;
-            padding:14px;
-            margin-bottom:12px;
+            margin-bottom:8px;
+            overflow:hidden;
         }
-        .hub-token-card h4{
-            margin:0 0 6px 0;
+        /* Collapsed by default (see renderUnifiedTokenCard/
+           toggleHubCardExpanded in js/p2p.js) - a real offer LIST, not
+           every symbol's full input panel shown at once. */
+        .hub-token-card-summary{
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            gap:10px;
+            padding:12px 14px;
+            cursor:pointer;
+        }
+        .hub-token-card-summary:hover{
+            background:rgba(255,255,255,0.04);
+        }
+        .hub-token-card-summary-title{
+            display:block;
+            font-weight:700;
+            font-size:14px;
+        }
+        .hub-token-card-summary-sub{
+            display:block;
+            font-size:12px;
+            opacity:0.65;
+            margin-top:2px;
+        }
+        .hub-token-card-chevron{
+            font-size:22px;
+            opacity:0.5;
+            flex-shrink:0;
+            transition:transform 0.15s ease;
+        }
+        .hub-token-card-chevron.open{
+            transform:rotate(90deg);
+        }
+        .hub-token-card-detail{
+            padding:0 14px 14px 14px;
         }
 
         /* --- Session divider between off-app and native-token trading --- */
@@ -268,6 +330,13 @@
             height:60vh;
             max-width:640px;
             background:#080b1a;
+            /* This page's <body> is body.outernet-light (see
+               website/css/outernet.css), which sets a near-black
+               color:#111827 for light-background readability - without
+               overriding it here, that dark color gets inherited by
+               every chat bubble/label inside this dark-navy overlay,
+               making the text nearly invisible against it. */
+            color:#fff;
             border-radius:16px;
             box-shadow:0 10px 60px rgba(0,0,0,0.6);
             overflow:hidden;
@@ -362,6 +431,21 @@
         .p2p-countdown.overdue{
             color:#ff6b6b;
         }
+        /* Shown in place of the timer once the trade has moved past
+           AWAITING_PAYMENT (see startP2PCountdownFor) - a fixed-value
+           countdown reads as "stuck" or broken once there's nothing
+           left to count down, so this replaces it with an explicit
+           done/in-progress readout instead. Smaller than the numeric
+           countdown's 36px (a whole phrase at that size wraps awkwardly
+           in the panel's width) - status-text applies to both the
+           concluded and still-in-progress-but-past-payment cases,
+           concluded adds the green "done" color on top. */
+        .p2p-countdown.status-text{
+            font-size:22px;
+        }
+        .p2p-countdown.concluded{
+            color:#00ff95;
+        }
         .p2p-fraud-warning{
             background:rgba(255,107,107,0.12);
             border:1px solid #ff6b6b;
@@ -370,6 +454,24 @@
             font-size:12px;
             line-height:1.5;
             margin:10px 0;
+        }
+        /* Shown on the main chat panel (not just the Timer & Payment
+           panel a seller has to swipe to) the moment a buyer marks
+           payment sent, so it's impossible to miss while just reading
+           the conversation - clickable to jump straight to the panel
+           where the actual verify/dispute buttons live. */
+        .p2p-payment-marked-banner{
+            background:rgba(255,209,102,0.12);
+            border:1px solid #ffd166;
+            color:#ffd166;
+            border-radius:10px;
+            padding:10px 14px;
+            font-size:13px;
+            font-weight:bold;
+            line-height:1.5;
+            margin:10px 0;
+            cursor:pointer;
+            text-align:center;
         }
         /* Rules-first gate shown before a chat thread becomes usable -
            same "read this before you act" visual language as the
@@ -575,9 +677,9 @@
             color:#111827;
         }
         .hub-page-light .hub-mode-toggle button.active{
-            background:#e0f2fe;
-            border-color:#0284c7;
-            color:#0c4a6e;
+            background:#d1fae5;
+            border-color:#059669;
+            color:#065f46;
         }
         .hub-page-light .hub-panel-nav-btn{
             background:#f3f4f6;
@@ -596,19 +698,59 @@
         .hub-page-light .hub-agent-section{
             border-top:1px solid #e5e7eb;
         }
+        /* .hub-directory/.hub-card default to near-transparent white
+           overlays (rgba(255,255,255,0.02-0.08)) meant to sit on this
+           site's default dark body - on the marketplace landing page
+           (also now .hub-page-light, see #p2pDirectoryView), those
+           overlays would render as barely-visible white-on-white, so
+           they need their own light-appropriate colors here same as
+           every other .hub-page-light override above. */
+        .hub-page-light .hub-directory{
+            border:1px solid #e5e7eb;
+        }
+        .hub-page-light .hub-card{
+            background:#f9fafb;
+            border-bottom:1px solid #e5e7eb;
+        }
+        .hub-page-light .hub-card:hover{
+            background:#f3f4f6;
+        }
+
+        .p2p-chat-review-prompt{
+            border:1px solid rgba(255,255,255,0.15);
+            border-radius:10px;
+            padding:10px 12px;
+            margin:6px 0;
+            background:rgba(255,255,255,0.04);
+        }
+        .p2p-chat-review-stars{
+            display:flex;
+            gap:6px;
+            font-size:22px;
+        }
+        .p2p-chat-review-stars span{
+            cursor:pointer;
+            opacity:0.35;
+        }
+        .p2p-chat-review-stars span.selected{
+            opacity:1;
+        }
     </style>
 </head>
-<body>
-<script src="js/device-lock.js"></script>
+<body class="outernet-light">
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <h1>Marketplace (P2P)</h1>
 
-<p style="opacity:0.6;font-size:12px;">
-    With thanks to
-    <a href="companies.html?address=a576b7ac5e34c682bd9fe58c4e4fc72023fd96d4" style="color:var(--cc-accent-gold, #c9a227);">HF BOSS</a>
-    and
-    <a href="companies.html?address=4a550c9c4c3aa166a6518ce02ed59fdad5b88a26" style="color:var(--cc-accent-gold, #c9a227);">Swift Exchange</a>
-    for supporting this testnet build.
+<p style="font-size:12px;">
+    <a href="p2p-terms" style="color:var(--cc-accent-gold, #c9a227);">These are the terms of the P2P Marketplace</a>
+    - who may operate a Trading Hub and how identity verification works.
+</p>
+
+<p style="opacity:0.75;font-size:13px;background:rgba(201,162,39,0.1);border:1px solid rgba(201,162,39,0.35);border-radius:10px;padding:10px 14px;">
+    OUTERNET is seeking sponsors to infuse capital in exchange for ownership rights.
+    <a href="mailto:luciferdell11star@gmail.com" style="color:var(--cc-accent-gold, #c9a227);">Reach out to discuss becoming a sponsor</a>.
 </p>
 
 <div id="p2pLoggedOut" class="card" style="display:none;">
@@ -616,12 +758,21 @@
 </div>
 
 <!-- ================= Hub Directory ================= -->
-<div id="p2pDirectoryView" class="card">
+<div id="p2pDirectoryView" class="card hub-page-light">
     <h2>Trading Hubs</h2>
     <p style="opacity:0.75;font-size:13px;">
         Every trade here goes through a verified Trading Hub - select one below to see what it
-        trades and at what rate. Not verified yet? <a href="companies.html" style="color:var(--cc-accent-gold, #c9a227);">Apply here</a>.
+        trades and at what rate. Not verified yet? <a href="companies" style="color:var(--cc-accent-gold, #c9a227);">Apply here</a>.
     </p>
+    <div id="connectedHubBanner" style="display:none;"></div>
+    <div class="explorer-search" style="margin-bottom:10px;">
+        <select id="hubDirectoryCurrencyFilter" onchange="applyHubDirectoryFilters()">
+            <option value="">Any currency</option>
+        </select>
+        <select id="hubDirectoryProviderFilter" onchange="applyHubDirectoryFilters()">
+            <option value="">Any payment method</option>
+        </select>
+    </div>
     <div id="hubDirectoryBody" class="hub-directory">
         <p class="explorer-empty">Loading...</p>
     </div>
@@ -638,6 +789,33 @@
     <div id="hubAgentApplyBox" style="display:none;margin:10px 0;">
         <button onclick="applyHubAgent()">Apply to Become an Agent</button>
         <p id="hubAgentApplyStatus" style="font-size:12px;opacity:0.75;"></p>
+    </div>
+
+    <!-- Trader ID verification - opt-in, per hub (some hubs operate under
+         a jurisdiction that requires it). Stored off-chain, encrypted, and
+         readable only by this hub - see api/hub_kyc.go. Shown to any
+         logged-in wallet viewing a hub, hidden once already submitted. -->
+    <div id="hubKYCBox" class="card" style="display:none;margin:10px 0;background:rgba(255,255,255,0.03);">
+        <h4 style="margin-top:0;">Verify Your Identity with This Hub</h4>
+        <p id="hubKYCIntro" style="opacity:0.7;font-size:12px;">
+            Some Trading Hubs are required to keep a phone number and government ID on file for anyone they trade
+            with. This is sent directly to the hub, encrypted, and never posted to the public ledger - only this
+            hub can see it.
+        </p>
+        <div class="explorer-search">
+            <input id="hubKYCPhone" type="text" placeholder="Phone number (e.g. +2348012345678)">
+            <select id="hubKYCIdType">
+                <option value="national_id">National ID</option>
+                <option value="passport">Passport</option>
+                <option value="drivers_license">Driver's License</option>
+                <option value="voters_card">Voter's Card</option>
+            </select>
+        </div>
+        <div class="explorer-search">
+            <input id="hubKYCIdNumber" type="text" placeholder="ID number">
+            <button onclick="submitHubKYC()">Submit</button>
+        </div>
+        <p id="hubKYCStatus" style="font-size:12px;opacity:0.75;"></p>
     </div>
 
     <!-- Hub's own custom front-page design - always sandboxed, see
@@ -671,6 +849,11 @@
                 <!-- ===== Settings ===== -->
                 <div id="hubPanelSettings" style="display:none;">
                     <h4 style="margin-top:0;" id="rateManagerHeading">Manage Your Listing</h4>
+                    <p style="opacity:0.7;font-size:12px;">
+                        Posting a buy offer and a sell offer are two separate actions - you don't need
+                        both sides. Posting one leaves the other exactly as it already was (never
+                        silently cleared).
+                    </p>
                     <div class="explorer-search">
                         <select id="hubRateSymbol" onchange="onHubRateModeChange()"></select>
                         <select id="hubRateMode" onchange="onHubRateModeChange()">
@@ -682,13 +865,18 @@
                         <input id="hubRateFiatSymbol" type="text" placeholder="Currency code (e.g. USD, EUR, NGN)">
                         <select id="hubRateCounterSymbol" style="display:none;" onchange="showHubRateExternalReference()"></select>
                     </div>
+                    <p style="opacity:0.7;font-size:12px;" id="hubRateExternalRefPrice"></p>
+
                     <div class="explorer-search">
                         <input id="hubRateSellRate" type="number" placeholder="Your sell price - what a buyer pays per unit (decimals OK, e.g. 0.000975)" min="0" step="any">
-                        <input id="hubRateBuyRate" type="number" placeholder="Your buy price - what you pay per unit when someone sells to you (decimals OK)" min="0" step="any">
+                        <button onclick="postHubSellOffer()">Post Sell Offer</button>
                     </div>
-                    <p style="opacity:0.7;font-size:12px;" id="hubRateExternalRefPrice"></p>
+                    <div class="explorer-search">
+                        <input id="hubRateBuyRate" type="number" placeholder="Your buy price - what you pay per unit when someone sells to you (decimals OK)" min="0" step="any">
+                        <button onclick="postHubBuyOffer()">Post Buy Offer</button>
+                    </div>
+
                     <label><input id="hubRateActive" type="checkbox" checked> Active (open for trades)</label>
-                    <button onclick="setHubRate()">Post / Update Listing</button>
                     <p id="hubRateSetStatus"></p>
 
                     <h4>
@@ -712,11 +900,24 @@
                         </div>
                         <p style="opacity:0.7;font-size:12px;margin-bottom:6px;">Minimum reputation an outernet user needs before they can apply to become one of your agents (0 = anyone can apply).</p>
                         <input id="hubRulesMinRepToApply" type="number" min="0" max="100" placeholder="Min reputation to apply (default 0)">
+                        <p style="opacity:0.7;font-size:12px;margin:10px 0 4px;">
+                            <label><input id="hubRulesRequireKYC" type="checkbox"> Require ID verification before trading</label><br>
+                            When on, a trader must submit their phone number and government ID to you (see "Verify Your
+                            Identity" on your hub page) before they can request any trade - enforced server-side, not just
+                            a warning.
+                        </p>
                         <p style="opacity:0.7;font-size:12px;margin-bottom:6px;">
                             Canned replies (optional) - the ONLY text an automation agent (see Automation below) may ever
                             post on your behalf, one per line. Leave blank if you're not using automation.
                         </p>
                         <textarea id="hubCannedReplies" rows="3" style="width:100%;padding:10px;border-radius:10px;box-sizing:border-box;" placeholder="Thanks, please send payment to the account shown above.&#10;Payment confirmed, releasing now."></textarea>
+                        <p style="opacity:0.7;font-size:12px;margin-bottom:6px;">
+                            Payment methods / service providers you accept or pay out through (one per line - e.g. Bank
+                            Transfer, PayPal, Zelle, Western Union, MoneyGram, Mobile Money). Shown in the marketplace's
+                            currency + provider filter so traders looking for a specific method can find you - list your
+                            own if it's not a common one, there's no fixed list.
+                        </p>
+                        <textarea id="hubServiceProviders" rows="3" style="width:100%;padding:10px;border-radius:10px;box-sizing:border-box;" placeholder="Bank Transfer&#10;PayPal&#10;Western Union"></textarea>
                         <button onclick="setHubRules()">Save Rules</button>
                         <p id="hubRulesSetStatus"></p>
 
@@ -743,6 +944,14 @@
                         </div>
                         <p id="hubWorkerSetStatus"></p>
                         <div id="hubWorkerList" class="explorer-empty">No workers added yet.</div>
+
+                        <h4>Trader ID Verification</h4>
+                        <p style="opacity:0.7;font-size:12px;">
+                            Phone numbers and government IDs traders have submitted to you (see "Verify Your Identity"
+                            above). Stored encrypted on this node and visible only to you - never on the public ledger,
+                            never visible to another hub.
+                        </p>
+                        <div id="hubKYCRecordsList" class="explorer-empty">Loading...</div>
 
                         <h4>Automation</h4>
                         <p style="opacity:0.7;font-size:12px;">
@@ -861,6 +1070,31 @@
             </div>
             <span id="p2pChatModerator" style="font-size:12px;opacity:0.75;"></span>
             <p id="p2pChatSummary" style="font-size:14px;opacity:0.85;"></p>
+            <div id="p2pChatPaymentMarkedBanner" style="display:none;"></div>
+
+            <!-- Shown once this trade has settled successfully AND the
+                 current wallet hasn't reviewed the other side yet - see
+                 renderTradeReviewPrompt() in p2p.js. -->
+            <div id="p2pChatReviewPrompt" class="p2p-chat-review-prompt" style="display:none;">
+                <p style="margin:4px 0;font-size:13px;font-weight:bold;">How did this trade go with the other party?</p>
+                <div id="p2pChatReviewStars" class="p2p-chat-review-stars"></div>
+                <textarea id="p2pChatReviewComment" placeholder="Optional comment..." rows="2" style="width:100%;box-sizing:border-box;margin-top:6px;"></textarea>
+                <button onclick="submitTradeReview()">Submit Review</button>
+                <p id="p2pChatReviewStatus" style="font-size:12px;opacity:0.75;"></p>
+            </div>
+
+            <!-- Shown only to the at-fault party of a refund-resolved
+                 dispute on THIS trade, while their 72-hour choice is
+                 still pending - see renderDisputeFaultChoicePrompt() in
+                 p2p.js and core.DisputeFaultChoice's own doc comment. -->
+            <div id="p2pChatFaultChoicePrompt" class="p2p-chat-review-prompt" style="display:none;border-color:#c0392b;">
+                <p style="margin:4px 0;font-size:13px;font-weight:bold;">This dispute was resolved as a refund to the other party.</p>
+                <p id="p2pChatFaultChoiceDetail" style="font-size:12px;opacity:0.85;margin:4px 0;"></p>
+                <p id="p2pChatFaultChoiceCountdown" style="font-size:12px;opacity:0.75;margin:4px 0;"></p>
+                <button onclick="payDisputeFaultChoice()">Pay the Moderator Fee</button>
+                <button onclick="declineDisputeFaultChoice()" style="margin-left:6px;">Decline (Accept Reputation Penalty)</button>
+                <p id="p2pChatFaultChoiceStatus" style="font-size:12px;opacity:0.75;"></p>
+            </div>
 
             <!-- Rules-first gate: platform rules, then this hub's own
                  terms, shown before the thread/input become usable -
@@ -896,14 +1130,15 @@
 </div>
 
 <p style="margin-top:20px;">
-    <a href="tokens.html">Token Creation</a> &nbsp;|&nbsp;
-    <a href="explorer.html">Explorer</a> &nbsp;|&nbsp;
-    <a href="outernet.html">Back to OUTERNET</a>
+    <a href="explorer">Explorer</a> &nbsp;|&nbsp;
+    <a href="outernet">Back to OUTERNET</a>
 </p>
 
-<script src="js/api.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/p2p.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/ai-assistant.js?v=fixaug5b"></script>
+<script src="js/vault.js?v=sec0816c"></script>
+<script src="js/p2p.js?v=sec0818b"></script>
 
 </body>
 </html>

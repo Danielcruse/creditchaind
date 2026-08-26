@@ -45,8 +45,14 @@ func HandleWallet(
 	stakingStore.SyncWallet(wallet, address)
 
 	resp := WalletResponse{
-		Address:     wallet.Address,
-		CCTBalance:  wallet.CCTBalance,
+		Address: wallet.Address,
+		// wallet.CCTBalance is dead state - only ever written by
+		// core.RewardWallet, which nothing calls anymore (CCT rewards
+		// moved to the real cctStore ledger long ago). cctStore is the
+		// actual, canonical CCT balance every transfer/stake/fee already
+		// reads and writes - reading it here too is what makes this
+		// field match reality instead of always showing 0.
+		CCTBalance:  core.CctSmallestToWholeFloor(cctStore.BalanceOf(address)),
 		OETHBalance: wallet.OETHBalance,
 		StakedETH:   wallet.StakedETH,
 		Rewards:     wallet.Rewards,

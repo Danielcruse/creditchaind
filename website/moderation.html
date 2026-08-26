@@ -2,12 +2,13 @@
 <html>
 <head>
     <title>OUTERNET Moderation</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
 </head>
 <body>
-<script src="js/device-lock.js"></script>
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <h1>Moderation</h1>
 
@@ -56,10 +57,14 @@
     </p>
 
     <p style="opacity:0.75;font-size:12px;">
-        Requires reputation ≥ 50 (same floor as becoming a validator) and a flat 10 CCT registration fee, charged
-        when the registration confirms. Registering grants a one-time reputation bump, which also
-        raises your validator selection weight (reputation is 55% of
-        it).
+        Requires reputation ≥ 50 (same floor as becoming a validator), at least 200 CCT already
+        staked (locked as a moderation bond on registration), and a flat 10 CCT registration fee,
+        charged when the registration confirms. Registering grants a one-time reputation bump,
+        which also raises your validator selection weight (reputation is 55% of it). Both the fee
+        and the stake requirement are governable - admin-settable directly, executive-vote
+        settable, or changeable by any ordinary community <a href="governance">Parameter
+        Change</a> vote if no executive consensus forms - so the numbers above are defaults, not
+        guarantees.
     </p>
 
     <button onclick="registerModerator()">
@@ -91,8 +96,8 @@
 
     <h2>Company Verification Applications Assigned To You</h2>
 
-    <p style="opacity:0.75;font-size:12px;">
-        Testnet placeholder - see <a href="companies.html" style="color:var(--cc-accent-gold, #c9a227);">Trading Hub</a>
+    <p style="opacity:0.75;font-size:12px;" id="modAssignedNote">
+        Testnet placeholder - see <a href="companies" style="color:var(--cc-accent-gold, #c9a227);">Trading Hub</a>
         for what "Verified" does and doesn't mean here.
     </p>
 
@@ -135,13 +140,26 @@
 <br>
 
 <button
-    onclick="location.href='outernet.html'">
+    onclick="location.href='outernet'">
     Back To Dashboard
 </button>
 
-<script src="js/api.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/moderation.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/ai-assistant.js?v=fixaug5b"></script>
+<script src="js/moderation.js?v=sec0815a"></script>
+<script>
+(function mainnetAwareModerationCopy() {
+    if (window.CC_NETWORK !== "mainnet") return;
+    const note = document.getElementById("modAssignedNote");
+    if (note) {
+        note.innerHTML = note.innerHTML.replace(
+            "Testnet placeholder - see",
+            "Note - see"
+        );
+    }
+})();
+</script>
 
 </body>
 </html>

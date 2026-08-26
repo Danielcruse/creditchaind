@@ -117,8 +117,8 @@ func TestHubOperator_OwnListingAndOperatorListingAreIndependent(t *testing.T) {
 	}
 
 	// Fund both inventories independently.
-	tokenStore.Mint(hubAddr, 1000)
-	tokenStore.Mint(operatorAddr, 1000)
+	cctStore.Mint(hubAddr, cctW(1000))
+	cctStore.Mint(operatorAddr, cctW(1000))
 
 	// A buyer trades against the HUB's own listing.
 	buyerPub1, buyerPriv1, _ := core.GenerateKeyPair()
@@ -127,11 +127,11 @@ func TestHubOperator_OwnListingAndOperatorListingAreIndependent(t *testing.T) {
 	}, 2000)
 	applyTxOnce(tradeTx1)
 
-	if got := tokenStore.BalanceOf(hubAddr); got != 900 {
-		t.Fatalf("expected hub's own balance debited to 900, got %d", got)
+	if got := cctStore.BalanceOf(hubAddr); got != cctW(900) {
+		t.Fatalf("expected hub's own balance debited to 900, got %s", got)
 	}
-	if got := tokenStore.BalanceOf(operatorAddr); got != 1000 {
-		t.Fatalf("expected operator's balance untouched by a trade against the HUB's own listing, got %d", got)
+	if got := cctStore.BalanceOf(operatorAddr); got != cctW(1000) {
+		t.Fatalf("expected operator's balance untouched by a trade against the HUB's own listing, got %s", got)
 	}
 
 	// A second buyer trades against the OPERATOR's own listing.
@@ -141,11 +141,11 @@ func TestHubOperator_OwnListingAndOperatorListingAreIndependent(t *testing.T) {
 	}, 3000)
 	applyTxOnce(tradeTx2)
 
-	if got := tokenStore.BalanceOf(operatorAddr); got != 900 {
-		t.Fatalf("expected operator's own balance debited to 900, got %d", got)
+	if got := cctStore.BalanceOf(operatorAddr); got != cctW(900) {
+		t.Fatalf("expected operator's own balance debited to 900, got %s", got)
 	}
-	if got := tokenStore.BalanceOf(hubAddr); got != 900 {
-		t.Fatalf("expected hub's own balance untouched by a trade against the OPERATOR's listing, got %d", got)
+	if got := cctStore.BalanceOf(hubAddr); got != cctW(900) {
+		t.Fatalf("expected hub's own balance untouched by a trade against the OPERATOR's listing, got %s", got)
 	}
 
 	offer2, ok := p2pOfferStore.Get(tradeTx2.ID)

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/creditchain/creditchaind/core"
 )
@@ -130,13 +131,21 @@ func HandleDrawLoanOffer(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "amount exceeds what's still available on this offer", http.StatusBadRequest)
 		return
 	}
-	if !hasEnoughCollateral(address, req.Amount) {
-		http.Error(w, "insufficient locked collateral - lock staked CCT or oETH covering at least this amount first", http.StatusBadRequest)
+	if !hasEnoughCollateral(address, req.Amount, time.Now().Unix()) {
+		http.Error(w, "insufficient locked collateral - lock staked CCT, oETH, or STETH_CCC1 covering at least this amount first", http.StatusBadRequest)
+		return
+	}
+	// Fast-fail preview, not the security boundary - applyLoanOfferDraw
+	// re-checks this for real at apply time (see
+	// lenderCanReceiveStethCcc1's doc comment) and refunds the
+	// reservation if it fails there instead.
+	if symbol, ok := peekCollateralSymbolForLoan(address, req.Amount, time.Now().Unix()); ok && symbol == "STETH_CCC1" && !lenderCanReceiveStethCcc1(offer.Lender) {
+		http.Error(w, "this offer's lender hasn't registered a self-custodial ETH address yet, so a STETH_CCC1-collateralized draw against it can't be safely funded right now", http.StatusBadRequest)
 		return
 	}
 
 	wallet := walletStore.Get(address)
-	if limit := core.BorrowLimit(wallet.Reputation); req.Amount > limit {
+	if limit := core.BorrowLimit(core.TrustDimensionValue(wallet, core.DimensionRepayment)); req.Amount > limit {
 		http.Error(w, "borrow limit exceeded", http.StatusBadRequest)
 		return
 	}

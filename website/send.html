@@ -2,9 +2,9 @@
 <html>
 <head>
     <title>OUTERNET Send</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
     <style>
         .address-row{
             display:flex;
@@ -15,15 +15,23 @@
             flex:1;
         }
         .scan-btn{
-            width:40px;
             height:40px;
             flex-shrink:0;
+            display:flex;
+            align-items:center;
+            gap:6px;
+            padding:0 14px;
             border-radius:8px;
             border:1px solid rgba(255,255,255,0.15);
             background:rgba(255,255,255,0.05);
             color:white;
-            font-size:18px;
+            font-size:16px;
+            font-weight:600;
             cursor:pointer;
+            white-space:nowrap;
+        }
+        .scan-btn .scan-btn-icon{
+            font-size:18px;
         }
         .modal-overlay{
             display:none;
@@ -48,7 +56,8 @@
     </style>
 </head>
 <body>
-<script src="js/device-lock.js"></script>
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <h1>Send</h1>
 
@@ -56,8 +65,10 @@
 
     <select id="sendSymbol">
         <option value="CCT">CCT</option>
-        <option value="ETHTEST">ETHTEST</option>
+        <option value="ETHB">ETH (bridged) - choose network next</option>
+        <option value="BTCB">BTC (bridged) - choose network next</option>
         <option value="USDCTEST">USDCTEST</option>
+        <option value="YENE">YEN-e</option>
     </select>
 
     <p>
@@ -69,8 +80,8 @@
     </p>
 
     <p id="sendAddressHint" style="opacity:0.75;font-size:13px;display:none;">
-        ETHTEST/USDCTEST are imported tokens with their own address (see your wallet card on OUTERNET) -
-        enter the recipient's ETHTEST/USDCTEST address here, not their CCT address.
+        This token has its own address, separate from a CCT address - enter the recipient's address for
+        this specific token here, not their CCT address.
     </p>
 
     <p id="sendFeeNote" style="opacity:0.75;font-size:13px;"></p>
@@ -80,7 +91,7 @@
             type="text"
             id="toAddress"
             placeholder="Recipient address">
-        <button type="button" class="scan-btn" onclick="openScanModal()" title="Scan a QR code">&#9678;</button>
+        <button type="button" class="scan-btn" onclick="openScanModal()" title="Scan a QR code"><span class="scan-btn-icon">&#9678;</span>Scan</button>
     </div>
 
     <br>
@@ -103,7 +114,7 @@
 <br>
 
 <button
-    onclick="location.href='outernet.html'">
+    onclick="location.href='outernet'">
     Back To OUTERNET
 </button>
 
@@ -120,11 +131,12 @@
     </div>
 </div>
 
-<script src="js/api.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/qrcode.js"></script>
-<script src="js/qr-decode.js"></script>
-<script src="js/send.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/ai-assistant.js?v=fixaug5b"></script>
+<script src="js/qrcode.js?v=fixaug5b"></script>
+<script src="js/qr-decode.js?v=fixaug5b"></script>
+<script src="js/send.js?v=fixaug5b"></script>
 
 </body>
 </html>

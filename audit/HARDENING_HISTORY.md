@@ -325,3 +325,137 @@ the time) had exactly one test file. This is a real, disclosed prior gap
 (see `KNOWN_GAPS.md`'s framing of what audit-readiness requires) — the
 current suite covers the highest-risk paths identified, not the whole
 surface area.
+
+## 10. Peer-identity spoofing → block-forgery escalation (2026-08-10)
+
+**The gap**: §3 above bound block *adoption* to a validator's specific
+`AuthorizedNodeID`, but `verifyBlockProducer` (`api/peer.go`) verified the
+block's *signature* against whatever `PublicKey` `peerStore` happened to
+have on file for that `NodeID` — and `peerStore.Add` (called from
+`HandlePeerHandshake`) recorded any `NodeID`/`PublicKey`/`Address` a
+`NETWORK_SECRET` holder claimed, with zero proof they actually controlled
+the claimed key. `AuthorizedNodeID` values are public (visible via
+`GET /validators`), so an attacker who knew a real validator's `NodeID`
+could self-sign a forged block, hand-craft a handshake claiming that same
+`NodeID` under their own `PublicKey`, and have the forged block wrongly
+verify — the §3 binding was real, but the key used to check the signature
+against it was never actually trustworthy.
+
+**What was built**: two changes, addressing the two separate exposures.
+(1) `verifyBlockProducer` no longer consults `peerStore` for signature
+verification at all — it checks `ValidatorStore`'s own
+`AuthorizedNodePublicKey`, set only via a cryptographically-verified
+on-chain `TxValidatorRegister` (independently re-checked at apply time by
+`verifyTxAuth`'s `TxValidatorRegister` case, closing §3's own gap). The
+genesis/legacy-"mine" placeholder path (no `ValidatorStore` entry) is
+narrowed to only ever accept a *self*-produced block, since every node
+mints its own genesis locally and one was never legitimately gossiped from
+a peer. (2) `HandlePeerHandshake`/`handshakeWith` (`api/peer.go`) now
+require a proof-of-possession signature over the claimed
+`NodeID`/`PublicKey`/`Address`/`Timestamp` (`verifyHandshakeSignature`,
+±60s freshness window mirroring `core.RequestTimestampWindow`) — a
+`NETWORK_SECRET` holder can no longer claim an identity it doesn't
+actually control, closing the peer-list/gossip-layer exposure directly,
+not just its consensus-layer consequence.
+
+**Disclosed limitation, not solved by this fix**: `NETWORK_SECRET` is
+still the sole admission cost to becoming a gossip peer — no economic or
+reputation cost, no cap on peer-store entries per secret-holder, no
+per-peer rate limiting on `/peer/tx`/`/peer/block`. This closes identity
+*spoofing* (and the forgery it enabled); it is not a general Sybil-
+resistance mechanism. See `KNOWN_GAPS.md`'s "Networking / P2P
+Permissioning" section for what's still open.
+
+**Verified**: `api/peer_security_test.go` (8 tests) — most directly, a
+test that poisons `peerStore` with an attacker-controlled `PublicKey`
+entry for a real validator's `AuthorizedNodeID`, submits a block forged
+with the attacker's own key claiming that validator/`NodeID`, and confirms
+it's rejected (with a paired sanity check that the same block, genuinely
+signed by the validator's real authorized key, still verifies). Also
+covers: wrong-`NodeID` rejection, unregistered-validator rejection,
+placeholder-producer self-only enforcement, and handshake-signature
+rejection for a claimed-but-not-controlled public key, a stale timestamp,
+and a tampered field. Full `go build`/`go test ./...` clean, no
+regressions to the existing suite.
+
+## 11. STETH_CCC1 as loan collateral — first real-asset collateral type, and a self-caught reservation bug (2026-08-11)
+
+**Starting point**: loan collateral had exactly two types, CCT (staked
+position) and OETH (a receipt with nothing real behind it) - both pure
+in-memory counters with no connection to an actual asset. The user asked
+for STETH_CCC1 (real, vault-locked Lido stETH - see `api/vault_lock.go`)
+to become the first collateral type backed by genuine value.
+
+**What was built**:
+- Real balance movement on lock/release (`api/apply.go`'s
+  `applyLockCollateral`/`creditCollateralTo`), into/out of a dedicated
+  escrow address (`collateralEscrowAddress`) - the same "really moved,
+  not just an in-memory counter" pattern `applyStake` already established
+  for ETH_CCC1.
+- Real USD-cents valuation (`collateralValueInYen`'s STETH_CCC1 case) via
+  the existing `EthUsdCentsPerEth` governance rate, treated as YEN-e 1:1
+  per an explicit, considered design decision (see that function's doc
+  comment on why NOT routing through the CCT↔YENE AMM pool instead).
+- **Price staleness protection** (`core.GovernanceParamsStore.SetAt`/
+  `IsStale`, `EthUsdCentsPerEthMaxAgeSeconds` = 24h) - a real gap found in
+  self-review: `EthUsdCentsPerEth` had zero staleness tracking anywhere in
+  the codebase (it previously only fed a USD holdings *cap*; this feature
+  made it drive real *liquidation* decisions for the first time).
+  Persisted through `state.json` (`GovernanceParamsSetAt`) so a node
+  restart doesn't silently reset the clock to "fresh."
+- **stETH/ETH depeg modeling** (`StethEthRatioBasisPoints`, default
+  10000 = 1:1, admin-tunable) - stETH has genuinely depegged from ETH in
+  real markets before; pricing it as a bare 1:1 ETH proxy would silently
+  overvalue collateral during exactly the stress event where accurate
+  liquidation math matters most.
+- **Unregistered-lender seizure gap closed** (`lenderCanReceiveStethCcc1`,
+  wired into `applyLoanOfferDraw`/`applyLoanRequestFulfill` plus their
+  HTTP-layer fast-fail previews) - a STETH_CCC1-collateralized loan can no
+  longer fund at all against a lender who's never registered a
+  self-custodial ETH address, closing the one path where
+  `creditCollateralTo`'s seizure-to-lender could land somewhere
+  unreachable.
+- **Per-symbol liquidation threshold** (`core.LiquidationThresholdPercentFor`)
+  - STETH_CCC1 uses a stricter 130% margin than the 120% every other
+    collateral type uses, as a hardcoded constant (not admin-settable),
+    deliberately preserving `LiquidationThresholdPercent`'s own existing
+    "no instant retroactive risk change" design rationale.
+
+**A real bug caught and fixed during this same pass, not after**:
+`reserveCollateralForLoan` originally returned only the collateral
+*symbol* chosen, not the amount actually reserved. For CCT/OETH that's
+harmless (reservation is always 1:1 with the loan amount), but for
+STETH_CCC1 the reserved wei amount is a completely different, much
+smaller number than the loan amount (priced via
+`stethCcc1WeiNeededForYenValue`). Every caller
+(`applyBorrow`, `applyLoanOfferDraw`) was using the *loan* amount for both
+the resulting loan's `CollateralAmount` field and every refund-on-failure
+path - silently recording a wildly wrong collateral amount on the loan
+record, which would have permanently stranded the real difference in the
+collateral escrow with no loan or refund ever tracking it. Caught by a
+test assertion failing during this same session (not by a later incident)
+and fixed by having `reserveCollateralForLoan` return the actual reserved
+amount, with every caller updated to use it. See
+`TestApplyLoanOfferDraw_RefusesStethCcc1FundingForUnregisteredLender`/
+`TestReserveCollateralForLoan_StethCcc1ReservesRealValueNotRawAmount` for
+the regression coverage.
+
+**Disclosed, not fixed this pass** (see `KNOWN_GAPS.md`'s "STETH_CCC1 as
+loan collateral" section for full detail): the uint64 whole-wei ceiling
+(~18.4 stETH per single lock/reservation, an existing convention this
+feature inherits rather than introduces).
+
+**Verified**: 27 new tests in `api/steth_collateral_test.go` +
+`core/liquidation_test.go`, covering lock/release real-balance movement,
+insufficient-balance rejection, valuation (including the staleness
+boundary and the depeg haircut), the wei-vs-YEN-e magnitude fix for both
+`meetsMinimumCollateralRatio` and `hasEnoughCollateral`/
+`reserveCollateralForLoan`, the unregistered-lender funding refusal (both
+the loan-offer and loan-request paths, positive and negative cases), the
+full `processCollateralLiquidations` sweep discovering and progressing a
+STETH_CCC1 loan through every risk stage while leaving a healthy one
+untouched, and a full create-request → fulfill → repay → collateral-
+released end-to-end lifecycle test. Full `go build`/`go vet`/
+`go test ./...` clean across `api`, `core`, `network`. Deployed to both
+node1 (testnet) and the mainnet node, live-verified via direct API query
+post-deploy on both.

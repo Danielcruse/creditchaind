@@ -10,25 +10,23 @@ import (
 	"github.com/creditchain/creditchaind/core"
 )
 
-// TestHandleBridgedEthWithdrawQuote_NoRPCConfiguredReturns503NotPanic is
-// a regression test for a real bug caught during manual verification:
-// HandleBridgedEthWithdrawQuote called ethbWithdrawFeeWei (and
-// therefore ethNonceAndGasPrice) without first checking ethRPCClient
-// for nil, unlike every other ETH-RPC-backed handler in this package -
-// panicked with a nil pointer dereference on every request when no
-// SEPOLIA_RPC_URL is configured (the default in this test environment
-// and in any deployment that hasn't opted into the ETH corner).
-func TestHandleBridgedEthWithdrawQuote_NoRPCConfiguredReturns503NotPanic(t *testing.T) {
+// TestHandleBridgedEthWithdrawQuote_Retired confirms the ERC-network
+// ETHB withdrawal quote endpoint is genuinely retired (see
+// api/eth_bridge_withdraw.go's HandleBridgedEthWithdraw doc comment) -
+// it always refuses with a clear disclosed message, regardless of RPC
+// configuration, rather than attempting to compute a live fee for a
+// CreditChain-held custodial signer that no longer exists.
+func TestHandleBridgedEthWithdrawQuote_Retired(t *testing.T) {
 	resetApplyTestState()
-	ethRPCClient = nil // explicit - this is the exact unconfigured-RPC state that panicked
+	ethRPCClient = nil
 
 	req := httptest.NewRequest(http.MethodGet, "/eth-bridge/withdraw-quote?address=some-address&amountWei=1000", nil)
 	w := httptest.NewRecorder()
 
 	HandleBridgedEthWithdrawQuote(w, req) // must not panic
 
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected 503 when no Sepolia RPC is configured, got %d", w.Code)
+	if w.Code != http.StatusGone {
+		t.Fatalf("expected 410 Gone for a retired endpoint, got %d", w.Code)
 	}
 }
 
@@ -73,6 +71,7 @@ func buildBridgeDepositTx(id, ccAddress, newBalanceWei string) core.Transaction 
 		From:          reporterAddress(),
 		Type:          core.TxBridgeDeposit,
 		Data:          string(data),
+		Timestamp:     env.Timestamp,
 		AuthAddress:   env.Address,
 		AuthPublicKey: env.PublicKey,
 		AuthTimestamp: env.Timestamp,
@@ -83,6 +82,8 @@ func buildBridgeDepositTx(id, ccAddress, newBalanceWei string) core.Transaction 
 
 func TestApplyBridgeDeposit_CreditsCorrectly(t *testing.T) {
 	resetApplyTestState()
+	allowDepositsForTest(t)
+	registerCurrentNodeAsAuthorizedValidator(t)
 
 	ccAddress, _, ethbAddress := setupCustodialAccount(t, "0xdeadbeef00000000000000000000000000dead")
 
@@ -113,6 +114,8 @@ func TestApplyBridgeDeposit_CreditsCorrectly(t *testing.T) {
 
 func TestApplyBridgeDeposit_DedupPreventsDoubleCredit(t *testing.T) {
 	resetApplyTestState()
+	allowDepositsForTest(t)
+	registerCurrentNodeAsAuthorizedValidator(t)
 
 	ccAddress, _, ethbAddress := setupCustodialAccount(t, "0xdeadbeef00000000000000000000000000dead")
 
@@ -181,7 +184,22 @@ func TestApplyTransfer_ETHBCCTNetworkFee(t *testing.T) {
 	})
 	fromEthb := resolveBalanceAddress(from, hex.EncodeToString(pub), "ETHB")
 
-	const to = "recipient-ethb-address"
+	// The recipient is a real cc-address with its own registered real
+	// ETH address (exactly what every CCT-network send UI validates the
+	// recipient field as - see send-bridged-eth.html's isValidCctAddress)
+	// - applyTransfer must resolve `to` through the same
+	// resolveBalanceAddress path the recipient's OWN balance lookups
+	// use, or the credit lands somewhere their balance page can never
+	// find it (the bug this test now guards against).
+	toPub, _, _ := core.GenerateKeyPair()
+	to := core.GenerateAddress(toPub)
+	ethCustodialStore.Create(&core.EthCustodialAccount{
+		CreditChainAddress:   to,
+		CreditChainPublicKey: hex.EncodeToString(toPub),
+		EthAddress:           "0xdddd000000000000000000000000000000dddd",
+		KeyRef:               "test-key-ref-recipient",
+	})
+	toEthb := resolveBalanceAddress(to, hex.EncodeToString(toPub), "ETHB")
 
 	bridgedEthStore.Mint(fromEthb, 500+ETHBCCTNetworkFeeWei)
 
@@ -191,14 +209,17 @@ func TestApplyTransfer_ETHBCCTNetworkFee(t *testing.T) {
 	if got := bridgedEthStore.BalanceOf(fromEthb); got != 0 {
 		t.Fatalf("expected sender ETHB balance 0 (500+fee sent, all in ETHB), got %d", got)
 	}
-	if got := bridgedEthStore.BalanceOf(to); got != 500 {
-		t.Fatalf("expected recipient ETHB balance 500, got %d", got)
+	if got := bridgedEthStore.BalanceOf(toEthb); got != 500 {
+		t.Fatalf("expected recipient ETHB balance 500 at their resolved real ETH address, got %d", got)
+	}
+	if got := bridgedEthStore.BalanceOf(to); got != 0 {
+		t.Fatalf("expected the recipient's bare cc-address to hold nothing - the credit must land at their resolved address, not this one, got %d", got)
 	}
 	if got := bridgedEthStore.BalanceOf(ethbBridgeFeeAddress()); got != ETHBCCTNetworkFeeWei {
 		t.Fatalf("expected the fee sink to hold %d wei, got %d", ETHBCCTNetworkFeeWei, got)
 	}
-	if got := tokenStore.BalanceOf(from); got != 0 {
-		t.Fatalf("expected sender CCT balance untouched at 0 - the fee no longer touches CCT at all, got %d", got)
+	if got := cctStore.BalanceOf(from); got != "0" {
+		t.Fatalf("expected sender CCT balance untouched at 0 - the fee no longer touches CCT at all, got %s", got)
 	}
 }
 
@@ -251,12 +272,26 @@ func TestApplyTransfer_USDCTestFeeChargedInEth(t *testing.T) {
 	usdcTestStore.Mint(fromUsdc, 200)
 	bridgedEthStore.Mint(fromEthb, UsdcTestTransferFeeWei)
 
-	payload := tokenTransferData{To: "recipient-usdc-address", Amount: 150, Symbol: "USDCTEST"}
+	// Real recipient with its own registered real ETH address (USDCTEST
+	// unifies with it, same as ETHB) - see TestApplyTransfer_ETHBCCTNetworkFee's
+	// comment for why applyTransfer must resolve `to` through this same
+	// path.
+	toPub, _, _ := core.GenerateKeyPair()
+	to := core.GenerateAddress(toPub)
+	ethCustodialStore.Create(&core.EthCustodialAccount{
+		CreditChainAddress:   to,
+		CreditChainPublicKey: hex.EncodeToString(toPub),
+		EthAddress:           "0xeeee000000000000000000000000000000eeee",
+		KeyRef:               "test-key-ref-recipient",
+	})
+	toUsdc := resolveBalanceAddress(to, hex.EncodeToString(toPub), "USDCTEST")
+
+	payload := tokenTransferData{To: to, Amount: 150, Symbol: "USDCTEST"}
 	payloadJSON, _ := json.Marshal(payload)
 	env := core.SignedEnvelope{Address: from, PublicKey: hex.EncodeToString(pub), Timestamp: 5000, Payload: payloadJSON}
 	sig := core.SignMessage(priv, env.CanonicalMessage())
 	tx := core.Transaction{
-		ID: "usdc-send-1", From: from, To: "recipient-usdc-address", Amount: 150, Type: core.TxExchange,
+		ID: "usdc-send-1", From: from, To: to, Amount: 150, Type: core.TxExchange,
 		Timestamp: 5000, AuthAddress: from, AuthPublicKey: hex.EncodeToString(pub), AuthTimestamp: 5000,
 		AuthPayload: payloadJSON, AuthSignature: hex.EncodeToString(sig), Data: string(payloadJSON),
 	}
@@ -265,8 +300,8 @@ func TestApplyTransfer_USDCTestFeeChargedInEth(t *testing.T) {
 	if got := usdcTestStore.BalanceOf(fromUsdc); got != 50 {
 		t.Fatalf("expected sender USDCTEST balance 50 (200-150), got %d", got)
 	}
-	if got := usdcTestStore.BalanceOf("recipient-usdc-address"); got != 150 {
-		t.Fatalf("expected recipient USDCTEST balance 150, got %d", got)
+	if got := usdcTestStore.BalanceOf(toUsdc); got != 150 {
+		t.Fatalf("expected recipient USDCTEST balance 150 at their resolved real ETH address, got %d", got)
 	}
 	if got := bridgedEthStore.BalanceOf(fromEthb); got != 0 {
 		t.Fatalf("expected sender ETHB balance 0 after paying the fee, got %d", got)
@@ -312,7 +347,7 @@ func TestApplyTransfer_USDCTestFeeChargedInEth_InsufficientETHBRejectsWholeTrans
 // unit test can supply any fixed number here without needing a live
 // RPC connection.
 func buildSignedBridgeWithdrawTx(id string, priv []byte, pub []byte, from, to string, amount uint64, amountWei string, feeWei uint64, ts int64) core.Transaction {
-	payload := bridgeWithdrawData{To: to, AmountWei: amountWei, FeeWei: feeWei}
+	payload := bridgeWithdrawData{bridgeWithdrawRequest: bridgeWithdrawRequest{To: to, AmountWei: amountWei}, FeeWei: feeWei}
 	payloadJSON, _ := json.Marshal(payload)
 
 	env := core.SignedEnvelope{
@@ -336,6 +371,69 @@ func buildSignedBridgeWithdrawTx(id string, priv []byte, pub []byte, from, to st
 		AuthPayload:   payloadJSON,
 		AuthSignature: hex.EncodeToString(sig),
 		Data:          string(payloadJSON),
+	}
+}
+
+// TestVerifyTxAuth_BridgeWithdraw_AcceptsRealAsymmetricSignedPayload is a
+// regression test for a real, previously-shipped bug: the client only
+// ever signs {to, amountWei} (bridgeWithdrawRequest) - FeeWei is
+// computed live, server-side, AFTER signing, and only ever appears in
+// tx.Data, never in tx.AuthPayload. verifyTxAuth's TxBridgeWithdraw case
+// used to unmarshal both sides into the FULL bridgeWithdrawData struct
+// (including FeeWei), which meant signed.FeeWei (always 0, since the
+// client's original JSON has no "feeWei" key) never equaled
+// claimed.FeeWei (whatever real fee was actually charged) - silently
+// rejecting every genuine ERC-network withdrawal as unauthorized once a
+// live, nonzero gas fee existed. This test builds AuthPayload/Data with
+// that same real asymmetry (unlike buildSignedBridgeWithdrawTx above,
+// which signs the full struct including FeeWei and so never exercised
+// this bug) and confirms verifyTxAuth now correctly accepts it.
+func TestVerifyTxAuth_BridgeWithdraw_AcceptsRealAsymmetricSignedPayload(t *testing.T) {
+	resetApplyTestState()
+
+	pub, priv, _ := core.GenerateKeyPair()
+	from := core.GenerateAddress(pub)
+
+	// Exactly what the client actually signs - no feeWei key at all.
+	signedPayload, _ := json.Marshal(bridgeWithdrawRequest{
+		To:        "0x1234567890123456789012345678901234567890",
+		AmountWei: "100000000000000000",
+	})
+	env := core.SignedEnvelope{
+		Address:   from,
+		PublicKey: hex.EncodeToString(pub),
+		Timestamp: 5000,
+		Payload:   signedPayload,
+	}
+	sig := core.SignMessage(priv, env.CanonicalMessage())
+
+	// What the server actually records - the same request plus a real,
+	// nonzero, server-computed FeeWei.
+	recordedData, _ := json.Marshal(bridgeWithdrawData{
+		bridgeWithdrawRequest: bridgeWithdrawRequest{
+			To:        "0x1234567890123456789012345678901234567890",
+			AmountWei: "100000000000000000",
+		},
+		FeeWei: 500_000_000_000_000,
+	})
+
+	tx := core.Transaction{
+		ID:            "asymmetric-withdraw-1",
+		From:          from,
+		To:            "0x1234567890123456789012345678901234567890",
+		Amount:        100_000_000_000_000_000,
+		Type:          core.TxBridgeWithdraw,
+		Timestamp:     5000,
+		Data:          string(recordedData),
+		AuthAddress:   from,
+		AuthPublicKey: hex.EncodeToString(pub),
+		AuthTimestamp: 5000,
+		AuthPayload:   signedPayload,
+		AuthSignature: hex.EncodeToString(sig),
+	}
+
+	if !verifyTxAuth(tx) {
+		t.Fatalf("expected verifyTxAuth to accept a genuine TxBridgeWithdraw whose Data carries a server-added FeeWei absent from the signed AuthPayload")
 	}
 }
 

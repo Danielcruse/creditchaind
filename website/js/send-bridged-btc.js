@@ -15,6 +15,12 @@ const btcWallet = requireWallet();
 // a CCT-network BTCB send (BTC pays its own fee, never CCT).
 const BTCBCCTNetworkFeeSats = 500;
 
+const IS_MAINNET = window.CC_NETWORK === "mainnet";
+const BTC_ADDRESS_PREFIX = IS_MAINNET ? "bc1" : "tb1";
+const BTC_NETWORK_LABEL = IS_MAINNET ? "BTC network" : "BTC network (testnet)";
+const BTC_EXPLORER_BASE = IS_MAINNET ? "https://blockstream.info/tx/" : "https://blockstream.info/testnet/tx/";
+const BTC_EXPLORER_NAME = IS_MAINNET ? "Blockstream" : "Blockstream (testnet)";
+
 let mode = "CCT";
 let btcbAddress = null;
 let latestBtcbBalanceSats = 0;
@@ -22,7 +28,7 @@ let realUtxos = [];
 let latestRealBalanceSats = 0;
 
 function hdBtcAccount() {
-    const accounts = JSON.parse(localStorage.getItem("cc_hd_accounts") || "null");
+    const accounts = getHdAccounts();
     return (accounts && accounts.btc) || null;
 }
 
@@ -65,12 +71,17 @@ function isValidCctAddress(text) {
     return /^(cc)?[0-9a-f]{40}$/i.test(text);
 }
 
-// isValidBtcAddress recognizes a native segwit testnet address
-// (tb1...) - the only kind this bridge's send flow can actually spend
+// isValidBtcAddress recognizes a native segwit address for whichever
+// real Bitcoin network this deployment is on (bc1... mainnet, tb1...
+// testnet) - the only kind this bridge's send flow can actually spend
 // to (see btc-tx.js's disclosed legacy-address scope limit). Loose
-// shape check only, mirrors the backend's own registration check.
+// shape check only, mirrors the backend's own registration check
+// (api/btc_bridge.go's HandleBtcRegisterAddress) - this used to
+// hardcode tb1 unconditionally, which meant a real mainnet bc1...
+// address always failed validation here.
 function isValidBtcAddress(text) {
-    return /^tb1[0-9a-z]{11,87}$/i.test(text);
+    const prefix = window.CC_NETWORK === "mainnet" ? "bc1" : "tb1";
+    return new RegExp(`^${prefix}[0-9a-z]{11,87}$`, "i").test(text);
 }
 
 function setMode(newMode) {
@@ -78,18 +89,37 @@ function setMode(newMode) {
     document.getElementById("modeCctBtn").classList.toggle("active", mode === "CCT");
     document.getElementById("modeBtcBtn").classList.toggle("active", mode === "BTC");
     document.getElementById("toAddress").placeholder =
-        mode === "CCT" ? "Recipient CreditChain address" : "Recipient Bitcoin address (tb1...)";
+        mode === "CCT" ? "Recipient CreditChain address" : `Recipient Bitcoin address (${BTC_ADDRESS_PREFIX}...)`;
     document.getElementById("toAddress").value = "";
     document.getElementById("modeNote").innerText =
         mode === "CCT"
             ? `Instant internal move. Flat fee: ${satsToBtc(BTCBCCTNetworkFeeSats)} BTC (paid from your bridged BTC balance).`
-            : `Real Bitcoin testnet broadcast to any tb1... address. Fee = live network rate x estimated size, shown exactly on the review screen.`;
+            : `Real Bitcoin${IS_MAINNET ? "" : " testnet"} broadcast to any ${BTC_ADDRESS_PREFIX}... address. Fee = live network rate x estimated size, shown exactly on the review screen.`;
     document.getElementById("formStatus").innerText = "";
+}
+
+// btcAddressMatchesNetwork mirrors asset.js's identical helper (kept as
+// its own copy here since this page has no shared top-level state with
+// asset.js) - mainnet ("bc1...") and testnet ("tb1...") BTC accounts are
+// derived from genuinely different BIP-84 paths, not just different
+// address encodings of the same key, so a stale cached address from
+// before a network switch needs a real re-derivation via
+// btc-network-fix.html, not just a relabel.
+function btcAddressMatchesNetwork(address) {
+    if (!address) return true;
+    const expectedPrefix = window.CC_NETWORK === "mainnet" ? "bc1" : "tb1";
+    return address.startsWith(expectedPrefix);
 }
 
 async function registerBtcAddress() {
     const btcAccount = hdBtcAccount();
     if (!btcAccount) return;
+    // Never register a wrong-network address - the server already
+    // rejects this (api/btc_bridge.go's HandleBtcRegisterAddress), but
+    // retrying it every page load just adds permanent dead weight to
+    // the server's watch list for no benefit. refreshBalances() below
+    // is what actually tells the user to fix this.
+    if (!btcAddressMatchesNetwork(btcAccount.address)) return;
     try {
         await apiPostSigned("/btc-bridge/register-address", { btcAddress: btcAccount.address });
     } catch (e) {
@@ -116,6 +146,15 @@ async function refreshBalances() {
     if (!btcAccount) {
         document.getElementById("realBtcAddress").innerText = "No Bitcoin account derived for this wallet.";
         document.getElementById("realBtcBalance").innerText = "N/A";
+        return;
+    }
+
+    if (!btcAddressMatchesNetwork(btcAccount.address)) {
+        document.getElementById("realBtcAddress").innerHTML =
+            `${btcAccount.address} - derived for the other network. ` +
+            `<a href="btc-network-fix" style="color:var(--cc-accent-gold, #c9a227);">Re-enter your recovery phrase to fix it &rarr;</a>`;
+        document.getElementById("realBtcBalance").innerText = "Wrong network for this address";
+        document.getElementById("modeBtcBtn").disabled = true;
         return;
     }
     document.getElementById("realBtcAddress").innerText = btcAccount.address;
@@ -198,11 +237,11 @@ async function review() {
         to = normalizeAddress(rawTo);
     } else {
         if (isValidCctAddress(rawTo) && !isValidBtcAddress(rawTo)) {
-            statusEl.innerText = "That looks like a CreditChain address - switch to CCT network to send there, or enter a Bitcoin (tb1...) address for BTC network.";
+            statusEl.innerText = `That looks like a CreditChain address - switch to CCT network to send there, or enter a Bitcoin (${BTC_ADDRESS_PREFIX}...) address for BTC network.`;
             return;
         }
         if (!isValidBtcAddress(rawTo)) {
-            statusEl.innerText = "Enter a valid native segwit Bitcoin testnet address (tb1...).";
+            statusEl.innerText = `Enter a valid native segwit Bitcoin${IS_MAINNET ? "" : " testnet"} address (${BTC_ADDRESS_PREFIX}...).`;
             return;
         }
         to = rawTo;
@@ -210,7 +249,7 @@ async function review() {
 
     const amountSats = btcToSats(amountStr);
 
-    document.getElementById("reviewNetwork").innerText = mode === "CCT" ? "CCT network" : "BTC network (testnet)";
+    document.getElementById("reviewNetwork").innerText = mode === "CCT" ? "CCT network" : BTC_NETWORK_LABEL;
     document.getElementById("reviewTo").innerText = to;
     document.getElementById("reviewAmount").innerText = `${satsToBtc(amountSats)} BTC`;
 
@@ -240,7 +279,7 @@ async function review() {
 
         const totalSats = amountSats + feeSats;
         document.getElementById("reviewFee").innerText = `${satsToBtc(feeSats)} BTC (estimated, live network rate)`;
-        warningEl.innerText = "This broadcasts a real Bitcoin testnet transaction from your own self-custodial address. This action is irreversible and cannot be undone or refunded by CreditChain.";
+        warningEl.innerText = `This broadcasts a real Bitcoin${IS_MAINNET ? "" : " testnet"} transaction from your own self-custodial address. This action is irreversible and cannot be undone or refunded by CreditChain.`;
         confirmBtn.disabled = totalSats > latestRealBalanceSats;
         document.getElementById("reviewStatus").innerText = confirmBtn.disabled
             ? "Amount plus the estimated fee exceeds your real BTC balance."
@@ -285,8 +324,11 @@ async function confirmSend() {
                 return;
             }
 
-            statusEl.innerText = `Sent (tx ${result.txId}) - takes effect once the next block confirms it.`;
+            statusEl.innerText = `Sent (tx ${result.txId}) - takes effect once the next block confirms it. Returning to your wallet...`;
             setTimeout(refreshBalances, 9000);
+            setTimeout(() => {
+                location.href = "outernet";
+            }, 1500);
         } else {
             const btcAccount = hdBtcAccount();
             if (!btcAccount) {
@@ -314,7 +356,13 @@ async function confirmSend() {
                 return;
             }
 
-            const result = await apiPost("/btc-bridge/broadcast", { rawTxHex });
+            // Signed (not a bare apiPost) so the server learns which
+            // CreditChain wallet is claiming responsibility for this
+            // withdrawal and can record it - see api/btc_bridge.go's
+            // HandleBtcBroadcast doc comment. The raw tx itself still
+            // carries its own independent, already-complete Bitcoin
+            // signature regardless of this wrapper's signer.
+            const result = await apiPostSigned("/btc-bridge/broadcast", { rawTxHex, to, amountSats, feeSats });
 
             if (result.status === "broadcast_failed") {
                 statusEl.innerText = `Broadcast failed: ${result.error}`;
@@ -322,7 +370,7 @@ async function confirmSend() {
                 return;
             }
 
-            statusEl.innerHTML = `Sent - <a href="https://blockstream.info/testnet/tx/${result.txid}" target="_blank" rel="noopener" style="color:var(--cc-accent-gold, #c9a227);">view on Blockstream (testnet)</a>`;
+            statusEl.innerHTML = `Sent - <a href="${BTC_EXPLORER_BASE}${result.txid}" target="_blank" rel="noopener" style="color:var(--cc-accent-gold, #c9a227);">view on ${BTC_EXPLORER_NAME}</a><br>Returning to your wallet shortly...`;
 
             let attempts = 0;
             const poll = setInterval(async () => {
@@ -330,6 +378,14 @@ async function confirmSend() {
                 await refreshBalances();
                 if (attempts >= 6) clearInterval(poll);
             }, 5000);
+
+            // Longer delay than the CCT-network branch above - this shows
+            // a real external Blockstream link worth letting the user see
+            // before navigating away, but still eventually redirects to
+            // close the same refresh/back-button resubmit gap.
+            setTimeout(() => {
+                location.href = "outernet";
+            }, 6000);
         }
     } catch (e) {
         statusEl.innerText = "Send failed: " + e.message;

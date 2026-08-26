@@ -1,10 +1,112 @@
 package api
 
 import (
+	"math/big"
+	"strconv"
+
 	"github.com/creditchain/creditchaind/core"
 )
 
+// tokenStore was CCT's ledger before the 18-decimal migration. It is
+// left in place (never deleted - "hide, don't delete") but no longer
+// carries any live CCT balance after applyTokenomicsDecimalMigration
+// runs - see api/tokenomics_migration.go. cctStore (below) is CCT's
+// real ledger going forward.
 var tokenStore = core.NewTokenStore()
+
+// cctStore is CCT's ledger as of the 18-decimal migration - see
+// core/cct_store.go's doc comment for why CCT needed its own
+// big-int-backed store instead of reusing TokenStore like every other
+// token here still does.
+var cctStore = core.NewCctStore()
+
+// wholeUnitStore is the minimal balance-store interface every generic,
+// symbol-driven code path already programs against via
+// resolveTokenStore (api/p2p_offers.go) - P2P offers, hub trades, loan
+// funding/repayment, the order book, buy requests, admin transfer, and
+// more (~45 call sites). Satisfied structurally by *core.TokenStore
+// (every token except CCT) and by cctWholeUnitAdapter below (CCT,
+// wrapping the real big-int cctStore) - this is what lets every one of
+// those existing call sites keep working completely unchanged after
+// CCT moved off TokenStore: they only ever called
+// Mint/Transfer/Burn/BalanceOf, so as long as something satisfying
+// those four methods is returned, the caller doesn't need to know or
+// care which concrete ledger is actually behind it.
+type wholeUnitStore interface {
+	Mint(address string, amount uint64)
+	Transfer(from, to string, amount uint64) bool
+	Burn(address string, amount uint64) bool
+	BalanceOf(address string) uint64
+}
+
+// cctWholeUnitAdapter lets CCT participate in every generic,
+// symbol-driven code path that expects whole-unit uint64 amounts -
+// matching the same "the ledger itself is big-int, but staking/fees
+// and other generic paths stay whole-CCT at the boundary" pattern
+// already established elsewhere in this migration (see
+// core/staking_sync.go's doc comment) - by converting via
+// CctWholeToSmallest/CctSmallestToWholeFloor. The real, precise ledger
+// underneath is always cctStore; BalanceOf here floor-rounds to whole
+// CCT, a disclosed simplification for these generic paths (sub-CCT
+// precision stays reachable through CCT's own dedicated endpoints/AMM
+// code, which talk to cctStore directly in smallest units).
+type cctWholeUnitAdapter struct{}
+
+func (cctWholeUnitAdapter) Mint(address string, amount uint64) {
+	cctStore.Mint(address, core.FormatCctSmallest(core.CctWholeToSmallest(amount)))
+}
+
+func (cctWholeUnitAdapter) Transfer(from, to string, amount uint64) bool {
+	return cctStore.Transfer(from, to, core.FormatCctSmallest(core.CctWholeToSmallest(amount)))
+}
+
+func (cctWholeUnitAdapter) Burn(address string, amount uint64) bool {
+	return cctStore.Burn(address, core.FormatCctSmallest(core.CctWholeToSmallest(amount)))
+}
+
+func (cctWholeUnitAdapter) BalanceOf(address string) uint64 {
+	return core.CctSmallestToWholeFloor(cctStore.BalanceOf(address))
+}
+
+var cctAdapter wholeUnitStore = cctWholeUnitAdapter{}
+
+// ccc1DecimalWholeUnitAdapter lets ETH_CCC1/USDC_CCC1 (both
+// *core.DecimalTokenStore, see api/vault_token.go) participate in
+// wholeUnitStore's generic uint64 code paths - same adapter pattern as
+// cctWholeUnitAdapter above, but with an identity conversion (no
+// decimal-shifting) since "whole unit" here already means the store's
+// own smallest unit (wei for ETH_CCC1, USDC's 6-decimal smallest unit
+// for USDC_CCC1) - the same convention api/swap_fair_value.go's
+// fairValueBurn/fairValueMint already established for these two
+// stores. BTC_CCC1 needs no adapter - btcCcc1Store is already a plain
+// *core.TokenStore, which satisfies wholeUnitStore directly.
+type ccc1DecimalWholeUnitAdapter struct {
+	store *core.DecimalTokenStore
+}
+
+func (a ccc1DecimalWholeUnitAdapter) Mint(address string, amount uint64) {
+	a.store.Mint(address, strconv.FormatUint(amount, 10))
+}
+
+func (a ccc1DecimalWholeUnitAdapter) Transfer(from, to string, amount uint64) bool {
+	return a.store.Transfer(from, to, strconv.FormatUint(amount, 10))
+}
+
+func (a ccc1DecimalWholeUnitAdapter) Burn(address string, amount uint64) bool {
+	return a.store.Burn(address, strconv.FormatUint(amount, 10))
+}
+
+func (a ccc1DecimalWholeUnitAdapter) BalanceOf(address string) uint64 {
+	n, ok := new(big.Int).SetString(a.store.BalanceOf(address), 10)
+	if !ok || !n.IsUint64() {
+		return 0
+	}
+	return n.Uint64()
+}
+
+var ethCcc1TransferAdapter wholeUnitStore = ccc1DecimalWholeUnitAdapter{store: ethCcc1Store}
+var usdcCcc1TransferAdapter wholeUnitStore = ccc1DecimalWholeUnitAdapter{store: usdcCcc1Store}
+var stethCcc1TransferAdapter wholeUnitStore = ccc1DecimalWholeUnitAdapter{store: stethCcc1Store}
 
 // usdcTestStore is a completely separate ledger from tokenStore (CCT)
 // - borrowed funds land here, not in CCT, so "what you earned by
@@ -43,6 +145,20 @@ var ethTestStore = core.NewTokenStore()
 // prices against CCT through one of these pools.
 var cctEthTestPool = core.NewLiquidityPool("ETHTEST")
 var cctUsdcTestPool = core.NewLiquidityPool("USDCTEST")
+
+// btcTestStore/cctBtcTestPool are BTCTEST's counterpart to ETHTEST -
+// a synthetic, CCT-paired, price-discovery token, NOT the same thing
+// as bridgedBtcStore (BTCB, a real 1:1 bridged balance that
+// deliberately never floats against CCT). BTCTEST/ETHTEST together are
+// this network's two developer-accessible price-reference pools (see
+// governance's PREDICTION proposal kind, api/prediction_vote.go) -
+// deliberately kept out of outernet/swap.html/liquidity.html's nav
+// (same "hide, don't delete" precedent already applied to
+// ETHTEST/USDCTEST) since CreditChain itself does not want to present
+// a direct FX market to end users, only expose the pool endpoints to
+// anyone building against the API.
+var btcTestStore = core.NewTokenStore()
+var cctBtcTestPool = core.NewLiquidityPool("BTCTEST")
 
 // yenStore is YEN-e, the stable settlement currency (lending,
 // marketplace payments, transfers) - deliberately separate from CCT
@@ -90,6 +206,9 @@ func init() {
 
 	ethTestStore.Token.Name = "CreditChain Test ETH"
 	ethTestStore.Token.Symbol = "ETHTEST"
+
+	btcTestStore.Token.Name = "CreditChain Test BTC"
+	btcTestStore.Token.Symbol = "BTCTEST"
 
 	yenStore.Token.Name = "CreditChain YEN-e"
 	yenStore.Token.Symbol = "YENE"

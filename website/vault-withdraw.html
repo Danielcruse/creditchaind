@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Withdraw from Vault - OUTERNET</title>
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+<link rel="stylesheet" href="css/style.css?v=fixaug5c">
+<link rel="stylesheet" href="css/outernet.css?v=fixaug5d">
+<style>
+    .vault-review-row{ display:flex; justify-content:space-between; padding:6px 0; }
+    .vault-warning{
+        background:rgba(255,176,32,0.12); border:1px solid #ffb020;
+        border-radius:8px; padding:10px; font-size:13px; margin:12px 0;
+    }
+    .mode-toggle{ display:flex; gap:8px; margin-bottom:12px; }
+    .mode-toggle button{ flex:1; padding:8px; border-radius:8px; border:1px solid rgba(0,0,0,0.15); background:rgba(0,0,0,0.05); cursor:pointer; }
+    .mode-toggle button.active{ background:#0284c7; color:#fff; border-color:#0284c7; }
+    .status-pill{ display:inline-block; padding:2px 8px; border-radius:999px; background:rgba(0,0,0,0.08); font-size:12px; }
+    .amount-input-row{ display:flex; align-items:stretch; gap:0; }
+    .amount-input-row input{ flex:1; border-top-right-radius:0; border-bottom-right-radius:0; }
+    .amount-unit-toggle{
+        display:flex; flex-direction:column; align-items:center; justify-content:center;
+        min-width:78px; padding:4px 8px; cursor:pointer; user-select:none;
+        border:1px solid rgba(0,0,0,0.15); border-left:none;
+        border-top-right-radius:8px; border-bottom-right-radius:8px;
+        background:#0284c7; color:#fff; font-size:12px; font-weight:600; text-align:center; line-height:1.2;
+    }
+    .amount-unit-toggle:active{ background:#026a9e; }
+    .amount-unit-toggle .swap-arrow{ font-size:14px; opacity:0.85; }
+    .field-label{ font-size:12px; opacity:0.7; display:block; margin-bottom:6px; }
+    .chain-select{
+        width:100%; padding:10px 12px; border-radius:8px; box-sizing:border-box;
+        border:1px solid rgba(0,0,0,0.15); background:#fff; font-size:14px; cursor:pointer;
+    }
+</style>
+</head>
+<body class="outernet-light">
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
+
+<div class="main" style="max-width:520px;margin:0 auto;padding:24px 16px;">
+
+<p><a href="assets" style="color:#0284c7;">&larr; Assets</a></p>
+
+<h1>Send / Withdraw</h1>
+
+<div class="card" style="border:2px solid #0284c7;">
+<p style="margin:0;font-size:13px;" id="modeExplainer">
+Burning a vault-backed balance requests release of the real locked asset to a real external address you control.
+Multiple bridge validators must each independently co-sign the release before it's actually broadcast on the real chain -
+this can take a few minutes.
+</p>
+</div>
+
+<div class="card">
+    <p style="margin:0;">Balance: <span id="ccc1Balance">Loading...</span></p>
+    <p style="margin:2px 0 0;font-size:12px;opacity:0.65;" id="ccc1BalanceFiat"></p>
+</div>
+
+<div class="card">
+    <label class="field-label" for="chainSelect">Asset</label>
+    <select class="chain-select" id="chainSelect" onchange="setChain(this.value)">
+        <option value="ETH">ETH_CCC1</option>
+        <option value="USDC">USDC_CCC1</option>
+        <option value="BTC">BTC_CCC1</option>
+    </select>
+
+    <label class="field-label" style="margin-top:14px;">Destination</label>
+    <div class="mode-toggle" style="margin-bottom:0;">
+        <button id="sendModeSendBtn" onclick="setSendMode('SEND')">Send to CreditChain user</button>
+        <button id="sendModeWithdrawBtn" onclick="setSendMode('WITHDRAW')">Withdraw to real address</button>
+    </div>
+</div>
+
+<div class="card" id="formCard">
+    <input type="text" id="destAddress" placeholder="Destination address (real chain)">
+    <br><br>
+    <div class="amount-input-row">
+        <input type="number" id="amount" placeholder="Amount to withdraw" step="any" oninput="updateAmountPreview()">
+        <div class="amount-unit-toggle" id="amountUnitToggle" onclick="toggleAmountUnit()" title="Switch which currency you're typing the amount in">
+            <span class="swap-arrow">&#8645;</span>
+            <span id="amountUnitToggleLabel">ETH_CCC1</span>
+        </div>
+    </div>
+    <p id="amountPreview" style="font-size:12px;opacity:0.7;margin:4px 0 0;min-height:1.2em;"></p>
+    <br>
+    <button onclick="review()">Review</button>
+    <p id="formStatus" style="opacity:0.75;font-size:13px;"></p>
+</div>
+
+<div class="card" id="reviewCard" style="display:none;">
+    <h3 style="margin-top:0;" id="reviewTitle">Confirm Withdrawal</h3>
+    <div class="vault-review-row"><span>Chain</span><span id="reviewChain"></span></div>
+    <div class="vault-review-row"><span>Destination</span><span id="reviewDest" style="font-family:monospace;font-size:12px;word-break:break-all;text-align:right;max-width:65%;"></span></div>
+    <div class="vault-review-row"><span>Amount</span><span id="reviewAmount"></span></div>
+    <div class="vault-warning" id="reviewWarning">
+        This burns your vault-backed balance immediately. Release of the real asset happens once enough bridge validators
+        co-sign - if something goes wrong before that point, contact support with your burn transaction ID.
+    </div>
+    <button id="confirmBtn" onclick="confirmAction()">Confirm and Burn</button>
+    <button onclick="cancelReview()">Back</button>
+    <p id="reviewStatus" style="opacity:0.75;font-size:13px;"></p>
+</div>
+
+<div class="card" id="progressCard" style="display:none;">
+    <h3 style="margin-top:0;" id="progressTitle">Waiting for release</h3>
+    <p id="progressSigRow">Validator signatures: <span id="sigCount">0</span> / <span id="sigThreshold">-</span> <span class="status-pill" id="releaseStatusPill">PENDING</span></p>
+    <p id="progressNote" style="font-size:12px;opacity:0.75;"></p>
+    <a href="assets">Return to Assets</a>
+</div>
+
+</div>
+
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/vendor/bip39-wordlist.js?v=fixaug5b"></script>
+<script src="js/vendor/hd-crypto.js?v=fixaug5b"></script>
+<script src="js/vault.js?v=sec0816c"></script>
+<script src="js/currency.js?v=fixaug5b"></script>
+<script src="js/vault-withdraw.js?v=fixaug5f"></script>
+
+</body>
+</html>

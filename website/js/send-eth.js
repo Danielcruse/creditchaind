@@ -10,13 +10,30 @@
 
 const GAS_LIMIT = 21000n;
 
+// ETH_CHAIN_ID must match whatever api/eth_rpc.go's expectedEthChainID
+// actually is for this network (1 = real Ethereum mainnet, 11155111 =
+// Sepolia testnet) - signing with the wrong chain ID doesn't just show
+// wrong wording, it makes the broadcast handler's own chain-ID check
+// reject the transaction outright (see ethBroadcastRaw), so every real
+// mainnet send from this page would silently fail without this.
+const ETH_CHAIN_ID = window.CC_NETWORK === "mainnet" ? 1 : 11155111;
+const ETH_EXPLORER_BASE = window.CC_NETWORK === "mainnet" ? "https://etherscan.io/tx/" : "https://sepolia.etherscan.io/tx/";
+const ETH_EXPLORER_NAME = window.CC_NETWORK === "mainnet" ? "Etherscan" : "Sepolia Etherscan";
+
+(function setNetworkAwareCopy() {
+    const isMainnet = window.CC_NETWORK === "mainnet";
+    document.getElementById("pageTitle").innerText = isMainnet ? "Send ETH" : "Send ETH (Sepolia testnet)";
+    document.getElementById("networkNotice").innerText = isMainnet
+        ? "This sends real ETH from your self-custodial account. Signing happens entirely in this browser - your private key never leaves it."
+        : "This sends real Sepolia testnet ETH from your self-custodial account. Signing happens entirely in this browser - your private key never leaves it.";
+    document.getElementById("confirmWarning").innerHTML = isMainnet
+        ? "This sends real ETH. This action is <strong>irreversible</strong> and cannot be undone or refunded by CreditChain."
+        : "This sends real Sepolia testnet ETH. This action is <strong>irreversible</strong> and cannot be undone or refunded by CreditChain.";
+})();
+
 function hdEthAccount() {
-    try {
-        const accounts = JSON.parse(localStorage.getItem("cc_hd_accounts") || "null");
-        return accounts && accounts.eth ? accounts.eth : null;
-    } catch (e) {
-        return null;
-    }
+    const accounts = getHdAccounts();
+    return accounts && accounts.eth ? accounts.eth : null;
 }
 
 function weiToEth(weiString) {
@@ -52,7 +69,9 @@ async function refreshBalance() {
         document.getElementById("ethBalance").innerText = `${weiToEth(info.weiBalance)} ETH`;
     } catch (e) {
         console.error(e);
-        document.getElementById("ethBalance").innerText = "Couldn't load balance (Sepolia RPC unavailable)";
+        document.getElementById("ethBalance").innerText = window.CC_NETWORK === "mainnet"
+            ? "Couldn't load balance (Ethereum RPC unavailable)"
+            : "Couldn't load balance (Sepolia RPC unavailable)";
     }
 }
 
@@ -127,13 +146,13 @@ async function confirmSend() {
             gasLimit: Number(GAS_LIMIT),
             to: reviewCard.dataset.to,
             valueWei: reviewCard.dataset.valueWei,
-            chainId: 11155111,
+            chainId: ETH_CHAIN_ID,
         });
 
         statusEl.innerText = "Broadcasting...";
         const result = await apiPost("/eth-selfcustody/broadcast", { rawTxHex });
 
-        statusEl.innerHTML = `Sent - <a href="https://sepolia.etherscan.io/tx/${result.txHash}" target="_blank" rel="noopener" style="color:var(--cc-accent-gold, #c9a227);">view on Sepolia Etherscan</a>`;
+        statusEl.innerHTML = `Sent - <a href="${ETH_EXPLORER_BASE}${result.txHash}" target="_blank" rel="noopener" style="color:var(--cc-accent-gold, #c9a227);">view on ${ETH_EXPLORER_NAME}</a><br>Returning to your wallet shortly...`;
 
         // Sepolia confirmation times vary more than CreditChain's own
         // block time - poll a few times over ~30s rather than a single
@@ -144,6 +163,16 @@ async function confirmSend() {
             await refreshBalance();
             if (attempts >= 6) clearInterval(poll);
         }, 5000);
+
+        // Longer delay than the internal-send pages - this page shows a
+        // real external Etherscan link worth letting the user actually
+        // see/click before navigating away, but it still redirects
+        // eventually to close the same refresh/back-button resubmit gap
+        // (a stale review card + reloaded nonce could otherwise produce
+        // a second real broadcast).
+        setTimeout(() => {
+            location.href = "outernet";
+        }, 6000);
     } catch (e) {
         statusEl.innerText = "Send failed: " + e.message;
         confirmBtn.disabled = false;

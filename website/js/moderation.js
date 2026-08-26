@@ -107,7 +107,7 @@ async function refreshAssignedTrades() {
                 rows.push(
                     `<p>P2P Offer ${o.ID} (external): ${o.OfferAmount} ${o.OfferSymbol} for ${o.WantAmount} ${o.WantSymbol} (off-app), ` +
                     `creator ${o.Creator.slice(0, 8)}... - settlement ${o.SettlementStatus || "-"}${disputeNote} ` +
-                    `<a href="p2p.html" style="color:var(--cc-accent-gold, #c9a227);">Open on Marketplace (P2P)</a></p>`
+                    `<a href="p2p" style="color:var(--cc-accent-gold, #c9a227);">Open on Marketplace (P2P)</a></p>`
                 );
                 return;
             }
@@ -164,12 +164,12 @@ async function refreshAssignedCompanies() {
         el.innerHTML = mine
             .map((c) => {
                 const pending = c.Status === "PENDING";
-                return `<p>${c.Name} (${c.Address.slice(0, 8)}...) - ${c.Status} ` +
+                return `<p>${escapeHtml(c.Name)} (${c.Address.slice(0, 8)}...) - ${escapeHtml(c.Status)} ` +
                     (pending
                         ? `<button onclick="reviewCompany('${c.Address}', true)">Approve</button> ` +
                           `<button onclick="reviewCompany('${c.Address}', false)">Reject</button>`
                         : "") +
-                    `</p><p style="opacity:0.7;font-size:12px;">${c.Description || ""}${c.DocumentNote ? " - " + c.DocumentNote : ""}</p>`;
+                    `</p><p style="opacity:0.7;font-size:12px;">${escapeHtml(c.Description || "")}${c.DocumentNote ? " - " + escapeHtml(c.DocumentNote) : ""}</p>`;
             })
             .join("");
     } catch (e) {
@@ -220,7 +220,7 @@ async function refreshUnclaimedCompanies() {
         el.innerHTML = unclaimed
             .map(
                 (c) =>
-                    `<p>${c.Name} (${c.Address.slice(0, 8)}...) - assigned to ${c.ModeratorAddress ? c.ModeratorAddress.slice(0, 8) + "..." : "nobody"} ` +
+                    `<p>${escapeHtml(c.Name)} (${c.Address.slice(0, 8)}...) - assigned to ${c.ModeratorAddress ? c.ModeratorAddress.slice(0, 8) + "..." : "nobody"} ` +
                     `<button onclick="reassignCompanyModerator('${c.Address}')">Claim for My Review</button></p>`
             )
             .join("");

@@ -37,10 +37,14 @@ func allowedAdminMultisigActionType(t core.TransactionType) bool {
 		core.TxTreasurySetSalePrice,
 		core.TxTreasurySetPaused,
 		core.TxTreasurySetAddress,
+		core.TxTreasurySetBankAccount,
 		core.TxGenesisPoolAllocation,
 		core.TxGenesisPoolWithdraw,
 		core.TxAdminTransfer,
-		core.TxAnnouncementCreate:
+		core.TxAdminNormalizeCcc1Balance,
+		core.TxAnnouncementCreate,
+		core.TxAdminSetParam,
+		core.TxAdminRefundStuckVaultBurn:
 		return true
 	default:
 		return false
@@ -223,8 +227,16 @@ func executeAdminMultisigAction(p *core.AdminMultisigProposal, asOf int64) {
 		applyGenesisPoolWithdraw(synthetic)
 	case core.TxAdminTransfer:
 		applyAdminTransfer(synthetic)
+	case core.TxAdminNormalizeCcc1Balance:
+		applyAdminNormalizeCcc1Balance(synthetic)
+	case core.TxTreasurySetBankAccount:
+		applyTreasurySetBankAccount(synthetic)
 	case core.TxAnnouncementCreate:
 		applyAnnouncementCreate(synthetic)
+	case core.TxAdminSetParam:
+		applyAdminSetParam(synthetic)
+	case core.TxAdminRefundStuckVaultBurn:
+		applyAdminRefundStuckVaultBurn(synthetic)
 	}
 }
 

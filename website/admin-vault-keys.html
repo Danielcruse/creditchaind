@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin - Vault Relayer Keys</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
+    <style>
+        .explorer-search{display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap;}
+        .explorer-search input{flex:1;min-width:220px;padding:10px 14px;border-radius:10px;
+            border:1px solid rgba(255,255,255,0.15);background:rgba(255,255,255,0.05);color:white;box-sizing:border-box;}
+        .keyStatusOk{color:#5ecb7a;}
+        .keyStatusEmpty{opacity:0.6;}
+        #relayLog{font-family:monospace;font-size:12px;max-height:260px;overflow-y:auto;
+            background:rgba(0,0,0,0.25);border-radius:8px;padding:10px;white-space:pre-wrap;}
+    </style>
+</head>
+<body>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
+
+<h1>Admin - Vault Relayer Keys</h1>
+
+<p style="opacity:0.75;font-size:13px;">
+    The ETH/USDC vault release relay (contracts/CreditChainVault.sol's <code>release()</code>) needs a funded
+    account to pay gas - see api/vault_release_relay.go for the server-side version of this same relay. This
+    page is the deliberate alternative: the key is pasted in <strong>here</strong>, stored <strong>only in
+    this browser's localStorage</strong>, and every release is signed and broadcast entirely client-side (the
+    exact same self-custodial primitives every Send flow on this site already uses -
+    <code>website/js/vendor/eth-tx.js</code>). The key is never sent to the server in any form.
+</p>
+<p style="opacity:0.75;font-size:13px;">
+    <strong>Tradeoff:</strong> this only runs while this page is open in a tab (a <code>setInterval</code>
+    loop, stopped the moment the tab closes) - not a 24/7 background service like the server-side relay would
+    be. Leave it open in a pinned tab for continuous coverage, or just open it periodically to catch up; a
+    release approval stays queued (and safely re-triggerable - the contract's <code>usedReleaseIds</code>
+    rejects any duplicate) until something relays it.
+</p>
+<p style="opacity:0.75;font-size:13px;">
+    The relayer key itself carries <strong>zero authority</strong> over which releases are valid - the
+    contract independently verifies each bridge-validator signature on-chain via <code>ecrecover</code>. This
+    key only pays gas and assembles already-authorized calldata.
+</p>
+
+<div class="card">
+    <h2>Testnet Relayer Key (Sepolia)</h2>
+    <div class="explorer-search">
+        <input type="password" id="testnetKeyInput" placeholder="0x-prefixed private key" autocomplete="off">
+        <button onclick="saveKey('testnet')">Save (this browser only)</button>
+        <button onclick="clearKey('testnet')">Clear</button>
+    </div>
+    <p id="testnetKeyStatus" class="keyStatusEmpty">No key saved for testnet.</p>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Mainnet Relayer Key</h2>
+    <div class="explorer-search">
+        <input type="password" id="mainnetKeyInput" placeholder="0x-prefixed private key" autocomplete="off">
+        <button onclick="saveKey('mainnet')">Save (this browser only)</button>
+        <button onclick="clearKey('mainnet')">Clear</button>
+    </div>
+    <p id="mainnetKeyStatus" class="keyStatusEmpty">No key saved for mainnet.</p>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Register as Bridge Validator</h2>
+    <p style="opacity:0.7;font-size:12px;">
+        The vault release relay only works once at least one bridge validator is registered - see
+        <code>api/bridge_validator.go</code>'s <code>HandleBridgeValidatorRegister</code>. Both Ethereum and
+        Bitcoin sign on the same secp256k1 curve, so the same key saved above (Testnet box) can supply both the
+        <code>EthSigningAddress</code> and <code>BtcPublicKeyHex</code> this registration needs - derived here,
+        entirely client-side, never sent anywhere until you click Register.
+    </p>
+    <p style="opacity:0.7;font-size:12px;">
+        This submits a <code>TxBridgeValidatorRegister</code> transaction signed by <strong>your currently
+        logged-in CreditChain wallet</strong> (the same sign-in every other page on this site uses) - it only
+        succeeds if that wallet's address is listed in the server's <code>BRIDGE_VALIDATOR_ADDRESSES</code>.
+    </p>
+    <p>Derived EthSigningAddress: <span id="derivedEthAddress" style="font-family:monospace;">-</span></p>
+    <p>Derived BtcPublicKeyHex: <span id="derivedBtcPubkey" style="font-family:monospace;font-size:11px;">-</span></p>
+    <button onclick="registerBridgeValidator()">Register as Bridge Validator</button>
+    <p id="registerStatus" class="keyStatusEmpty">Not registered yet.</p>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Relay Loop</h2>
+    <p style="opacity:0.7;font-size:12px;">
+        This node is currently configured as <strong id="currentNetworkDisplay">-</strong> - the relay loop
+        below always uses that network's key from the two boxes above, whichever one is saved.
+    </p>
+    <button id="relayToggleBtn" onclick="toggleRelay()">Start Relay</button>
+    <p id="relayStatus" class="keyStatusEmpty">Stopped.</p>
+    <div id="relayLog">Log will appear here once started.</div>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Auto-Bridge Relayer Fees (ETH)</h2>
+    <p style="opacity:0.7;font-size:12px;">
+        The relayer's own address also collects ETH_CCC1 as its cut of every ETH/USDC release's fee (see
+        <code>RELAYER_FEE_RECIPIENT_ETH_ADDRESS</code> in api/vault_fee.go) - but that's a CreditChain-side
+        balance, not real ETH, so it never refills the gas tank on its own. This checks that balance against
+        roughly 10 releases' worth (computed live from the current per-release fee estimate, not a literal
+        transaction counter - there's no cheap way to count discrete fee events from the browser, and a
+        value-based threshold serves the same purpose), and once past it, unvaults the whole balance back to
+        real ETH sent to the relayer's own address - closing the loop.
+    </p>
+    <p style="opacity:0.7;font-size:12px;">
+        These fees are collected by <code>RELAYER_FEE_RECIPIENT_ETH_ADDRESS</code> - a real CreditChain wallet's
+        own self-custodial ETH address, a <strong>different credential from the relayer key above</strong> (the
+        relayer key may have no CreditChain wallet behind it at all - e.g. an exchange-exported key - so it can
+        never sign an unvault itself; it's only used here to know the release destination). This ticks against
+        whichever <strong>CreditChain wallet is currently logged into this browser</strong> and only works if
+        that's the specific wallet configured as the fee recipient - any other wallet just shows a 0 balance
+        and never bridges anything.
+    </p>
+    <button id="autoBridgeToggleBtn" onclick="toggleAutoBridge()">Start Auto-Bridge</button>
+    <p id="autoBridgeStatus" class="keyStatusEmpty">Stopped.</p>
+    <div id="autoBridgeLog" style="font-family:monospace;font-size:12px;max-height:200px;overflow-y:auto;background:rgba(0,0,0,0.25);border-radius:8px;padding:10px;white-space:pre-wrap;">Log will appear here once started.</div>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Lock Attestation (ETH / USDC deposits)</h2>
+    <p style="opacity:0.7;font-size:12px;">
+        Without this running, a real deposit to the vault contract just sits there forever - nothing else
+        independently confirms it happened, so ETH_CCC1/USDC_CCC1 never mints. This scans the real chain directly
+        (a public RPC, not a CreditChain node) for <code>Locked</code> events and submits
+        <code>TxVaultLockAttest</code>, signed by your <strong>currently logged-in CreditChain wallet</strong> - no
+        relayer key needed for this part.
+    </p>
+    <button id="lockAttestToggleBtn" onclick="toggleLockAttest()">Start Watching</button>
+    <p id="lockAttestStatus" class="keyStatusEmpty">Stopped.</p>
+    <div id="lockAttestLog" style="font-family:monospace;font-size:12px;max-height:200px;overflow-y:auto;background:rgba(0,0,0,0.25);border-radius:8px;padding:10px;white-space:pre-wrap;">Log will appear here once started.</div>
+
+    <p style="opacity:0.7;font-size:12px;margin-top:14px;">
+        <strong>Stuck/missed deposit?</strong> If a real deposit was made before this browser ever ran the
+        watcher above, it can be permanently skipped (this happened once, see the incident note in
+        <code>vault-lock-attest.js</code>). Rewind the scan cursor to an earlier block and rescan to catch it -
+        leave blank to rewind ~7 days back from now.
+    </p>
+    <div class="explorer-search">
+        <input type="number" id="lockAttestRescanBlockInput" placeholder="Rescan from block (optional)">
+        <button onclick="rescanLockAttestFromBlock()">Rescan</button>
+    </div>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Lock Attestation (BTC deposits)</h2>
+    <p style="opacity:0.7;font-size:12px;">
+        BTC's equivalent of the card above - scans the vault's shared P2WSH address via a public Esplora API
+        (blockstream.info) for confirmed deposits carrying a valid OP_RETURN depositor memo, and submits
+        <code>TxVaultLockAttest</code> the same way, signed by your <strong>currently logged-in CreditChain
+        wallet</strong>. Without this running, BTC_CCC1 never mints either.
+    </p>
+    <button id="btcLockAttestToggleBtn" onclick="toggleBtcLockAttest()">Start Watching</button>
+    <p id="btcLockAttestStatus" class="keyStatusEmpty">Stopped.</p>
+    <div id="btcLockAttestLog" style="font-family:monospace;font-size:12px;max-height:200px;overflow-y:auto;background:rgba(0,0,0,0.25);border-radius:8px;padding:10px;white-space:pre-wrap;">Log will appear here once started.</div>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Release Approvals (ETH / USDC / BTC)</h2>
+    <p style="opacity:0.7;font-size:12px;">
+        Withdrawals sit here until a bridge validator signs off. For ETH/USDC, "Sign &amp; Approve" computes the
+        release's exact digest (mirroring <code>contracts/CreditChainVault.sol</code>'s <code>release()</code>) and
+        signs it with the relayer key saved above. For BTC, it instead reconstructs the exact unsigned P2WSH
+        multisig release transaction (same UTXO selection and fee as the server-side relay) and produces a real
+        Bitcoin signature over it - a materially different scheme, same relayer key. Either way the signature is
+        submitted as a <code>TxVaultReleaseApprove</code> transaction signed by your <strong>currently logged-in
+        CreditChain wallet</strong> - same two-separate-credentials split as Bridge Validator registration above.
+    </p>
+    <button onclick="loadPendingApprovals()">Refresh</button>
+    <div id="pendingApprovalsList" style="margin-top:10px;">Loading...</div>
+    <div id="approvalLog" style="font-family:monospace;font-size:12px;max-height:200px;overflow-y:auto;background:rgba(0,0,0,0.25);border-radius:8px;padding:10px;white-space:pre-wrap;margin-top:10px;"></div>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Update Vault Validators (one-off governance action)</h2>
+    <p style="opacity:0.7;font-size:12px;">
+        <code>contracts/CreditChainVault.sol</code> has its own separate, on-chain validator list - registering a
+        validator in this app's own backend (above) does NOT add it here too. This is a full REPLACEMENT of the
+        real list (not an addition), so include every address that should remain a validator, not just the new
+        one. Requires a real threshold-signed digest from the CURRENT validator set - sign with the relayer key
+        saved above (must belong to a CURRENT validator), then this node relays the real transaction using the
+        funded relayer account, so your signing key never needs its own ETH for gas.
+    </p>
+    <textarea id="newValidatorsInput" rows="3" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:12px;" placeholder="One address per line - the full new validator list"></textarea>
+    <div class="explorer-search" style="margin-top:8px;">
+        <input id="newThresholdInput" type="number" min="1" placeholder="New threshold" value="1">
+    </div>
+    <button onclick="signAndSubmitSetValidators()">Sign &amp; Submit</button>
+    <p id="setValidatorsStatus"></p>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Allow/Disallow a Vault Deposit Token (one-off governance action)</h2>
+    <p style="opacity:0.7;font-size:12px;">
+        Only tokens in the vault contract's own <code>allowedTokens</code> map can be deposited via
+        <code>depositERC20()</code> - e.g. Lido's real stETH
+        (<code>0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84</code> on mainnet) for the ETH liquid-staking feature.
+        Same threshold-signed relay pattern as the validator update above.
+    </p>
+    <div class="explorer-search">
+        <input id="tokenAllowedAddressInput" type="text" placeholder="Token contract address (0x...)">
+        <label><input id="tokenAllowedCheckbox" type="checkbox" checked> Allowed</label>
+    </div>
+    <button onclick="signAndSubmitSetTokenAllowed()">Sign &amp; Submit</button>
+    <p id="setTokenAllowedStatus"></p>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Set Per-Depositor Caps (one-off governance action)</h2>
+    <p style="opacity:0.7;font-size:12px;">
+        <code>perDepositorCapUsdc</code> compares every <code>depositERC20()</code> call's RAW deposited amount
+        against this cap, regardless of that token's own decimals - it cannot correctly evaluate an 18-decimal
+        token like stETH (any real deposit would trivially exceed a 6-decimal-USDC-scaled cap). Set to 0 to
+        disable a cap entirely. This applies to every depositor and every allowed ERC20 token, not just one.
+    </p>
+    <div class="explorer-search">
+        <input id="newCapWeiInput" type="text" placeholder="New ETH cap (wei, 0 = disabled)" value="0">
+        <input id="newCapUsdcInput" type="text" placeholder="New ERC20 cap (6-decimal USDC-scaled, 0 = disabled)" value="0">
+    </div>
+    <button onclick="signAndSubmitSetPerDepositorCaps()">Sign &amp; Submit</button>
+    <p id="setPerDepositorCapsStatus"></p>
+</div>
+
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/vendor/hd-crypto.js?v=fixaug5b"></script>
+<script src="js/vendor/eth-tx.js?v=fixaug5b"></script>
+<script src="js/vault.js?v=sec0816c"></script>
+<script src="js/vault-relay.js?v=fixaug5b"></script>
+<script src="js/vault-lock-attest.js?v=fixaug5b"></script>
+<script src="js/vault-btc-lock-attest.js?v=fixaug5b"></script>
+<script src="js/vendor/btc-tx.js?v=fixaug5b"></script>
+<script src="js/vault-btc-release-sign.js?v=fixaug5b"></script>
+<script src="js/admin-vault-keys.js?v=fixaug5i"></script>
+</body>
+</html>

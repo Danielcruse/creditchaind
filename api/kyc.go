@@ -87,7 +87,13 @@ type kycStatusResponse struct {
 // this is what actually blocks the request, independent of whatever
 // the frontend chooses to show or hide.
 func requireLendingAccess(w http.ResponseWriter, address string) bool {
-	reputation := walletStore.Get(address).Reputation
+	// Repayment Trust specifically, not overall TSI - lending access is
+	// exactly the credit-risk signal this gate exists to check; a
+	// wallet with poor repayment history shouldn't be able to hide
+	// behind strong Trading/Governance/etc. standing. See
+	// core.TrustDimensionValue's doc comment for why no cutover check
+	// is needed at a read site like this.
+	reputation := core.TrustDimensionValue(walletStore.Get(address), core.DimensionRepayment)
 	if !kycStore.IsApproved(address, reputation) {
 		http.Error(
 			w,
@@ -107,7 +113,11 @@ func HandleKYCStatus(w http.ResponseWriter, r *http.Request) {
 
 	address := r.URL.Query().Get("address")
 	rec, submitted := kycStore.Get(address)
-	reputation := walletStore.Get(address).Reputation
+	// Same Repayment Trust value the actual gate check
+	// (requireLendingAccess) uses - shown here too so this status page
+	// never displays a "Reputation" number next to MinReputation that's
+	// different from what the gate decision was actually based on.
+	reputation := core.TrustDimensionValue(walletStore.Get(address), core.DimensionRepayment)
 
 	resp := kycStatusResponse{
 		Submitted:     submitted,

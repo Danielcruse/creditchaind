@@ -106,16 +106,29 @@ func (s *kmsEthSigner) NewKey(ctx context.Context) (string, string, error) {
 	}
 	keyID := *out.KeyMetadata.KeyId
 
-	pubOut, err := s.client.GetPublicKey(ctx, &kms.GetPublicKeyInput{KeyId: &keyID})
-	if err != nil {
-		return "", "", fmt.Errorf("kms get public key: %w", err)
-	}
-	pub, err := parseKMSPublicKey(pubOut.PublicKey)
+	address, err := kmsSecp256k1KeyAddress(ctx, s.client, keyID)
 	if err != nil {
 		return "", "", err
 	}
 
-	return keyID, crypto.PubkeyToAddress(*pub).Hex(), nil
+	return keyID, address, nil
+}
+
+// kmsSecp256k1KeyAddress derives the Ethereum address for an EXISTING
+// KMS key (ECC_SECG_P256K1) - factored out of NewKey above so a caller
+// that already knows a specific, operator-provisioned key ID (e.g. the
+// vault release relayer's key, see api/vault_relayer_signer.go) can
+// resolve its address without going through key CREATION at all.
+func kmsSecp256k1KeyAddress(ctx context.Context, client *kms.Client, keyID string) (string, error) {
+	pubOut, err := client.GetPublicKey(ctx, &kms.GetPublicKeyInput{KeyId: &keyID})
+	if err != nil {
+		return "", fmt.Errorf("kms get public key: %w", err)
+	}
+	pub, err := parseKMSPublicKey(pubOut.PublicKey)
+	if err != nil {
+		return "", err
+	}
+	return crypto.PubkeyToAddress(*pub).Hex(), nil
 }
 
 // Sign asks KMS to sign a pre-computed digest (MessageType: DIGEST) -

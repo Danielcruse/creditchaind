@@ -2,10 +2,10 @@
 <html>
 <head>
     <title>Asset</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/outernet.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/outernet.css?v=fixaug5d">
     <style>
         .asset-page{
             max-width:600px;
@@ -80,16 +80,18 @@
     </style>
 </head>
 <body class="outernet-light">
-<script src="js/device-lock.js"></script>
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <div class="asset-page">
 
-<p><a href="outernet.html" style="color:var(--cc-accent-gold, #c9a227);">&larr; Back to OUTERNET</a></p>
+<p><a href="outernet" style="color:var(--cc-accent-gold, #c9a227);">&larr; Back to OUTERNET</a></p>
 
 <div class="card">
     <div class="asset-chart-area" id="assetChartArea">Loading...</div>
 
     <div class="asset-hero">
+        <div class="asset-hero-icon" id="assetHeroIcon" style="width:56px;height:56px;margin:0 auto 8px;"></div>
         <div class="asset-hero-symbol" id="assetSymbol">-</div>
         <div class="asset-hero-price" id="assetBalance">-</div>
         <div class="asset-hero-fiat" id="assetFiat" style="opacity:0.65;font-size:14px;"></div>
@@ -114,7 +116,7 @@
         <div id="assetReceiveNetworkPicker" style="display:none;margin-bottom:14px;">
             <p style="font-size:13px;opacity:0.8;margin:0 0 8px;">Which network?</p>
             <button onclick="loadReceiveForNetwork('CCT')">CCT network</button>
-            <button onclick="loadReceiveForNetwork('ERC')" style="margin-left:8px;">ERC network</button>
+            <button id="assetReceiveNetBtn2" onclick="loadReceiveForNetwork('ERC')" style="margin-left:8px;">ERC network</button>
         </div>
         <div id="assetReceiveQrArea">
             <canvas id="assetQrCanvas" style="max-width:70vw;height:auto;border-radius:8px;"></canvas>
@@ -146,6 +148,13 @@
             <span>Balance</span>
             <span id="ovBalance">-</span>
         </div>
+        <div class="explorer-row" id="ovVaultRow" style="display:none;justify-content:space-between;padding:6px 0;">
+            <span id="ovVaultLabel">Vault-locked (withdrawable)</span>
+            <span id="ovVaultBalance">-</span>
+        </div>
+        <p id="ovVaultSendWrap" style="display:none;margin:2px 0 0;text-align:right;">
+            <a id="ovVaultSendLink" href="#" style="color:var(--cc-accent-gold, #c9a227);font-size:12px;">Send &rarr;</a>
+        </p>
         <div id="ovOtherNetworks" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08);">
             <p style="opacity:0.7;font-size:12px;margin-bottom:6px;">Also available on:</p>
             <div id="ovOtherNetworksList"></div>
@@ -163,11 +172,14 @@
 
 </div>
 
-<script src="js/api.js"></script>
-<script src="js/currency.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/qrcode.js"></script>
-<script src="js/asset.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/currency.js?v=fixaug5b"></script>
+<script src="js/ai-assistant.js?v=fixaug5b"></script>
+<script src="js/qrcode.js?v=fixaug5b"></script>
+<script src="js/coin-icons.js?v=fixaug5b"></script>
+<script src="js/vault.js?v=sec0816c"></script>
+<script src="js/asset.js?v=sec0816a"></script>
 
 </body>
 </html>

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/creditchain/creditchaind/core"
 )
@@ -78,14 +79,20 @@ func HandleBorrowingPower(w http.ResponseWriter, r *http.Request) {
 
 	wallet := walletStore.Get(address)
 
-	reputationFactor := wallet.Reputation // already 0-100
+	// Repayment Trust specifically, not overall TSI - Borrowing Power's
+	// whole purpose is credit-risk approximation, and the other four
+	// factors here already independently cover staking/collateral/
+	// governance, so this doesn't double-count anything. See
+	// core.TrustDimensionValue's doc comment for why no cutover check
+	// is needed at a read site like this.
+	reputationFactor := core.TrustDimensionValue(wallet, core.DimensionRepayment) // already 0-100
 	repaymentFactor := repaymentFactorFor(address)
 	stakingFactor := stakingFactorFor(address)
 	governanceFactor := governanceFactorFor(address)
 
 	collateralFactor := uint64(0)
 	if oeth := collateralStore.LockedOf(address, "OETH"); oeth > 0 {
-		if valueInYen, ok := collateralValueInYen("OETH", oeth); ok {
+		if valueInYen, ok := collateralValueInYen("OETH", oeth, time.Now().Unix()); ok {
 			collateralFactor = valueInYen * 100 / stakedCCTNormalizationCap
 			if collateralFactor > 100 {
 				collateralFactor = 100
@@ -106,7 +113,7 @@ func HandleBorrowingPower(w http.ResponseWriter, r *http.Request) {
 	// strong composite score (staking, collateral, governance on top
 	// of reputation) earns more room than reputation-only BorrowLimit
 	// would give, never less than half of it.
-	baseLimit := core.BorrowLimit(wallet.Reputation)
+	baseLimit := core.BorrowLimit(core.TrustDimensionValue(wallet, core.DimensionRepayment))
 	maxBorrow := baseLimit * score / 100
 	if minLimit := baseLimit / 2; maxBorrow < minLimit {
 		maxBorrow = minLimit
@@ -120,7 +127,7 @@ func HandleBorrowingPower(w http.ResponseWriter, r *http.Request) {
 	maxBorrow += maxBorrow * referralBonusPct / 100
 
 	bronzeRate := core.InterestRate(0) // Bronze baseline
-	walletRate := core.InterestRate(wallet.Reputation)
+	walletRate := core.InterestRate(core.TrustDimensionValue(wallet, core.DimensionRepayment))
 	discount := uint64(0)
 	if bronzeRate > walletRate {
 		discount = bronzeRate - walletRate

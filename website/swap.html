@@ -2,29 +2,30 @@
 <html>
 <head>
     <title>Swap</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/pool-light.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/pool-light.css?v=fixaug5c">
 </head>
 <body class="pool-light">
-<script src="js/device-lock.js"></script>
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <div class="pool-topbar">
-    <a class="pool-topbar-brand" href="pool.html">Pool</a>
+    <a class="pool-topbar-brand" href="pool">Pool</a>
     <div class="pool-topbar-links">
-        <a href="liquidity.html">Liquidity Pool</a>
-        <a href="price-chart.html">Price Chart</a>
-        <a href="order-book.html">Order Book</a>
-        <a href="outernet.html">Back to OUTERNET</a>
+        <a href="liquidity">Liquidity Pool</a>
+        <a href="price-chart">Price Chart</a>
+        <a href="order-book">Order Book</a>
+        <a href="outernet">Back to OUTERNET</a>
     </div>
 </div>
 
 <div class="pool-wrap">
-    <a class="pool-back-link" href="pool.html">&larr; Pool</a>
+    <a class="pool-back-link" href="pool">&larr; Pool</a>
 
     <p class="pool-muted">
-        Looking for ETHTEST or USDCTEST? Those trade against CCT on the
-        <a href="order-book.html">Order Book</a> now, with a real market price instead of a pool ratio.
+        Looking for a bridged token? Those trade against CCT on the
+        <a href="order-book">Order Book</a> now, with a real market price instead of a pool ratio.
     </p>
 
     <div id="swapLoggedOut" class="pool-card" style="display:none;">
@@ -53,7 +54,7 @@
         <div class="pool-card">
             <h2>Universal Swap</h2>
             <p class="pool-muted">
-                Swap between any two tokens - ETHTEST, USDCTEST, CCT, or any registered token. A swap
+                Swap between any two tokens - CCT, a bridged token, or any registered token. A swap
                 between two non-CCT tokens routes as two hops (token &rarr; CCT &rarr; token).
             </p>
 
@@ -71,9 +72,10 @@
     </div>
 </div>
 
-<script src="js/api.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/swap.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/ai-assistant.js?v=fixaug5b"></script>
+<script src="js/swap.js?v=fixaug5b"></script>
 
 </body>
 </html>

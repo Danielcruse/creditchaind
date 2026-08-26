@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -18,20 +19,73 @@ const (
 	maxProposalDescLen  = 2000
 )
 
+// TokenCreationProposalFeeCCT is the submission-time cost of a
+// TOKEN_CREATION proposal - a judgment call, deliberately "substantially
+// higher" than the old self-service TokenCreationFeeETHTest=5, per the
+// user's own "must charge high fee and pass community vote" instruction.
+// Charged unconditionally at apply time (applyGovernance's "create"
+// case), never refunded on FAILED - a submission cost for using up a
+// governance slot, the mirror image of ProposalPassedProposerReward
+// which only pays out on PASSED.
+const TokenCreationProposalFeeCCT = 500
+
+// TokenCreationMinRC is the RC (REPT) "release privilege" gate on
+// TOKEN_CREATION proposal submission - a second gate alongside the CCT
+// fee, per the RC governance economy's "release privileges" mechanic
+// (see api/rc_promote.go's sibling mechanics). A judgment call, e.g.
+// roughly Silver-tier-reward scale.
+const TokenCreationMinRC = 100
+
+// NodeAdmissionProposalQuorum is a doubled bar over
+// core.DefaultProposalQuorum, specifically for ProposalKindNodeAdmission -
+// admitting a new node to the peer gossip network is materially
+// higher-stakes than an ordinary param change or civic prompt (it's
+// the actual Sybil-resistance mechanism, see core.NodeAdmissionStore's
+// doc comment), so it clears a higher bar. No existing precedent for a
+// kind-specific quorum elsewhere in this codebase - a new judgment
+// call, not copied from anywhere.
+const NodeAdmissionProposalQuorum = core.DefaultProposalQuorum * 2
+
 type CreateProposalRequest struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
 
-	// Kind/ParamKey/ParamValue/TargetVersion let a proposal request an
-	// automatic protocol-parameter change or a version-activation flag
-	// flip once it passes - see core.ProposalKind's doc comment.
-	// Creation stays open to any activated wallet regardless of kind;
-	// the real gate is the vote itself (real quorum + majority), not
-	// who's allowed to propose - see the governance plan's §4/§5.
+	// Kind/ParamKey/ParamValue/TargetVersion/Token* let a proposal
+	// request an automatic protocol-parameter change, a version-
+	// activation flag flip, or a new token's registration once it
+	// passes - see core.ProposalKind's doc comment. Creation stays open
+	// to any activated wallet regardless of kind; the real gate is the
+	// vote itself (real quorum + majority), not who's allowed to
+	// propose - see the governance plan's §4/§5.
 	Kind          string `json:"kind,omitempty"`
 	ParamKey      string `json:"paramKey,omitempty"`
 	ParamValue    uint64 `json:"paramValue,omitempty"`
 	TargetVersion string `json:"targetVersion,omitempty"`
+
+	// TokenSymbol/TokenName/TokenInitialSupply/TokenStandard/
+	// TokenPegReference are only read/validated when Kind ==
+	// TOKEN_CREATION - same fields HandleRegisterToken's now-retired
+	// direct path used to take.
+	TokenSymbol        string `json:"tokenSymbol,omitempty"`
+	TokenName          string `json:"tokenName,omitempty"`
+	TokenInitialSupply uint64 `json:"tokenInitialSupply,omitempty"`
+	TokenStandard      string `json:"tokenStandard,omitempty"`
+	TokenPegReference  string `json:"tokenPegReference,omitempty"`
+
+	// PredictionTargetSymbol/PredictionTargetPrice/
+	// PredictionDurationSeconds are only read when Kind == PREDICTION -
+	// see api/prediction_vote.go.
+	PredictionTargetSymbol    string `json:"predictionTargetSymbol,omitempty"`
+	PredictionTargetPrice     uint64 `json:"predictionTargetPrice,omitempty"`
+	PredictionDurationSeconds uint64 `json:"predictionDurationSeconds,omitempty"`
+
+	// DisputeModeratorAddress/DisputeReferenceType/DisputeReferenceID
+	// are only read when Kind == MODERATOR_DISPUTE - see
+	// core.ProposalKindModeratorDispute's doc comment and
+	// api/moderator_dispute_governance.go.
+	DisputeModeratorAddress string `json:"disputeModeratorAddress,omitempty"`
+	DisputeReferenceType    string `json:"disputeReferenceType,omitempty"`
+	DisputeReferenceID      string `json:"disputeReferenceId,omitempty"`
 }
 
 type VoteRequest struct {
@@ -81,10 +135,10 @@ func HandleCreateProposal(
 	}
 
 	switch req.Kind {
-	case "", string(core.ProposalKindParamChange), string(core.ProposalKindVersionActivation):
+	case "", string(core.ProposalKindParamChange), string(core.ProposalKindVersionActivation), string(core.ProposalKindTokenCreation), string(core.ProposalKindPrediction), string(core.ProposalKindModeratorDispute):
 		// valid
 	default:
-		http.Error(w, "kind must be empty, PARAM_CHANGE, or VERSION_ACTIVATION", http.StatusBadRequest)
+		http.Error(w, "kind must be empty, PARAM_CHANGE, VERSION_ACTIVATION, TOKEN_CREATION, PREDICTION, or MODERATOR_DISPUTE", http.StatusBadRequest)
 		return
 	}
 	if req.Kind == string(core.ProposalKindParamChange) && req.ParamKey == "" {
@@ -95,15 +149,94 @@ func HandleCreateProposal(
 		http.Error(w, "targetVersion required for a VERSION_ACTIVATION proposal", http.StatusBadRequest)
 		return
 	}
+	if req.Kind == string(core.ProposalKindTokenCreation) {
+		// Same validation HandleRegisterToken's now-retired direct path
+		// used to run - re-run here (and again, authoritatively, at
+		// apply time) rather than trusting this submission-time check
+		// alone, same "never trust submission-time state" discipline
+		// every other apply* function already follows.
+		if !core.ValidateTokenSymbol(req.TokenSymbol) {
+			http.Error(w, "tokenSymbol must be 2-10 uppercase letters and not already reserved (CCT/ETHTEST/USDCTEST/REPT)", http.StatusBadRequest)
+			return
+		}
+		if !core.ValidateTokenName(req.TokenName) {
+			http.Error(w, "tokenName must be 1-64 characters", http.StatusBadRequest)
+			return
+		}
+		if req.TokenInitialSupply == 0 || req.TokenInitialSupply > core.MaxCustomTokenSupply {
+			http.Error(w, "tokenInitialSupply must be positive and at most 1,000,000,000", http.StatusBadRequest)
+			return
+		}
+		if _, exists := tokenRegistry.Meta[req.TokenSymbol]; exists {
+			http.Error(w, "tokenSymbol already registered", http.StatusBadRequest)
+			return
+		}
+		if req.TokenStandard == "" {
+			req.TokenStandard = "C1"
+		}
+		if !tokenStandardRegistry.IsCreatable(req.TokenStandard) {
+			http.Error(w, "tokenStandard must be a real, user-creatable token standard (see GET /token-standards)", http.StatusBadRequest)
+			return
+		}
+		cctBalance, _ := core.ParseCctSmallest(cctStore.BalanceOf(address))
+		feeSmallest := core.CctWholeToSmallest(TokenCreationProposalFeeCCT)
+		if cctBalance.Cmp(feeSmallest) < 0 {
+			http.Error(w, fmt.Sprintf("you need at least %d CCT to cover the token creation proposal fee", TokenCreationProposalFeeCCT), http.StatusBadRequest)
+			return
+		}
+		if reptStore.BalanceOf(address) < TokenCreationMinRC {
+			http.Error(w, fmt.Sprintf("you need at least %d RC (REPT) to unlock token creation - a release privilege on top of the CCT fee", TokenCreationMinRC), http.StatusBadRequest)
+			return
+		}
+	}
+	if req.Kind == string(core.ProposalKindPrediction) {
+		if !isValidPredictionTargetSymbol(req.PredictionTargetSymbol) {
+			http.Error(w, "predictionTargetSymbol must be BTCTEST or ETHTEST", http.StatusBadRequest)
+			return
+		}
+		if req.PredictionTargetPrice == 0 {
+			http.Error(w, "predictionTargetPrice must be positive", http.StatusBadRequest)
+			return
+		}
+		if req.PredictionDurationSeconds != 0 && (req.PredictionDurationSeconds < PredictionMinDurationSeconds || req.PredictionDurationSeconds > PredictionMaxDurationSeconds) {
+			http.Error(w, "predictionDurationSeconds must be between 1 and 60 days (or omitted for the default 7-day window)", http.StatusBadRequest)
+			return
+		}
+	}
+	if req.Kind == string(core.ProposalKindModeratorDispute) {
+		if !moderatorStore.IsModerator(req.DisputeModeratorAddress) {
+			http.Error(w, "disputeModeratorAddress must be a currently-registered moderator", http.StatusBadRequest)
+			return
+		}
+		if !isValidModeratorDisputeReferenceType(req.DisputeReferenceType) {
+			http.Error(w, "disputeReferenceType must be negotiation, offer, or company", http.StatusBadRequest)
+			return
+		}
+		if !moderatorDisputeReferenceValid(req.DisputeReferenceType, req.DisputeReferenceID, req.DisputeModeratorAddress) {
+			http.Error(w, "disputeReferenceId must name a real record that disputeModeratorAddress was actually assigned to", http.StatusBadRequest)
+			return
+		}
+	}
 
 	data, _ := json.Marshal(governanceData{
-		Action:        "create",
-		Title:         req.Title,
-		Description:   req.Description,
-		Kind:          req.Kind,
-		ParamKey:      req.ParamKey,
-		ParamValue:    req.ParamValue,
-		TargetVersion: req.TargetVersion,
+		Action:                    "create",
+		Title:                     req.Title,
+		Description:               req.Description,
+		Kind:                      req.Kind,
+		ParamKey:                  req.ParamKey,
+		ParamValue:                req.ParamValue,
+		TargetVersion:             req.TargetVersion,
+		TokenSymbol:               req.TokenSymbol,
+		TokenName:                 req.TokenName,
+		TokenInitialSupply:        req.TokenInitialSupply,
+		TokenStandard:             req.TokenStandard,
+		TokenPegReference:         req.TokenPegReference,
+		PredictionTargetSymbol:    req.PredictionTargetSymbol,
+		PredictionTargetPrice:     req.PredictionTargetPrice,
+		PredictionDurationSeconds: req.PredictionDurationSeconds,
+		DisputeModeratorAddress:   req.DisputeModeratorAddress,
+		DisputeReferenceType:      req.DisputeReferenceType,
+		DisputeReferenceID:        req.DisputeReferenceID,
 	})
 
 	tx := recordTx(auth, address, "", 0, core.TxGovernance, string(data))

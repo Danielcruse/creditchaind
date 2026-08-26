@@ -436,6 +436,39 @@ func (s *P2POfferStore) DisputeAwaitingPayment(id, seller string) (*P2POffer, bo
 	return o, true
 }
 
+// DisputeEligibleAfterSeconds is how long a buyer's own MarkBuyerPaid
+// claim has to sit unanswered (no ConfirmSellerPaid, no
+// DisputeAwaitingPayment from the seller) before the buyer may escalate
+// to a moderator themselves - see DisputeAwaitingPaymentByBuyer. Gives
+// the seller a real window to check their account before the buyer can
+// summon a moderator, rather than letting either side dispute the
+// instant a claim is made.
+const DisputeEligibleAfterSeconds = 20 * 60
+
+// DisputeAwaitingPaymentByBuyer is the buyer's own escalation path,
+// complementing DisputeAwaitingPayment (the seller's immediate right to
+// reject a claim they say never arrived): if the buyer marked payment
+// sent and the seller has neither confirmed nor disputed it within
+// DisputeEligibleAfterSeconds, the buyer can summon a moderator
+// themselves instead of waiting indefinitely on a silent seller. Only
+// valid while still AWAITING_PAYMENT, only by AcceptedBy (the buyer),
+// and only once their own claim is actually on record.
+func (s *P2POfferStore) DisputeAwaitingPaymentByBuyer(id, buyer string, now int64) (*P2POffer, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	o, ok := s.Offers[id]
+	if !ok || o.AcceptedBy != buyer || o.SettlementStatus != SettlementAwaitingPayment || o.BuyerMarkedPaidAt == 0 {
+		return nil, false
+	}
+	if now-o.BuyerMarkedPaidAt < DisputeEligibleAfterSeconds {
+		return nil, false
+	}
+
+	o.SettlementStatus = SettlementDisputed
+	return o, true
+}
+
 // ConfirmBuyer is EXTERNAL-only-during-a-narrow-transitional-window
 // dead weight, kept solely so an offer already sitting in
 // SELLER_CONFIRMED at the moment ConfirmSellerPaid's behavior changed

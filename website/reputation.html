@@ -2,18 +2,63 @@
 <html>
 <head>
 <title>Reputation</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-<link rel="stylesheet" href="css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+<link rel="stylesheet" href="css/style.css?v=fixaug5c">
+<style>html{scroll-behavior:smooth;}</style>
 </head>
 <body>
-<script src="js/device-lock.js"></script>
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <h1>Reputation</h1>
 
-<div class="card">
+<div class="dash-nav-grid">
+    <a class="dash-nav-tile" href="#scoreCard">
+        <div class="dash-nav-tile-icon">&#127919;</div>
+        <h3>Trust Score</h3>
+        <p>Your number &amp; credit tier</p>
+    </a>
+    <a class="dash-nav-tile" href="#historyCard">
+        <div class="dash-nav-tile-icon">&#128337;</div>
+        <h3>History</h3>
+        <p>Every reputation event</p>
+    </a>
+    <a class="dash-nav-tile" href="#votingPowerCard">
+        <div class="dash-nav-tile-icon">&#128220;</div>
+        <h3>Voting Power</h3>
+        <p>Governance weight</p>
+    </a>
+    <a class="dash-nav-tile" href="#reptCard">
+        <div class="dash-nav-tile-icon">&#128176;</div>
+        <h3>REPT</h3>
+        <p>Balance &amp; tier rewards</p>
+    </a>
+    <a class="dash-nav-tile" href="#miningPowerCard">
+        <div class="dash-nav-tile-icon">&#9889;</div>
+        <h3>Mining Power</h3>
+        <p>Continuous REPT mining</p>
+    </a>
+    <a class="dash-nav-tile" href="#math">
+        <div class="dash-nav-tile-icon">&#128203;</div>
+        <h3>How It's Calculated</h3>
+        <p>Full PoSR explainer</p>
+    </a>
+    <a class="dash-nav-tile" href="#rcLeaderboardCard">
+        <div class="dash-nav-tile-icon">&#127942;</div>
+        <h3>RC Leaderboard</h3>
+        <p>Who holds the most RC</p>
+    </a>
+    <a class="dash-nav-tile" href="#infuseRcCard">
+        <div class="dash-nav-tile-icon">&#129309;</div>
+        <h3>Infuse RC</h3>
+        <p>Trade RC for real-world trust</p>
+    </a>
+</div>
 
-<h2>Your Score</h2>
+<div class="card" id="scoreCard">
+
+<h2>Trust Score</h2>
 
 <h1 id="score">-</h1>
 
@@ -21,7 +66,7 @@
 
 </div>
 
-<div class="card">
+<div class="card" id="historyCard">
 
 <h2>History</h2>
 
@@ -29,7 +74,7 @@
 
 </div>
 
-<div class="card">
+<div class="card" id="votingPowerCard">
 
 <h2>Voting Power</h2>
 
@@ -37,7 +82,7 @@
 
 </div>
 
-<div class="card">
+<div class="card" id="reptCard">
 
 <h2>REPT (Reputation Token)</h2>
 
@@ -54,7 +99,7 @@ re-mint it.
 
 </div>
 
-<div class="card">
+<div class="card" id="miningPowerCard">
 
 <h2>Mining Power</h2>
 
@@ -69,6 +114,49 @@ lending, and account age, the more you mine.
 <h1 id="miningPowerScore">-</h1>
 
 <div id="miningPowerFactors">Loading...</div>
+
+</div>
+
+<div class="card" id="rcLeaderboardCard">
+
+<h2>RC Leaderboard</h2>
+
+<p style="opacity:0.75;font-size:13px;">
+Ranked by real REPT ("Reputation Credit") balance. The top 5 RC holders
+are this network's governance "executives" - a live-computed cutoff,
+not an election or a persisted role. Executives get a narrow, separate
+voting lane on <a href="governance">governance.html</a> to set how
+much weight Infused real-world trust carries.
+</p>
+
+<div id="rcLeaderboardList">Loading...</div>
+
+</div>
+
+<div class="card" id="infuseRcCard">
+
+<h2>Infuse RC</h2>
+
+<p style="opacity:0.75;font-size:13px;">
+Trade RC for real-world trust: burn some of your RC balance and record
+a public, self-attested reason. This is never independently verified -
+it's a disclosed statement, not a proof. In return, your wallet's
+future continuous REPT mining gets a small, permanent boost (capped),
+scaled by the network's currently-set "real-world trust weight."
+</p>
+
+<p>Your RC balance: <span id="infuseRcBalance">-</span> REPT</p>
+
+<div>
+<input type="number" id="infuseRcAmount" min="1" placeholder="RC amount to infuse">
+<input type="text" id="infuseRcReason" maxlength="500" placeholder="Why does this deserve trust? (public, self-attested)">
+<button onclick="infuseRc()">Infuse RC</button>
+</div>
+
+<p id="infuseRcStatus" style="opacity:0.75;font-size:13px;"></p>
+
+<h3>Recent Infusions</h3>
+<div id="recentInfusionsList">Loading...</div>
 
 </div>
 
@@ -170,6 +258,22 @@ scarcity, sustained incentive" tradeoff real fixed-supply networks
 use. Total CCT supply is capped.
 </p>
 
+<h3>Trust Score Index (TSI): Six Dimensions</h3>
+
+<p style="opacity:0.75;font-size:13px;">
+Reputation is no longer one undifferentiated number under the hood - it's
+six independently-tracked dimensions (Repayment, Trading, Governance,
+Contribution, Verification, Dispute), each on the same 1-100 scale. The
+displayed Trust Score above is a governance-adjustable weighted blend of
+all six, shown below as the current live split. Credit terms (borrow
+limits, interest rates) key off Repayment Trust specifically, and
+governance vote weight keys off Governance Trust specifically - so a
+weak area in one dimension (e.g. a marketplace dispute) doesn't
+automatically drag down an unrelated one (e.g. loan eligibility).
+</p>
+
+<div id="weights">Loading...</div>
+
 <h3>How Every Action Moves Reputation</h3>
 
 <div id="mechanisms">Loading...</div>
@@ -178,14 +282,15 @@ use. Total CCT supply is capped.
 
 </div>
 
-<a href="outernet.html">
+<a href="outernet">
 Back to OUTERNET
 </a>
 
-<script src="js/api.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/reputation.js"></script>
-<script src="js/reputation-math.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/ai-assistant.js?v=fixaug5b"></script>
+<script src="js/reputation.js?v=fixaug5b"></script>
+<script src="js/reputation-math.js?v=fixaug5b"></script>
 
 </body>
 </html>

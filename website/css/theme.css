@@ -24,10 +24,10 @@
     --cc-bg-2: #082616;
     --cc-bg-3: #0c3a22;
 
-    /* Primary accent - money-green gradient, replacing the old cyan/
-       blue button gradient (#00d2ff -> #3a7bd5). */
-    --cc-accent-1: #0f9d58;
-    --cc-accent-2: #16c46f;
+    /* Primary accent - blue, mixed against white cards over the green
+       background above (buttons, primary CTAs, highlighted text). */
+    --cc-accent-1: #1d4ed8;
+    --cc-accent-2: #3b82f6;
 
     /* Secondary accent - muted gold/bronze, used sparingly for
        badges/highlights/dividers - the "traditional banking" half of
@@ -36,12 +36,68 @@
     --cc-accent-gold-soft: #e0c674;
 
     /* "Live"/positive indicator green - unchanged in hue from the
-       existing #00ff95 this codebase already used, now the dominant
-       accent rather than a minor one. */
+       existing #00ff95 this codebase already used, kept for genuinely
+       positive/live states even though blue is now the primary accent. */
     --cc-live-green: #00ff95;
 
-    /* Card glow/shadow tint - green instead of the old cyan
-       (rgba(0,200,255,...) / rgba(0,255,255,...)). */
-    --cc-glow: rgba(16, 196, 111, 0.18);
-    --cc-glow-hover: rgba(24, 230, 140, 0.35);
+    /* Card glow/shadow tint - blue, matching the new primary accent. */
+    --cc-glow: rgba(59, 130, 246, 0.22);
+    --cc-glow-hover: rgba(96, 165, 250, 0.4);
+}
+
+/* Shared dashboard-nav tile grid - a quick jump-to-section navigation
+   strip, used at the top of every "scroll-through" page (validator,
+   governance, reputation, tokens, explorer, p2p) that got turned into
+   a dashboard this pass. Each tile is a plain anchor link scrolling to
+   an existing card below (id="...Card") - never a page navigation or
+   a visibility toggle - so it can be dropped onto any already-working
+   page without touching that page's own JS. Dark-theme colors here
+   since every page using this today loads plain css/style.css (no
+   outernet-light variant reachable on any of them). */
+.dash-nav-grid{
+    display:grid;
+    grid-template-columns:repeat(3, 1fr);
+    gap:14px;
+    margin:18px 0 24px;
+}
+@media (max-width:640px){
+    .dash-nav-grid{
+        grid-template-columns:1fr 1fr;
+    }
+}
+.dash-nav-tile{
+    display:block;
+    background:rgba(255,255,255,0.05);
+    border:1px solid rgba(255,255,255,0.12);
+    border-radius:14px;
+    padding:16px;
+    text-decoration:none;
+    color:inherit;
+    transition:transform .15s ease, background .15s ease;
+}
+.dash-nav-tile:hover{
+    transform:translateY(-2px);
+    background:rgba(255,255,255,0.09);
+}
+.dash-nav-tile-icon{
+    width:34px;
+    height:34px;
+    border-radius:10px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:16px;
+    margin-bottom:8px;
+    background:rgba(15,157,88,0.15);
+    color:var(--cc-accent-1, #0f9d58);
+}
+.dash-nav-tile h3{
+    margin:0 0 4px;
+    font-size:14px;
+}
+.dash-nav-tile p{
+    margin:0;
+    font-size:11px;
+    opacity:0.65;
+    line-height:1.4;
 }

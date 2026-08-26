@@ -96,11 +96,19 @@ wallet recovery, explorer lookups), not a fund-safety gap. See
 ### 3.6 Gossip/peer-network attacks (fake blocks, fake transactions,
 Sybil nodes)
 **Mitigation**: `NETWORK_SECRET` shared-secret gate on all `/peer/*`
-endpoints, `AuthorizedNodeID` binding on block adoption (§3.3),
+endpoints, `AuthorizedNodeID`/`AuthorizedNodePublicKey` binding on block
+adoption checked against `ValidatorStore` directly — not `peerStore` (§3.3,
+fixed 2026-08-10, see `KNOWN_GAPS.md`), handshake proof-of-possession
+signatures (`verifyHandshakeSignature`, `api/peer.go`) so a `NETWORK_SECRET`
+holder can no longer claim a `NodeID`/`PublicKey` it doesn't control,
 `ValidateChain`'s internal hash-consistency check.
-**Residual risk, explicitly disclosed**: this is a coarse, single-secret,
-permissioned-network model — no per-peer identity, no Sybil resistance, no
-self-serve join (`KNOWN_GAPS.md`). Appropriate for a small, operator-known
+**Residual risk, explicitly disclosed**: the 2026-08-10 fix closes identity
+*spoofing* (impersonating a specific known identity, including escalation
+into block-signature forgery) — it does not add Sybil resistance itself.
+This is still a coarse, single-secret, permissioned-network model — no
+economic/reputation cost to holding `NETWORK_SECRET`, no cap on peer-store
+entries per secret-holder, no per-peer rate limiting on `/peer/tx`/
+`/peer/block` (`KNOWN_GAPS.md`). Appropriate for a small, operator-known
 validator set; would need real work before any move toward a
 permissionless network.
 

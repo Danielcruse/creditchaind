@@ -44,6 +44,22 @@ func HandleAdminWhoAmI(w http.ResponseWriter, r *http.Request) {
 // resolve to the wrong 20-byte address and lock out a legitimate
 // signer/admin wallet with no obvious error message pointing at why.
 func normalizeAdminAddress(raw string) string {
+	return normalizeCreditChainAddress(raw)
+}
+
+// normalizeCreditChainAddress is normalizeAdminAddress's transform under
+// a name that doesn't imply "admin" - stripping the cosmetic "cc"
+// prefix applies to any CreditChain address, not just the configured
+// admin/operator identities normalizeAdminAddress's own call sites deal
+// with. Callers that accept an arbitrary caller-supplied destination
+// address (e.g. a mint or balance-recovery target) need this same
+// normalization too - without it, an address typed in its normal
+// "cc"-prefixed display form resolves to a completely different,
+// unreachable 42-character key instead of the real 40-character
+// address the recipient's wallet actually signs with (see
+// api/token_mint.go and api/admin_transfer.go's own doc comments for
+// the incident this closes).
+func normalizeCreditChainAddress(raw string) string {
 	addr := strings.ToLower(strings.TrimSpace(raw))
 	if len(addr) == 42 && strings.HasPrefix(addr, "cc") {
 		addr = addr[2:]
@@ -64,6 +80,14 @@ func normalizeAdminAddress(raw string) string {
 // requireAdminAuthed/verifyAdminTxAuth) - no single key, however it's
 // stored, can act alone anymore.
 func adminMultisigSigners() []string {
+	// Once a protocol manifest has been committed (audit finding C-09 -
+	// see core.ProtocolManifest's doc comment), it's the source of
+	// truth every node genuinely agrees on, not this process's own
+	// local environment - falls back to the raw env var only in the
+	// pre-manifest bootstrap state.
+	if core.ActiveProtocolManifest.Set {
+		return core.ActiveProtocolManifest.AdminMultisigAddresses
+	}
 	raw := os.Getenv("ADMIN_MULTISIG_ADDRESSES")
 	if raw == "" {
 		return nil
@@ -79,6 +103,9 @@ func adminMultisigSigners() []string {
 }
 
 func adminMultisigThreshold() int {
+	if core.ActiveProtocolManifest.Set {
+		return core.ActiveProtocolManifest.AdminMultisigThreshold
+	}
 	n, err := strconv.Atoi(strings.TrimSpace(os.Getenv("ADMIN_MULTISIG_THRESHOLD")))
 	if err != nil || n <= 0 {
 		return 0
@@ -141,6 +168,9 @@ func requireAdmin(r *http.Request) bool {
 // in apply.go. Empty means the signed-wallet admin path is disabled
 // (falls back to the legacy token path only).
 func adminWalletAddress() string {
+	if core.ActiveProtocolManifest.Set {
+		return core.ActiveProtocolManifest.AdminWalletAddress
+	}
 	return normalizeAdminAddress(os.Getenv("ADMIN_WALLET_ADDRESS"))
 }
 

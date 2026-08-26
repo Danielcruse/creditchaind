@@ -2,98 +2,88 @@ package api
 
 import (
 	"encoding/json"
+	"math/big"
 	"net/http"
 
 	"github.com/creditchain/creditchaind/core"
 )
 
-// MaxTotalCCTSupply is PoSR's lifetime CCT supply cap - every CCT mint
-// path (block rewards, staking rewards, the admin faucet, and the
-// one-time genesis pool allocation) is bounded by it via
-// mintCCTCapped. Once total supply reaches this ceiling, block
-// rewards correctly mint 0 (same "reward asymptotes to zero at the
-// cap" behavior real fixed-supply chains use) - transaction fees
-// (already fully wired, see applyBlockReward) become validators' sole
-// income at that point, exactly matching PoSR's own "controlled
-// inflation" framing.
-const MaxTotalCCTSupply = 5_000_000_000
+// MaxTotalCCTSupplyWhole is PoSR's lifetime CCT supply cap, in whole
+// CCT - 10,000,000,000 (10B). Rescaled up from the original 5B cap as
+// part of the 18-decimal migration: the ~1B already-minted genesis
+// pools (see genesisPool*Amount below) needed to land as a real
+// "controlled portion" of the new ceiling, not the whole thing, so the
+// ceiling moved up rather than genesis being shrunk - preserves every
+// existing balance exactly via the in-place decimal conversion (see
+// applyTokenomicsDecimalMigration) while still leaving ~90% headroom
+// for the declining block-reward schedule to mint into over
+// subsequent years, the same ~10-20%-genesis/rest-for-inflation shape
+// the original 1B-genesis-under-5B-cap ratio already had.
+const MaxTotalCCTSupplyWhole = 10_000_000_000
 
-// mintCCTCapped mints up to amount of CCT to address, clamped so
-// tokenStore's TotalSupply never exceeds MaxTotalCCTSupply. Returns
-// the amount actually minted (may be less than requested, or zero
+// maxTotalCCTSupplySmallest is MaxTotalCCTSupplyWhole expressed in
+// CCT's smallest unit (18 decimals) - computed once, compared against
+// cctStore.TotalSupply by mintCCTCapped.
+var maxTotalCCTSupplySmallest = core.CctWholeToSmallest(MaxTotalCCTSupplyWhole)
+
+// mintCCTCapped mints up to amount (smallest-unit CCT) to address,
+// clamped so cctStore's TotalSupply never exceeds
+// maxTotalCCTSupplySmallest. Returns the amount actually minted (as a
+// smallest-unit decimal string; may be less than requested, or "0"
 // once at the cap) - every CCT-minting call site in this package must
-// route through this rather than calling tokenStore.Mint directly.
-func mintCCTCapped(address string, amount uint64) uint64 {
-	if amount == 0 {
-		return 0
+// route through this rather than calling cctStore.Mint directly.
+func mintCCTCapped(address string, amount string) string {
+	requested, err := core.ParseCctSmallest(amount)
+	if err != nil || requested.Sign() == 0 {
+		return "0"
 	}
-	supply := tokenStore.Token.TotalSupply
-	if supply >= MaxTotalCCTSupply {
-		return 0
+
+	supply, err := core.ParseCctSmallest(cctStore.TotalSupply)
+	if err != nil {
+		supply = big.NewInt(0)
 	}
-	headroom := MaxTotalCCTSupply - supply
-	if amount > headroom {
-		amount = headroom
+	if supply.Cmp(maxTotalCCTSupplySmallest) >= 0 {
+		return "0"
 	}
-	tokenStore.Mint(address, amount)
-	return amount
+	headroom := new(big.Int).Sub(maxTotalCCTSupplySmallest, supply)
+	toMint := requested
+	if toMint.Cmp(headroom) > 0 {
+		toMint = headroom
+	}
+
+	amountStr := core.FormatCctSmallest(toMint)
+	cctStore.Mint(address, amountStr)
+	return amountStr
 }
 
-// blockRewardEra is one (startYear, rewardCCT) step in PoSR's
-// controlled-inflation decay curve.
-type blockRewardEra struct {
-	startYear int64
-	rewardCCT uint64
+// mintCCTCappedWhole is mintCCTCapped's convenience wrapper for
+// call sites that still think in whole CCT (genesis pool constants,
+// block-reward schedule amounts) - converts once at the boundary via
+// core.CctWholeToSmallest rather than making every caller do it.
+// Returns the amount actually minted, in smallest units (a decimal
+// string), same as mintCCTCapped.
+func mintCCTCappedWhole(address string, wholeAmount uint64) string {
+	return mintCCTCapped(address, core.FormatCctSmallest(core.CctWholeToSmallest(wholeAmount)))
 }
 
-// blockRewardSchedule implements PoSR's decaying block reward.
-//
-// Unit-system note (a deliberate judgment call, not a literal
-// transcription): the spec's example numbers (1.00/0.80/0.60/0.45/
-// 0.30 CCT) use two decimal places, but every CCT amount in this
-// ledger is a whole-unit uint64 throughout - no fractional-CCT
-// support exists anywhere, and adding one would be a much larger,
-// separate migration touching every balance/fee in the system. This
-// schedule instead applies the SAME relative decay curve
-// (1.00x/0.80x/0.60x/0.45x/0.30x) to the existing real, already-live
-// ProduceBlockReward (10 CCT) as the Year-1 baseline, so real
-// validators' current income isn't silently cut 10x by this change:
-// Year 1 = 10 CCT, Year 2 = 8, Year 3 = 6, Year 4 = 5 (0.45x,
-// rounded), Year 5+ = 3 (0.30x, rounded, held flat thereafter - the
-// spec only defines 5 years).
-var blockRewardSchedule = []blockRewardEra{
-	{startYear: 0, rewardCCT: ProduceBlockReward},          // Year 1: 10 CCT (1.00x)
-	{startYear: 1, rewardCCT: ProduceBlockReward * 8 / 10}, // Year 2: 8 CCT (0.80x)
-	{startYear: 2, rewardCCT: ProduceBlockReward * 6 / 10}, // Year 3: 6 CCT (0.60x)
-	{startYear: 3, rewardCCT: 5},                           // Year 4: 5 CCT (0.45x, rounded)
-	{startYear: 4, rewardCCT: 3},                           // Year 5+: 3 CCT (0.30x, rounded) - floor
+// hasCctBalance reports whether address's live CCT balance (cctStore)
+// covers at least wholeAmount whole CCT - the whole-unit-friendly
+// convenience wrapper most fast-fail preview checks in this package
+// want, so call sites don't each need to hand-roll a ParseCctSmallest/
+// big.Int.Cmp dance for a plain "do they have enough" check.
+func hasCctBalance(address string, wholeAmount uint64) bool {
+	balance, err := core.ParseCctSmallest(cctStore.BalanceOf(address))
+	if err != nil {
+		return false
+	}
+	return balance.Cmp(core.CctWholeToSmallest(wholeAmount)) >= 0
 }
 
-const secondsPerYear = 365 * 24 * 3600
-
-// blockRewardForTimestamp returns PoSR's controlled-inflation block
-// reward for the era containing ts, anchored to the chain's own
-// genesis block timestamp (block index 0) - never wall-clock, so
-// every node computing this for the same block reaches an identical
-// result (block timestamps are already part of the signed,
-// hash-linked block every node agrees on).
-func blockRewardForTimestamp(ts int64) uint64 {
-	if blockchain == nil || len(blockchain.Blocks) == 0 {
-		return ProduceBlockReward
-	}
-	genesisTs := blockchain.Blocks[0].Timestamp
-	yearsElapsed := (ts - genesisTs) / secondsPerYear
-	if yearsElapsed < 0 {
-		yearsElapsed = 0
-	}
-
-	reward := blockRewardSchedule[0].rewardCCT
-	for _, era := range blockRewardSchedule {
-		if yearsElapsed >= era.startYear {
-			reward = era.rewardCCT
-		}
-	}
-	return reward
+// transferCctWhole moves wholeAmount whole CCT from -> to via cctStore,
+// converting at the boundary - the whole-unit convenience wrapper for
+// apply-side fee/payout call sites that still think in whole CCT.
+func transferCctWhole(from, to string, wholeAmount uint64) bool {
+	return cctStore.Transfer(from, to, core.FormatCctSmallest(core.CctWholeToSmallest(wholeAmount)))
 }
 
 // genesisPoolAddress is PoSR's synthetic escrow-style address for a
@@ -169,11 +159,11 @@ func applyGenesisPoolAllocation(tx core.Transaction) {
 		return
 	}
 
-	mintCCTCapped(genesisPoolAddress(genesisPoolValidatorReward), genesisPoolValidatorRewardAmount)
-	mintCCTCapped(treasuryStore.Treasury.FoundationAddress, genesisPoolFoundationTreasuryAmount)
-	mintCCTCapped(genesisPoolAddress(genesisPoolEcosystemDev), genesisPoolEcosystemDevAmount)
-	mintCCTCapped(genesisPoolAddress(genesisPoolGovernanceTreasury), genesisPoolGovernanceTreasuryAmount)
-	mintCCTCapped(genesisPoolAddress(genesisPoolCommunityIncentives), genesisPoolCommunityIncentivesAmount)
+	mintCCTCappedWhole(genesisPoolAddress(genesisPoolValidatorReward), genesisPoolValidatorRewardAmount)
+	mintCCTCappedWhole(treasuryStore.Treasury.FoundationAddress, genesisPoolFoundationTreasuryAmount)
+	mintCCTCappedWhole(genesisPoolAddress(genesisPoolEcosystemDev), genesisPoolEcosystemDevAmount)
+	mintCCTCappedWhole(genesisPoolAddress(genesisPoolGovernanceTreasury), genesisPoolGovernanceTreasuryAmount)
+	mintCCTCappedWhole(genesisPoolAddress(genesisPoolCommunityIncentives), genesisPoolCommunityIncentivesAmount)
 
 	treasuryStore.Treasury.GenesisPoolsAllocated = true
 }

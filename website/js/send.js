@@ -10,10 +10,67 @@ function currentSymbol() {
     return document.getElementById("sendSymbol").value;
 }
 
+// ETHB/BTCB need a network choice this generic page has no UI for -
+// send-bridged-eth.html/send-bridged-btc.html already build that
+// choice (reused, not duplicated a third time here), so picking either
+// symbol here just hands off immediately. ETH now hands off to that
+// same send-bridged-eth.html page too (it grew a third "Direct" mode
+// alongside CCT/ERC - see that file's top comment for why this is one
+// unified page, not two), just pre-selecting Direct via the query
+// param. USDC (the mainnet self-custodial USDC row) still hands off to
+// its own dedicated real-signing page (send-usdc.html).
+const BRIDGED_SEND_PAGES = {
+    ETHB: "send-bridged-eth",
+    BTCB: "send-bridged-btc",
+    // ETH/BTC/USDC route to vault-withdraw.html - the SAME destination
+    // asset.html's own Send button now uses for these three balances
+    // (see asset.js's assetSendBtn handler), so this generic page and
+    // the per-asset page always agree on where "Send" actually goes:
+    // burn the vault-backed CCC1 balance, either to another CreditChain
+    // user's CCC1 balance instantly, or to a real external address via
+    // validator co-signed release.
+    ETH: "vault-withdraw?chain=ETH",
+    BTC: "vault-withdraw?chain=BTC",
+    USDC: "vault-withdraw?chain=USDC",
+};
+
+// On mainnet, ETHB/BTCB/USDCTEST are testnet-only legacy mirror-model
+// tokens - they don't reflect real holdings there (see outernet.js's
+// loadWallet doc comment for why the dashboard total stopped counting
+// them too) and picking one used to strand a mainnet user on the wrong
+// send flow entirely (ETHB -> send-bridged-eth.html's CCT-network mode,
+// which moves an ETHB ledger balance that's simply never funded on
+// mainnet). Removed entirely here (not just relabeled) and replaced
+// with ETH/BTC/USDC - "mainnet should use only mainnet features, no
+// testnet address or flow" per this project's standing requirement.
+// Testnet is completely unaffected - this only runs in mainnet mode.
+(function adjustSendSymbolsForNetwork() {
+    if (window.CC_NETWORK !== "mainnet") return;
+    const select = document.getElementById("sendSymbol");
+    if (!select) return;
+
+    for (const sym of ["ETHB", "BTCB", "USDCTEST"]) {
+        const opt = [...select.options].find((o) => o.value === sym);
+        if (opt) opt.remove();
+    }
+
+    const yeneOpt = [...select.options].find((o) => o.value === "YENE");
+    for (const { value, label } of [{ value: "ETH", label: "ETH" }, { value: "BTC", label: "BTC" }, { value: "USDC", label: "USDC" }]) {
+        const opt = document.createElement("option");
+        opt.value = value;
+        opt.innerText = label;
+        select.insertBefore(opt, yeneOpt || null);
+    }
+})();
+
 async function refresh() {
     if (!wallet) return;
 
     const symbol = currentSymbol();
+    if (BRIDGED_SEND_PAGES[symbol]) {
+        location.href = BRIDGED_SEND_PAGES[symbol];
+        return;
+    }
     document.getElementById("sendSymbolLabel").innerText = symbol;
     document.getElementById("sendAddressHint").style.display = symbol === "CCT" ? "none" : "block";
     const feeNote = document.getElementById("sendFeeNote");
@@ -24,7 +81,10 @@ async function refresh() {
 
     try {
         const data = await fetchTokenBalance(wallet, symbol);
-        document.getElementById("balance").innerText = data.balance;
+        // CCT's balance is an 18-decimal smallest-unit string now; every
+        // other symbol reaching this generic path is still a plain
+        // whole-unit number, unchanged.
+        document.getElementById("balance").innerText = symbol === "CCT" ? cctFromSmallest(data.balance) : data.balance;
     } catch (e) {
         console.error(e);
     }
@@ -59,18 +119,24 @@ async function send() {
 
         if (result.success === false) {
             alert(
-                symbol === "CCT"
-                    ? `Insufficient CCT - you need the amount plus the ${CCT_TRANSFER_FEE} CCT network fee.`
-                    : "Insufficient balance."
+                result.reason ||
+                    (symbol === "CCT"
+                        ? `Insufficient CCT - you need the amount plus the ${CCT_TRANSFER_FEE} CCT network fee.`
+                        : "Insufficient balance.")
             );
             return;
         }
 
         document.getElementById("sendStatus").innerText = result.fee
-            ? `Sent (tx ${result.txId}) - ${result.fee} CCT network fee applied - takes effect once the next block confirms it.`
-            : `Sent (tx ${result.txId}) - takes effect once the next block confirms it.`;
+            ? `Sent (tx ${result.txId}) - ${result.fee} CCT network fee applied - takes effect once the next block confirms it. Returning to your wallet...`
+            : `Sent (tx ${result.txId}) - takes effect once the next block confirms it. Returning to your wallet...`;
 
-        setTimeout(refresh, 9000);
+        // Redirect after a short delay so the confirmation is actually
+        // seen - also closes off the "hit back and resubmit" gap, since
+        // the send form is no longer sitting on screen afterward.
+        setTimeout(() => {
+            location.href = "outernet";
+        }, 1500);
     } catch (e) {
         alert("Send failed: " + e.message);
     }

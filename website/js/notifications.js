@@ -25,7 +25,7 @@ function renderNotificationRow(n) {
     return `
         <div style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.08);${unreadStyle}" data-id="${n.ID}" onclick="markNotificationRead('${n.ID}')">
             <span>${notificationIcon(n.Type)}</span>
-            <span style="flex:1;">${n.Message}</span>
+            <span style="flex:1;">${escapeHtml(n.Message)}</span>
             <span style="opacity:0.6;font-size:12px;white-space:nowrap;">${time}</span>
         </div>
     `;

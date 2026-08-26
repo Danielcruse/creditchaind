@@ -1,28 +1,49 @@
-// send-bridged-eth.js - the auto-bridge feature's network-selected send
-// flow (see the Auto-Bridge plan's §4-5). ETHB is a single unified
-// balance; the user only ever picks a destination NETWORK here, never
-// manually "bridges" anything - CCT network moves it instantly inside
-// CreditChain for a flat CCT fee (reuses /token/transfer, same as any
-// other symbol), ERC network sends real Sepolia ETH to a 0x address
-// for a flat bridge fee (POSTs to /eth-bridge/withdraw, mirrors
-// send-eth.js's confirm-before-broadcast pattern since this triggers a
-// real, irreversible external broadcast).
+// send-bridged-eth.js - the single, unified "Send ETH" flow for every
+// ETH entry point in the app (asset.html's ETH page, the generic
+// send.html dropdown's ETH and ETH-bridge options, etc.) - the user
+// only ever picks a MODE here, never manually "bridges" anything.
+// Two modes, one balance: Direct broadcasts straight from the
+// self-custodial account (EthTx.signLegacyTx + /eth-selfcustody/
+// broadcast, no CreditChain fee, real network gas only - signed
+// entirely in this browser, the key never leaves it). CCT network
+// moves the ETHB ledger balance instantly to another CreditChain user
+// for a flat ETH fee (reuses /token/transfer, same as any other
+// symbol). There used to be a third "ERC network" mode that broadcast
+// via a CreditChain-held custodial signer - retired (see
+// api/eth_bridge_withdraw.go's HandleBridgedEthWithdraw doc comment):
+// CreditChain never holds an ETH signing key on anyone's behalf, and
+// Direct mode already covers real-address sends for free.
 
 const ethbWallet = requireWallet();
 
 // ETHBCCTNetworkFeeWei mirrors api/apply.go's constant of the same
 // name (flat ETH fee, taken from the ETHB balance itself, for a
 // CCT-network ETHB send - no longer charged in CCT, see that
-// constant's doc comment). The ERC-network fee is no longer a flat
-// mirrored constant either - it's live-tracked (gas price + 0.05%
-// bridge fee), fetched from /eth-bridge/withdraw-quote just before
-// review so the number shown is always current.
+// constant's doc comment).
 const ETHBCCTNetworkFeeWei = 100000000000n; // 0.0000001 ETH, illustrative
+
+// GAS_LIMIT/ETH_CHAIN_ID and hdEthAccount() mirror send-eth.js exactly -
+// Direct mode reuses that exact same self-custodial signing path
+// (EthTx.signLegacyTx + /eth-selfcustody/broadcast), just as a third
+// mode on this one page instead of a second, separate page - see this
+// file's top-of-file comment for why all three modes now live together.
+const GAS_LIMIT = 21000n;
+const ETH_CHAIN_ID = window.CC_NETWORK === "mainnet" ? 1 : 11155111;
+
+function hdEthAccount() {
+    const accounts = getHdAccounts();
+    return accounts && accounts.eth ? accounts.eth : null;
+}
+
+const IS_MAINNET = window.CC_NETWORK === "mainnet";
+const ETH_NETWORK_LABEL = IS_MAINNET ? "real ETH" : "real Sepolia";
+const ETH_EXPLORER_BASE = IS_MAINNET ? "https://etherscan.io/tx/" : "https://sepolia.etherscan.io/tx/";
+const ETH_EXPLORER_NAME = IS_MAINNET ? "Etherscan" : "Sepolia Etherscan";
 
 let mode = "CCT";
 let ethbAddress = null;
 let latestEthbBalanceWei = 0n;
-let latestErcFeeWei = null;
+let latestSelfCustodialInfo = null; // {weiBalance, nonce, suggestedGasPriceWei}
 
 // showFeeUsd is purely informational (see api/price_oracle.go's
 // GET /price/external) - never changes what's actually charged, which
@@ -61,15 +82,18 @@ function ethToWei(ethStr) {
 
 function setMode(newMode) {
     mode = newMode;
+    document.getElementById("modeDirectBtn").classList.toggle("active", mode === "DIRECT");
     document.getElementById("modeCctBtn").classList.toggle("active", mode === "CCT");
-    document.getElementById("modeErcBtn").classList.toggle("active", mode === "ERC");
     document.getElementById("toAddress").placeholder =
         mode === "CCT" ? "Recipient CreditChain address" : "Recipient Ethereum address (0x...)";
     document.getElementById("toAddress").value = "";
-    document.getElementById("modeNote").innerText =
-        mode === "CCT"
-            ? `Instant internal move. Flat fee: ${weiToEth(ETHBCCTNetworkFeeWei.toString())} ETH (paid from your ETH balance - ETH pays its own fee, never CCT).`
-            : `Real Sepolia broadcast to any 0x address. Fee = live network gas price + 0.05% bridge fee, both in ETH - shown exactly on the review screen.`;
+    if (mode === "CCT") {
+        document.getElementById("modeNote").innerText =
+            `Instant internal move. Flat fee: ${weiToEth(ETHBCCTNetworkFeeWei.toString())} ETH (paid from your ETH balance - ETH pays its own fee, never CCT).`;
+    } else {
+        document.getElementById("modeNote").innerText =
+            `${ETH_NETWORK_LABEL.charAt(0).toUpperCase() + ETH_NETWORK_LABEL.slice(1)} broadcast signed entirely in this browser - your private key never leaves it. No CreditChain fee, only the real network gas cost.`;
+    }
     document.getElementById("formStatus").innerText = "";
 }
 
@@ -85,6 +109,26 @@ async function refreshBalance() {
     } catch (e) {
         console.error(e);
         document.getElementById("ethbBalance").innerText = "Couldn't load balance";
+    }
+
+    const account = hdEthAccount();
+    if (!account) {
+        document.getElementById("realEthAddress").innerText = "No self-custodial Ethereum account found - migrate your wallet first.";
+        document.getElementById("realEthBalance").innerText = "N/A";
+        document.getElementById("modeDirectBtn").disabled = true;
+        return;
+    }
+    document.getElementById("realEthAddress").innerText = account.address;
+
+    try {
+        const info = await apiGet(`/eth-selfcustody/balance?address=${account.address}`);
+        latestSelfCustodialInfo = info;
+        document.getElementById("realEthBalance").innerText = `${weiToEth(info.weiBalance)} ETH`;
+    } catch (e) {
+        console.error(e);
+        document.getElementById("realEthBalance").innerText = IS_MAINNET
+            ? "Couldn't load balance (Ethereum RPC unavailable)"
+            : "Couldn't load balance (Sepolia RPC unavailable)";
     }
 }
 
@@ -125,7 +169,7 @@ async function review() {
 
     const valueWei = ethToWei(amountStr);
 
-    document.getElementById("reviewNetwork").innerText = mode === "CCT" ? "CCT network" : "ERC network (Sepolia)";
+    document.getElementById("reviewNetwork").innerText = mode === "CCT" ? "CCT network" : "Direct";
     document.getElementById("reviewTo").innerText = to;
     document.getElementById("reviewAmount").innerText = `${weiToEth(valueWei.toString())} ETH`;
 
@@ -133,7 +177,30 @@ async function review() {
     const gasRow = document.getElementById("reviewGasRow");
     const warningEl = document.getElementById("reviewWarning");
 
-    if (mode === "CCT") {
+    if (mode === "DIRECT") {
+        if (!latestSelfCustodialInfo) {
+            statusEl.innerText = "Balance/gas info isn't loaded yet - wait a moment and try again.";
+            return;
+        }
+        const gasPriceWei = BigInt(latestSelfCustodialInfo.suggestedGasPriceWei);
+        const feeWei = GAS_LIMIT * gasPriceWei;
+        const totalWei = valueWei + feeWei;
+        const balanceWei = BigInt(latestSelfCustodialInfo.weiBalance);
+
+        document.getElementById("reviewFee").innerText = `~${weiToEth(feeWei.toString())} ETH (real network gas cost, no CreditChain fee)`;
+        gasRow.style.display = "none";
+        warningEl.innerHTML = IS_MAINNET
+            ? "This sends real ETH directly from your self-custodial account. This action is <strong>irreversible</strong> and cannot be undone or refunded by CreditChain."
+            : "This sends real Sepolia testnet ETH directly from your self-custodial account. This action is <strong>irreversible</strong> and cannot be undone or refunded by CreditChain.";
+        confirmBtn.disabled = totalWei > balanceWei;
+        document.getElementById("reviewStatus").innerText = confirmBtn.disabled
+            ? "Amount plus estimated fee exceeds your real ETH balance."
+            : "";
+        document.getElementById("reviewCard").dataset.feeWei = feeWei.toString();
+        document.getElementById("reviewCard").dataset.nonce = latestSelfCustodialInfo.nonce;
+        document.getElementById("reviewCard").dataset.gasPriceWei = gasPriceWei.toString();
+        showFeeUsd(feeWei);
+    } else {
         document.getElementById("reviewFee").innerText = `${weiToEth(ETHBCCTNetworkFeeWei.toString())} ETH`;
         gasRow.style.display = "none";
         warningEl.innerText = "This moves ETH instantly within CreditChain to the recipient's CreditChain address. The fee is paid in ETH, not CCT.";
@@ -144,31 +211,6 @@ async function review() {
             : "";
         document.getElementById("reviewCard").dataset.feeWei = ETHBCCTNetworkFeeWei.toString();
         showFeeUsd(ETHBCCTNetworkFeeWei);
-    } else {
-        statusEl.innerText = "Fetching live network fee...";
-        let feeWei;
-        try {
-            const quote = await apiGet(`/eth-bridge/withdraw-quote?address=${ethbWallet.address}&amountWei=${valueWei}`);
-            feeWei = BigInt(quote.feeWei);
-        } catch (e) {
-            statusEl.innerText = "Could not fetch the live fee quote: " + e.message;
-            return;
-        }
-        statusEl.innerText = "";
-        latestErcFeeWei = feeWei;
-
-        const totalWei = valueWei + feeWei;
-        document.getElementById("reviewFee").innerText = `${weiToEth(feeWei.toString())} ETH (live network gas + 0.05% bridge fee)`;
-        gasRow.style.display = "flex";
-        document.getElementById("reviewGas").innerText = "included in the fee above - reflects the current live Sepolia gas price";
-        warningEl.innerText =
-            "This broadcasts a real Sepolia testnet transaction. This action is irreversible and cannot be undone or refunded by CreditChain.";
-        confirmBtn.disabled = totalWei > latestEthbBalanceWei;
-        document.getElementById("reviewStatus").innerText = confirmBtn.disabled
-            ? "Amount plus the live fee exceeds your ETH balance."
-            : "";
-        document.getElementById("reviewCard").dataset.feeWei = feeWei.toString();
-        showFeeUsd(feeWei);
     }
 
     document.getElementById("reviewCard").dataset.mode = mode;
@@ -197,7 +239,42 @@ async function confirmSend() {
     statusEl.innerText = "Submitting...";
 
     try {
-        if (sendMode === "CCT") {
+        if (sendMode === "DIRECT") {
+            const account = hdEthAccount();
+            if (!account) {
+                statusEl.innerText = "No self-custodial Ethereum account available for this wallet.";
+                confirmBtn.disabled = false;
+                return;
+            }
+
+            statusEl.innerText = "Signing locally...";
+            // The only point account.privateKey is ever touched - it
+            // never leaves this function, mirrors send-eth.js exactly.
+            const { rawTxHex } = await EthTx.signLegacyTx(account.privateKey, {
+                nonce: parseInt(reviewCard.dataset.nonce, 10),
+                gasPriceWei: reviewCard.dataset.gasPriceWei,
+                gasLimit: Number(GAS_LIMIT),
+                to,
+                valueWei,
+                chainId: ETH_CHAIN_ID,
+            });
+
+            statusEl.innerText = "Broadcasting...";
+            const result = await apiPost("/eth-selfcustody/broadcast", { rawTxHex });
+
+            statusEl.innerHTML = `Sent - <a href="${ETH_EXPLORER_BASE}${result.txHash}" target="_blank" rel="noopener" style="color:var(--cc-accent-gold, #c9a227);">view on ${ETH_EXPLORER_NAME}</a><br>Returning to your wallet shortly...`;
+
+            let attempts = 0;
+            const poll = setInterval(async () => {
+                attempts++;
+                await refreshBalance();
+                if (attempts >= 6) clearInterval(poll);
+            }, 5000);
+
+            setTimeout(() => {
+                location.href = "outernet";
+            }, 6000);
+        } else if (sendMode === "CCT") {
             // amount is wei-scale and can exceed JS's 2^53 safe-integer
             // range - built as a raw JSON literal (not passed through
             // JSON.stringify on a Number) so the exact digit string
@@ -212,25 +289,11 @@ async function confirmSend() {
                 return;
             }
 
-            statusEl.innerText = `Sent (tx ${result.txId}) - takes effect once the next block confirms it.`;
+            statusEl.innerText = `Sent (tx ${result.txId}) - takes effect once the next block confirms it. Returning to your wallet...`;
             setTimeout(refreshBalance, 9000);
-        } else {
-            const result = await apiPostSigned("/eth-bridge/withdraw", { to, amountWei: valueWei });
-
-            if (result.status === "broadcast_failed") {
-                statusEl.innerText = `Broadcast failed: ${result.error}`;
-                confirmBtn.disabled = false;
-                return;
-            }
-
-            statusEl.innerHTML = `Sent - <a href="https://sepolia.etherscan.io/tx/${result.ethTxHash}" target="_blank" rel="noopener" style="color:var(--cc-accent-gold, #c9a227);">view on Sepolia Etherscan</a>`;
-
-            let attempts = 0;
-            const poll = setInterval(async () => {
-                attempts++;
-                await refreshBalance();
-                if (attempts >= 6) clearInterval(poll);
-            }, 5000);
+            setTimeout(() => {
+                location.href = "outernet";
+            }, 1500);
         }
     } catch (e) {
         statusEl.innerText = "Send failed: " + e.message;
@@ -238,7 +301,13 @@ async function confirmSend() {
     }
 }
 
-setMode("CCT");
+// Entry pages can deep-link a starting mode, e.g. asset.html's "ETH"
+// Send button links here with ?mode=DIRECT so a self-custodial-first
+// user lands on that mode instead of always defaulting to CCT network.
+(function initialMode() {
+    const requested = new URLSearchParams(window.location.search).get("mode");
+    setMode(requested === "DIRECT" ? requested : "CCT");
+})();
 refreshBalance();
 
 // --- QR scanner (adapted from send.js/send-eth.js - validity check

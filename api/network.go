@@ -13,8 +13,8 @@ type NetworkInfo struct {
 	ActiveValidators  int    `json:"activeValidators"`
 	TPS               int    `json:"tps"`
 	GasPrice          uint64 `json:"gasPrice"`
-	TotalSupply       uint64 `json:"totalSupply"`
-	CirculatingSupply uint64 `json:"circulatingSupply"`
+	TotalSupply       string `json:"totalSupply"`
+	CirculatingSupply string `json:"circulatingSupply"`
 	Status            string `json:"status"`
 }
 
@@ -32,8 +32,8 @@ func HandleNetwork(
 		ActiveValidators:  countActiveValidators(),
 		TPS:               0, // TODO: calculate from recent blocks
 		GasPrice:          1, // TODO: dynamic gas engine
-		TotalSupply:       tokenStore.Token.TotalSupply,
-		CirculatingSupply: tokenStore.Token.TotalSupply,
+		TotalSupply:       cctStore.TotalSupply,
+		CirculatingSupply: cctStore.TotalSupply,
 		Status:            "LIVE",
 	}
 

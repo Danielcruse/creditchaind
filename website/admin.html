@@ -2,9 +2,9 @@
 <html>
 <head>
     <title>Admin - Treasury</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
     <style>
         .explorer-search{
             display:flex;
@@ -43,7 +43,8 @@
     </style>
 </head>
 <body>
-<script src="js/device-lock.js"></script>
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <h1>Admin - Treasury</h1>
 
@@ -54,6 +55,17 @@
     below signs with that wallet's own key. This page carries no authority of its own - every check happens
     server-side, independently, on every node.
 </p>
+
+<div class="card">
+    <h2>Vault Relayer Keys</h2>
+    <p style="opacity:0.7;font-size:12px;">
+        The ETH/USDC vault release relay's key is deliberately NOT set here - it's entered on its own page and
+        stays in that browser's localStorage only, never sent to this server. See that page for why.
+    </p>
+    <a href="admin-vault-keys"><button>Open Vault Relayer Keys</button></a>
+</div>
+
+<br>
 
 <div class="card" id="walletCard">
     <h2>Admin Wallet</h2>
@@ -74,6 +86,47 @@
     <div id="multisigProposalsList" class="explorer-empty">No pending proposals.</div>
 </div>
 
+<div class="card" id="governanceParamsCard">
+    <h2>Governance Parameters</h2>
+    <p style="opacity:0.7;font-size:12px;">
+        Directly overrides one allowlisted protocol parameter (see api/admin_params.go). If multisig is
+        configured above, submitting here creates a proposal that still needs approvals to reach the threshold
+        before it takes effect - it does not act immediately. <code>EthUsdCentsPerEth</code>/<code>BtcUsdCentsPerBtc</code>
+        are the two values that activate the $10,000 per-account BTCB+ETHB holdings cap (0 = cap not enforced yet).
+        For those two, the value field auto-fills with the current live market price (via the site's own price
+        oracle) every time it refreshes - there's no server-held key able to submit this for you automatically
+        (this network's admin signers are deliberately never stored server-side, same as every user's own
+        wallet), so keeping the rate fresh is just: open this page, click Submit, get one more signer to
+        approve.
+    </p>
+    <div class="explorer-search">
+        <select id="govParamKeySelect" onchange="onGovParamKeyChange()">
+            <option value="EthUsdCentsPerEth">EthUsdCentsPerEth (USD cents per 1 ETH)</option>
+            <option value="BtcUsdCentsPerBtc">BtcUsdCentsPerBtc (USD cents per 1 BTC)</option>
+            <option value="CctUsdCents">CctUsdCents (USD cents per 1 whole CCT - values non-CCT platform-fee burns for the block reward, see api/burn_value_oracle.go. No live market for CCT, so this is NOT auto-filled - enter deliberately.)</option>
+            <option value="AccountHoldingsCapUsdCents">AccountHoldingsCapUsdCents (default 1000000 = $10,000)</option>
+            <option value="UnbondingPeriodSeconds">UnbondingPeriodSeconds</option>
+            <option value="DormancyPeriodSeconds">DormancyPeriodSeconds</option>
+            <option value="ModeratorRegisterFeeCCT">ModeratorRegisterFeeCCT (default 10 CCT)</option>
+            <option value="ModeratorStakeRequirementCCT">ModeratorStakeRequirementCCT (default 200 CCT)</option>
+            <option value="EthCcc1TransferFeeUsdCents">EthCcc1TransferFeeUsdCents (USD cents per ETH_CCC1 transfer, default 300 = $3.00)</option>
+            <option value="UsdcCcc1TransferFeeUsdCents">UsdcCcc1TransferFeeUsdCents (USD cents per USDC_CCC1 transfer, default 200 = $2.00)</option>
+            <option value="BtcCcc1TransferFeeUsdCents">BtcCcc1TransferFeeUsdCents (USD cents per BTC_CCC1 transfer, default 150 = $1.50)</option>
+            <option value="VaultReleaseGasPriceWei">VaultReleaseGasPriceWei (wei per gas, feeds the ETH/USDC release fee - default 20000000000 = 20 Gwei, NOT auto-updated from real gas prices)</option>
+            <option value="VaultEthConfirmations">VaultEthConfirmations (blocks before a vault ETH/USDC deposit is attested, default 12)</option>
+            <option value="VaultBtcConfirmations">VaultBtcConfirmations (blocks before a vault BTC deposit is attested, default 6)</option>
+            <option value="VaultBtcReleaseFeeRateSatsPerVByte">VaultBtcReleaseFeeRateSatsPerVByte (sats/vByte for BTC vault releases, default 10)</option>
+        </select>
+        <input type="number" id="govParamValueInput" placeholder="New value" min="0">
+        <button onclick="setGovernanceParam()">Submit</button>
+    </div>
+    <p style="opacity:0.6;font-size:11px;margin:6px 0 0;">
+        Current values: <span id="govParamCurrentValues">-</span>
+    </p>
+    <p id="govParamStaleness" style="font-size:12px;margin:4px 0 0;"></p>
+    <p id="govParamStatus"></p>
+</div>
+
 <br>
 
 <div class="card" id="tokenCard">
@@ -88,6 +141,36 @@
         <button onclick="setAdminToken()">Unlock</button>
     </div>
     <p id="adminTokenStatus"></p>
+</div>
+
+<br>
+
+<div class="card" id="awsCredentialsCard">
+    <h2>ETH + BTC Custodial Signers - AWS Credentials</h2>
+    <p style="opacity:0.7;font-size:12px;">
+        Sets the AWS IAM credentials the ETH and BTC custodial KMS signers both need to move off their
+        insecure in-memory fallback signers (see <code>api/eth_signer.go</code> and
+        <code>api/vault_btc_signer.go</code>) - one credential activates both, since they use the identical
+        secp256k1 KMS key type. Required before any real ETH or BTC vault custody can run production-grade
+        on mainnet. This is <strong>write-only</strong>: nothing on this site, including this page,
+        ever reads these values back. Saving here only writes the credentials to a restricted file on the
+        server - it does <strong>not</strong> take effect until the service is restarted, since a running
+        process can't pick up new environment variables on its own. Make sure the IAM policy attached to
+        this credential allows <code>kms:CreateKey</code>, <code>kms:GetPublicKey</code>, and
+        <code>kms:Sign</code> broadly (not scoped to one existing key ARN only) - the BTC signer creates its
+        own fresh KMS key the first time it's used, the same way the ETH signer already did.
+    </p>
+    <div class="explorer-search">
+        <input type="text" id="awsAccessKeyIdInput" placeholder="AWS Access Key ID" autocomplete="off">
+    </div>
+    <div class="explorer-search">
+        <input type="password" id="awsSecretAccessKeyInput" placeholder="AWS Secret Access Key" autocomplete="off">
+    </div>
+    <div class="explorer-search">
+        <input type="text" id="awsRegionInput" placeholder="AWS Region (e.g. us-east-1)" autocomplete="off">
+        <button onclick="saveAWSCredentials()">Save to Server</button>
+    </div>
+    <p id="awsCredentialsStatus"></p>
 </div>
 
 <br>
@@ -139,6 +222,32 @@
 
 <br>
 
+<div class="card" id="bankAccountsCard">
+    <h2>Preset Bank Accounts (Buy CCT)</h2>
+    <p style="opacity:0.75;font-size:13px;">
+        Configure once per currency - buy-cct.html shows these details to every bank-transfer buyer immediately
+        upon request, no per-request action needed here. Submitting a currency that's already configured fully
+        replaces its old details (not a partial edit) - re-enter every field, not just the one changing.
+    </p>
+    <div id="bankAccountsList" class="explorer-empty">Loading...</div>
+    <div class="explorer-search" style="flex-wrap:wrap;margin-top:10px;">
+        <input type="text" id="bankAccountCurrencyInput" placeholder="Currency (e.g. USD, NGN, EUR)" style="max-width:140px;">
+        <input type="text" id="bankAccountNameInput" placeholder="Account name" style="flex:1;min-width:180px;">
+    </div>
+    <div class="explorer-search" style="flex-wrap:wrap;">
+        <input type="text" id="bankAccountNumberInput" placeholder="Account number / IBAN" style="flex:1;min-width:180px;">
+        <input type="text" id="bankAccountBankNameInput" placeholder="Bank name" style="flex:1;min-width:180px;">
+    </div>
+    <div class="explorer-search" style="flex-wrap:wrap;">
+        <input type="text" id="bankAccountRoutingInput" placeholder="Routing code / SWIFT / sort code (optional)" style="flex:1;min-width:180px;">
+    </div>
+    <textarea id="bankAccountNotesInput" placeholder="Extra notes shown to the buyer (optional)" rows="2" style="width:100%;box-sizing:border-box;margin-bottom:8px;"></textarea>
+    <button onclick="submitBankAccount()">Save Bank Account</button>
+    <p id="bankAccountStatus"></p>
+</div>
+
+<br>
+
 <div class="card">
     <h2>Announcements</h2>
     <p style="opacity:0.75;font-size:13px;">
@@ -162,7 +271,17 @@
         signature, same as everything else on this page. Foundation Treasury is not one of these - it's managed
         above, via its own real address.
     </p>
-    <div class="explorer-search">
+    <p style="opacity:0.75;font-size:13px;">
+        <strong>These pools (and the Foundation Treasury address above) only have a real balance once the
+        one-time genesis allocation below has been run.</strong> It mints 1,000,000,000 CCT total in a single
+        action - 400M to Validator Reward, 250M directly to the Foundation Treasury address currently configured
+        above, 150M to Ecosystem Development, 100M to Governance Treasury, 100M to Community Incentives. This can
+        only ever fire once (a second attempt is a safe no-op) - make sure the Foundation Treasury address above
+        is set correctly BEFORE running this, since that's where its 250M lands.
+    </p>
+    <button onclick="allocateGenesisPools()">Run One-Time Genesis Allocation</button>
+    <p id="genesisPoolAllocateStatus"></p>
+    <div class="explorer-search" style="margin-top:14px;">
         <select id="genesisPoolSelect">
             <option value="VALIDATOR_REWARD">Validator Reward</option>
             <option value="ECOSYSTEM_DEV">Ecosystem Development</option>
@@ -178,17 +297,161 @@
 
 <br>
 
+<div class="card" id="adminMintTestnetCard" style="display:none;">
+    <h2>Testnet CCT Faucet (Admin)</h2>
+    <p style="opacity:0.75;font-size:13px;">
+        Mints new testnet CCT directly to any address - the operator-only counterpart to the public 100-CCT
+        one-time faucet, for seeding a wallet with enough to stake/register as a validator. Testnet only: this
+        card is hidden entirely while Mainnet is selected, and the button itself refuses to submit if the network
+        switches underneath you.
+    </p>
+    <div class="explorer-search">
+        <input type="text" id="adminMintToInput" placeholder="Destination address">
+        <input type="number" id="adminMintAmountInput" placeholder="Amount (CCT)" min="1">
+        <button onclick="adminMintTestnetCct()">Mint</button>
+    </div>
+    <p id="adminMintStatus"></p>
+</div>
+
+<br>
+
+<div class="card" id="adminTransferCard">
+    <h2>Balance Recovery</h2>
+    <p style="opacity:0.75;font-size:13px;">
+        Moves a balance an address already holds to a different address, without needing that address's own
+        signature - for exactly one situation: funds landed at the wrong address due to a bug (e.g. an internal
+        transfer credited to an unresolved address instead of the recipient's real one) and need a one-time
+        correction. This can only move value that's already there - it never creates new supply. Gated by the
+        admin wallet's signature, same as everything else on this page.
+    </p>
+    <div class="explorer-search" style="flex-wrap:wrap;">
+        <input type="text" id="adminTransferFromInput" placeholder="From address (where it's stuck)" style="flex:1;min-width:220px;">
+        <input type="text" id="adminTransferToInput" placeholder="To address (correct destination)" style="flex:1;min-width:220px;">
+    </div>
+    <div class="explorer-search" style="margin-top:8px;">
+        <input type="text" id="adminTransferSymbolInput" placeholder="Symbol (e.g. ETH_CCC1, CCT)" style="max-width:160px;">
+        <input type="text" id="adminTransferAmountInput" placeholder="Amount (smallest unit)">
+        <button onclick="submitAdminTransfer()">Move Balance</button>
+    </div>
+    <p id="adminTransferStatus"></p>
+</div>
+
+<br>
+
+<div class="card" id="normalizeCcc1BalanceCard">
+    <h2>Normalize Un-Normalized ETH_CCC1/USDC_CCC1 Balance</h2>
+    <p style="opacity:0.75;font-size:13px;">
+        One-off migration tool for exactly one situation: a balance minted under a mixed-case (checksummed)
+        address key by a bug that's since been fixed - permanently invisible to the normal balance endpoint
+        (which always looks up the lowercase-normalized form), even though the value is genuinely on the ledger.
+        Enter the address exactly as it's actually stored (the wrong-case form) - this reads the raw balance at
+        that exact key and moves it to that same address's properly normalized (lowercase) key. Safe to run
+        against an address that's already normalized or already empty - it just no-ops.
+    </p>
+    <div class="explorer-search" style="flex-wrap:wrap;">
+        <input type="text" id="normalizeCcc1LegacyAddressInput" placeholder="Legacy (wrong-case) address, exactly as stored" style="flex:1;min-width:280px;">
+        <input type="text" id="normalizeCcc1SymbolInput" placeholder="ETH_CCC1 or USDC_CCC1" style="max-width:160px;">
+    </div>
+    <button onclick="submitNormalizeCcc1Balance()">Normalize</button>
+    <p id="normalizeCcc1Status"></p>
+</div>
+
+<br>
+
+<div class="card" id="refundStuckVaultBurnCard">
+    <h2>Refund a Stuck Vault Release Burn</h2>
+    <p style="opacity:0.75;font-size:13px;">
+        One-off remediation for a vault release approval that burned a user's ETH_CCC1/USDC_CCC1 balance but can
+        never actually deliver anything - either a permanently stuck bridge-validator signature, or a release
+        amount the flat gas fee zeroed out entirely. Only works on an approval that is still PENDING (never
+        actually executed on-chain, so the real ETH/USDC never left the vault) - refuses outright once RELEASED.
+        Refunds the full original burned amount (release + fee) back to the burner's own real self-custodial
+        address, and marks the approval REFUNDED so it can never be signed, relayed, or refunded again.
+    </p>
+    <div class="explorer-search" style="flex-wrap:wrap;">
+        <input type="text" id="refundStuckVaultBurnTxIdInput" placeholder="Burn transaction ID (approval ID)" style="flex:1;min-width:320px;">
+    </div>
+    <button onclick="submitRefundStuckVaultBurn()">Refund</button>
+    <p id="refundStuckVaultBurnStatus"></p>
+</div>
+
+<br>
+
+<div class="card" id="sweepSigningKeyCard">
+    <h2>Sweep Vault Signing Key ETH → Relayer</h2>
+    <p style="opacity:0.75;font-size:13px;">
+        One-off fix for exactly one mistake: real ETH accidentally sent to the vault release-approval signing
+        key's address (it only ever produces signatures, never pays gas, so ETH sent there is otherwise stuck)
+        instead of the relayer's address. Moves everything above the gas cost of this sweep itself to the
+        currently configured relayer. Safe to click even if there's nothing to sweep - it just reports so.
+    </p>
+    <button onclick="sweepSigningKeyEth()">Sweep Now</button>
+    <p id="sweepSigningKeyStatus"></p>
+</div>
+
+<br>
+
+<div class="card" id="smtpConfigCard">
+    <h2>Outbound Email (SMTP)</h2>
+    <p style="opacity:0.75;font-size:13px;">
+        Powers payment-order confirmation emails and other notifications sent from this node. Saved here directly
+        on the server (not sent anywhere else) - separate from the SMTP_HOST/SMTP_USERNAME/etc. environment
+        variables, which take priority over this if both are set. For Gmail, use an
+        <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">App Password</a>,
+        never your real account password.
+    </p>
+    <p id="smtpStatusDisplay" style="opacity:0.75;font-size:13px;"></p>
+    <label>SMTP Host <input type="text" id="smtpHostInput" placeholder="smtp.gmail.com"></label><br><br>
+    <label>SMTP Port <input type="text" id="smtpPortInput" placeholder="587"></label><br><br>
+    <label>Username <input type="text" id="smtpUsernameInput" placeholder="you@gmail.com"></label><br><br>
+    <label>Password <input type="password" id="smtpPasswordInput" placeholder="app password"></label><br><br>
+    <label>From Address <input type="text" id="smtpFromInput" placeholder="you@gmail.com"></label><br><br>
+    <label>Notification Recipient <input type="text" id="smtpNotifyRecipientInput" placeholder="admin@yourdomain.com"></label><br>
+    <p style="opacity:0.6;font-size:12px;">Where alerts about new payment orders, hub applications, etc. get sent - separate from the "From" address above.</p>
+    <button onclick="saveSmtpConfig()">Save</button>
+    <p id="smtpConfigStatus"></p>
+</div>
+
+<br>
+
+<div class="card" id="tokenomicsMigrationCard">
+    <h2>CCT Decimal Migration (one-time)</h2>
+    <p style="opacity:0.75;font-size:13px;">
+        Converts every CCT balance from the old whole-unit ledger into the new 18-decimal ledger. This is a
+        one-way, whole-network mutation - it can only ever run once (a second attempt is a safe no-op). Every
+        CCT balance will read as 0 on this network until this is run.
+    </p>
+    <button onclick="runTokenomicsDecimalMigration()">Run CCT Decimal Migration</button>
+    <p id="tokenomicsMigrationStatus"></p>
+</div>
+
+<br>
+
+<div class="card" id="validatorJoinRequestsCard">
+    <h2>Validator Join Requests</h2>
+    <p style="opacity:0.75;font-size:13px;">
+        Submitted from the Validator page's "Request to Join" form (website/validator.html). Approving here does
+        NOT hand out a <code>NETWORK_SECRET</code> or peer anyone automatically - that stays a manual, out-of-band
+        step (never transmitted through any system that logs or stores it). This just tracks who's asked, so
+        "Mark Handled" once you've actually reached out to them off-platform.
+    </p>
+    <div id="validatorJoinRequestsList" class="explorer-empty">Loading...</div>
+</div>
+
+<br>
+
 <p style="opacity:0.6;font-size:12px;">
-    More admin sections (validators, governance, website, system) are coming in a later phase - this page is
-    intentionally scoped to Treasury/Sale/Genesis-Pool controls only for now.
+    More admin sections (governance, website, system) are coming in a later phase - this page is
+    intentionally scoped to Treasury/Sale/Genesis-Pool/Validator controls only for now.
 </p>
 
 <p style="margin-top:20px;">
-    <a href="outernet.html">Back to OUTERNET</a>
+    <a href="outernet">Back to OUTERNET</a>
 </p>
 
-<script src="js/api.js"></script>
-<script src="js/admin.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/admin.js?v=cctusd0825"></script>
 
 </body>
 </html>

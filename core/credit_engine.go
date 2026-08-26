@@ -1,9 +1,13 @@
 package core
 
 // CreditEngine ties loan lifecycle events to the two things they
-// actually affect: loan-history counters (Profiles, display-only)
-// and the canonical Wallet.Reputation (the real trust score, applied
-// directly here rather than through a second scoring system).
+// actually affect: loan-history counters (Profiles, display-only) and
+// Wallet's trust score, applied directly here rather than through a
+// second scoring system. Pre-TrustDimensionsCutoverUnixSeconds, that
+// means the flat Wallet.Reputation directly; post-cutover, it means a
+// specific Wallet.Trust dimension (see trust.go), with Reputation kept
+// as a live-synced mirror - see reputation.go's IncreaseWalletTrust/
+// DecreaseWalletTrust doc comments for the full split.
 type CreditEngine struct {
 	Profiles *ProfileStore
 	Wallets  *WalletStore
@@ -77,16 +81,30 @@ func shortfallReputationDelta(shortfall, owed uint64) uint64 {
 // IncreaseWalletReputation. The caller (api/apply.go) mints it; core
 // only computes whether a new tier was genuinely reached.
 
-func (ce *CreditEngine) FundLoan(loan *Loan, lender string) uint64 {
+// dimensioned in each method below is the caller's own
+// TrustDimensionsCutoverUnixSeconds check (api/apply.go) - core has no
+// business importing api's cutover schedule (matches this codebase's
+// existing convention: every *CutoverUnixSeconds constant lives in
+// api/apply.go, core functions that need cutover-gated behavior take
+// the already-decided bool from their caller instead), so the decision
+// is made once by whichever api/apply.go call site invokes these and
+// threaded straight through.
+func (ce *CreditEngine) FundLoan(loan *Loan, lender string, dimensioned bool) uint64 {
 	FundLoan(loan, lender)
 
 	profile := ce.Profiles.Get(lender)
 	profile.RecordFunding(loan.Amount)
 
+	// Contribution, not Repayment - a lender isn't demonstrating their
+	// own repayment reliability, they're providing liquidity, which is
+	// an ecosystem contribution (see trust.go's mapping doc comment).
+	if dimensioned {
+		return IncreaseWalletTrust(ce.Wallets.Get(lender), DimensionContribution, ReputationDeltaLoanFunded)
+	}
 	return IncreaseWalletReputation(ce.Wallets.Get(lender), ReputationDeltaLoanFunded)
 }
 
-func (ce *CreditEngine) RepayLoan(loan *Loan) uint64 {
+func (ce *CreditEngine) RepayLoan(loan *Loan, dimensioned bool) uint64 {
 	RepayLoan(loan)
 
 	profile := ce.Profiles.Get(loan.Borrower)
@@ -94,6 +112,9 @@ func (ce *CreditEngine) RepayLoan(loan *Loan) uint64 {
 
 	// TODO: once Loan.DueAt/GracePeriod are wired in, branch here on
 	// on-time vs late repayment (+10 vs +3). Treated as on-time until then.
+	if dimensioned {
+		return IncreaseWalletTrust(ce.Wallets.Get(loan.Borrower), DimensionRepayment, ReputationDeltaLoanRepaidOnTime)
+	}
 	return IncreaseWalletReputation(ce.Wallets.Get(loan.Borrower), ReputationDeltaLoanRepaidOnTime)
 }
 
@@ -104,7 +125,7 @@ func (ce *CreditEngine) RepayLoan(loan *Loan) uint64 {
 // applied (0 if shortfall was 0) so the caller (api/apply.go's
 // processLoanDefaults) can mirror the identical magnitude into the
 // lender's reputation gain and skip recording a zero-magnitude event.
-func (ce *CreditEngine) DefaultLoan(loan *Loan, shortfall, owed uint64) uint64 {
+func (ce *CreditEngine) DefaultLoan(loan *Loan, shortfall, owed uint64, dimensioned bool) uint64 {
 	DefaultLoan(loan)
 
 	profile := ce.Profiles.Get(loan.Borrower)
@@ -112,7 +133,11 @@ func (ce *CreditEngine) DefaultLoan(loan *Loan, shortfall, owed uint64) uint64 {
 
 	delta := shortfallReputationDelta(shortfall, owed)
 	if delta > 0 {
-		DecreaseWalletReputation(ce.Wallets.Get(loan.Borrower), delta)
+		if dimensioned {
+			DecreaseWalletTrust(ce.Wallets.Get(loan.Borrower), DimensionRepayment, delta)
+		} else {
+			DecreaseWalletReputation(ce.Wallets.Get(loan.Borrower), delta)
+		}
 	}
 	return delta
 }

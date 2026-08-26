@@ -23,6 +23,35 @@ async function loadNetworkStatus() {
     }
 }
 
+// checkBtcNetworkMismatchBanner surfaces the "your cached BTC address
+// is for the other network" warning right on the dashboard, the first
+// page a user sees after switching networks or logging in - rather
+// than only discovering it after already navigating into
+// asset.html/send-bridged-btc.html and finding BTC blocked there. Only
+// legacy (pre-dual-network-fix) wallets - which cached a single BTC
+// address for whichever network was active at derivation time - can
+// ever be mismatched; see api.js's getHdAccounts doc comment. Mirrors
+// asset.js's own btcAddressMatchesNetwork (kept as its own copy per
+// the same page-independence convention dashSmallestToDecimal above
+// follows).
+function btcAddressMatchesNetwork(address) {
+    if (!address) return true;
+    const expectedPrefix = window.CC_NETWORK === "mainnet" ? "bc1" : "tb1";
+    return address.startsWith(expectedPrefix);
+}
+
+function checkBtcNetworkMismatchBanner() {
+    if (!wallet) return;
+    const accounts = getHdAccounts();
+    const btcAddress = accounts && accounts.btc ? accounts.btc.address : null;
+    if (!btcAddress || btcAddressMatchesNetwork(btcAddress)) return;
+
+    const networkLabel = window.CC_NETWORK === "mainnet" ? "Mainnet" : "Testnet";
+    document.getElementById("btcNetworkMismatchBannerText").innerText =
+        ` It was derived for the other network, so it won't work for Bitcoin on ${networkLabel}.`;
+    document.getElementById("btcNetworkMismatchBanner").style.display = "block";
+}
+
 // loadWallet updates each field independently (not one big all-or-
 // nothing try/catch) - a single failed request (a slow/dropped
 // derived-address computation, one endpoint timing out) used to leave
@@ -35,31 +64,67 @@ async function loadNetworkStatus() {
 // figure). The Assets card itself is populated by assets.js's own
 // loadAssets() (same full per-token list as assets.html, not a
 // summary) - see the #assetsList container and script tag.
+// dashSmallestToDecimal is a local copy of vault.js's smallestToDecimal -
+// each page keeps its own tiny copy rather than relying on load order
+// (see api.js's getHdAccounts doc comment for the same convention
+// applied to a different helper).
+function dashSmallestToDecimal(smallestStr, decimals) {
+    const n = BigInt(smallestStr || "0");
+    const scale = 10n ** BigInt(decimals);
+    const whole = n / scale;
+    const frac = (n % scale).toString().padStart(decimals, "0").replace(/0+$/, "") || "0";
+    return `${whole}.${frac}`;
+}
+
+// loadWallet shows a real cross-asset total - CCT, YENE, and the three
+// vault-backed CCC1 balances (ETH_CCC1/USDC_CCC1/BTC_CCC1), converted to
+// the user's selected display currency via currency.js's fiatValue.
+// Deliberately does NOT include the real self-custodial ETH/USDC/BTCB
+// balances sitting at a wallet's receive-only address - those aren't
+// spendable/sendable within CreditChain until vaulted (see asset.js's
+// pending-vault banner), so counting them here would overstate what a
+// user can actually do with their balance and double up against the
+// on-page "received, not yet vaulted" figure asset.html already shows.
+// Each leg runs independently (Promise.allSettled, not Promise.all) so
+// one slow/failed leg (e.g. no live price data yet) can't blank out
+// every other asset's contribution - a partial total is still an
+// honest total, just of what could actually be priced right now.
 async function loadWallet() {
     if (!wallet) return;
 
     try {
         const tokenBalance = await apiGet(`/token/balance?address=${wallet.address}`);
-        document.getElementById("balance").innerText = `${tokenBalance.balance} CCT`;
-    } catch (e) {
-        console.error(e);
-    }
-}
+        const cctDisplay = cctFromSmallest(tokenBalance.balance);
 
-// Dashboard preview only - last 5 blocks/transactions, never the
-// whole chain. Anything beyond that belongs on the real explorer
-// page (explorer.html), which has proper pagination and search.
-async function loadExplorer() {
-    try {
-        const data = await apiGet("/explorer?blocksLimit=5&txLimit=5");
+        const legPromises = [
+            fiatValue("CCT", cctDisplay),
+            fetchTokenBalance(wallet, "YENE").then((b) => fiatValue("YENE", b.balance)),
+            fetchCcc1Balance(wallet, "ETH").then((r) => fiatValue("ETH", dashSmallestToDecimal(r.balance, VAULT_CHAIN_INFO.ETH.decimals))),
+            fetchCcc1Balance(wallet, "USDC").then((r) => fiatValue("USDC", dashSmallestToDecimal(r.balance, VAULT_CHAIN_INFO.USDC.decimals))),
+            fetchCcc1Balance(wallet, "BTC").then((r) => fiatValue("BTC", dashSmallestToDecimal(r.balance, VAULT_CHAIN_INFO.BTC.decimals))),
+        ];
 
-        const blocks = data.blocks || [];
-        document.getElementById("blocks").innerText =
-            blocks.length === 0
-                ? "No blocks yet."
-                : blocks
-                      .map((b) => `#${b.Index}  ${b.Hash}  (${(b.Transactions || []).length} tx)`)
-                      .join("\n");
+        const legs = await Promise.allSettled(legPromises);
+
+        let total = 0;
+        let anyPriced = false;
+        for (const leg of legs) {
+            if (leg.status === "fulfilled" && leg.value !== null) {
+                total += leg.value;
+                anyPriced = true;
+            }
+        }
+
+        if (anyPriced) {
+            const currency = getDisplayCurrency();
+            document.getElementById("balance").innerText =
+                `${currencySymbolFor(currency)}${total.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
+        } else {
+            // No live price data available for anything yet - fall back
+            // to the raw CCT figure rather than showing a blank/zero
+            // total, honest about what's actually known right now.
+            document.getElementById("balance").innerText = `${cctDisplay} CCT`;
+        }
     } catch (e) {
         console.error(e);
     }
@@ -135,7 +200,7 @@ async function loadMyTransactions() {
         div.innerHTML = combined
             .map((tx) => {
                 const other = mine(tx.From) ? tx.To : tx.From;
-                const statusColor = tx._status === "confirmed" ? "#00ff95" : "#ffb020";
+                const statusColor = tx._status === "confirmed" ? "#0f9d58" : "#ffb020";
                 // tx.summary (only present on confirmed TransactionViews,
                 // see explorer_summary.go) already describes system-only
                 // transactions (faucet claims, block rewards) correctly -
@@ -143,7 +208,7 @@ async function loadMyTransactions() {
                 // missing (pending mempool entries, which are raw
                 // core.Transaction with no summary yet).
                 const line = tx.summary
-                    ? tx.summary
+                    ? escapeHtml(tx.summary)
                     : `${mine(tx.From) ? "Sent" : "Received"} ${tx.Amount} ${txSymbol(tx)}${other ? ` ${mine(tx.From) ? "to" : "from"} ${formatAddress(other)}` : ""}`;
                 return `
                     <p style="cursor:pointer;margin:4px 0;" onclick="openTxDetail('${tx.ID}')">
@@ -167,10 +232,10 @@ function openTxDetail(id) {
     const direction = mine(tx.From) ? "Sent" : "Received";
     const other = mine(tx.From) ? tx.To : tx.From;
     const statusLabel = tx._status === "confirmed" ? "Delivered" : "Pending";
-    const statusColor = tx._status === "confirmed" ? "#00ff95" : "#ffb020";
+    const statusColor = tx._status === "confirmed" ? "#0f9d58" : "#ffb020";
 
     document.getElementById("txDetailBody").innerHTML = `
-        <p><strong>${tx.summary || `${direction} ${tx.Amount} ${txSymbol(tx)}`}</strong></p>
+        <p><strong>${tx.summary ? escapeHtml(tx.summary) : `${direction} ${tx.Amount} ${txSymbol(tx)}`}</strong></p>
         <p>To/From: <span style="word-break:break-all;">${other ? formatAddress(other) : "(system - no counterparty address)"}</span></p>
         <p>Network: CreditChain (${txSymbol(tx)})</p>
         <p>Status: <span style="color:${statusColor};">${statusLabel}</span></p>
@@ -234,7 +299,7 @@ async function loadNotifications() {
             .map((n) => {
                 const icon = NOTIFICATION_ICONS[n.Type] || "\u{1F514}";
                 const time = n.CreatedAt ? new Date(n.CreatedAt * 1000).toLocaleTimeString() : "";
-                return `<p>${icon} ${n.Message} <span style="opacity:0.6;font-size:11px;">${time}</span></p>`;
+                return `<p>${icon} ${escapeHtml(n.Message)} <span style="opacity:0.6;font-size:11px;">${time}</span></p>`;
             })
             .join("");
     } catch (e) {
@@ -257,15 +322,76 @@ async function pingLogin() {
     }
 }
 
-function showReceiveAddress() {
+// Receive is a two-step flow: pick which token you want to receive,
+// then show ONLY that token's CreditChain-network address+QR - never
+// a per-network chooser here (that lives on each token's own asset
+// page, see asset.js's toggleReceivePanel), so this landing-page
+// button can't be mistaken for "send me real BTC/ETH here".
+const RECEIVE_TOKEN_LABELS = {
+    CCT: "CCT",
+    ETHB: "ETH (bridged)",
+    BTCB: "BTC (bridged)",
+    USDCTEST: "USDC (testnet)",
+    YENE: "YEN-e",
+};
+
+function openReceivePicker() {
     if (!wallet) return;
+    document.getElementById("receivePickerOverlay").style.display = "flex";
+}
+
+// On mainnet, "ETH"/"USDC" are the unified, self-custodial pages
+// (asset.html?symbol=ETH/USDC) - free, real chain balance, key never
+// leaves the browser. On testnet those symbols don't exist as unified
+// rows (see assets.js's isMainnet branch), so this keeps routing to
+// the ETHB/USDCTEST pages exactly as before - those also resolve to
+// the wallet's own self-custodial address now (see api.js's
+// getEthbAddress), not a CreditChain-held one.
+function receiveEthPicked() {
+    closeReceivePicker();
+    location.href = window.CC_NETWORK === "mainnet" ? "asset?symbol=ETH" : "asset?symbol=ETHB";
+}
+
+function receiveUsdcPicked() {
+    if (window.CC_NETWORK === "mainnet") {
+        closeReceivePicker();
+        location.href = "asset?symbol=USDC";
+        return;
+    }
+    selectReceiveToken("USDCTEST");
+}
+
+function closeReceivePicker() {
+    document.getElementById("receivePickerOverlay").style.display = "none";
+}
+
+function backToReceivePicker() {
+    closeQrModal();
+    openReceivePicker();
+}
+
+// ETHB's address is the wallet's own real, self-custodial Sepolia
+// 0x-address (see api.js's getEthbAddress - CreditChain never holds
+// this key) - a genuinely different format from every other symbol
+// here, which resolve to a CreditChain-network sub-address
+// ("cc"-prefixed, 40 hex). Formatting an 0x-address with a "cc" prefix
+// would misrepresent it as a CreditChain address, so this only
+// applies formatAddress's "cc" convention to the symbols it's
+// actually meant for.
+async function selectReceiveToken(symbol) {
+    if (!wallet) return;
+    closeReceivePicker();
+
+    const rawAddress = await balanceAddressForSymbol(wallet, symbol);
+    const displayAddress = symbol === "ETHB" ? rawAddress : formatAddress(rawAddress);
 
     if (navigator.clipboard) {
-        navigator.clipboard.writeText(formatAddress(wallet.address)).catch(() => {});
+        navigator.clipboard.writeText(displayAddress).catch(() => {});
     }
 
-    document.getElementById("qrAddressText").innerText = formatAddress(wallet.address);
-    QR.renderToCanvas(document.getElementById("qrCanvas"), formatAddress(wallet.address), 6);
+    document.getElementById("qrModalTitle").innerText = `Your ${RECEIVE_TOKEN_LABELS[symbol] || symbol} Address`;
+    document.getElementById("qrAddressText").innerText = displayAddress;
+    QR.renderToCanvas(document.getElementById("qrCanvas"), displayAddress, 6);
     document.getElementById("qrModalOverlay").style.display = "flex";
 }
 
@@ -289,13 +415,41 @@ async function claimFaucet() {
 async function refresh() {
     await loadNetworkStatus();
     await loadWallet();
-    await loadExplorer();
     await loadMyTransactions();
     await loadMempool();
     await loadNotifications();
 }
 
+// loadTradingHubGate hides the real "Trading Hub" sidebar button
+// behind an "Apply Here" link unless this wallet is already a
+// VERIFIED Trading Hub - everyone else applies through companies.html
+// first (see api/companies.go's HandleCompanyStatus). Checked once at
+// load, not on every 5s refresh poll, since verification status
+// doesn't change on its own.
+async function loadTradingHubGate() {
+    if (!wallet) return;
+    const btn = document.getElementById("tradingHubNavBtn");
+    if (!btn) return;
+    try {
+        const status = await apiGet(`/companies/status?address=${wallet.address}`);
+        if (!status.verified) {
+            btn.innerText = "Trading Hub - Apply Here";
+            btn.title = "Apply to become a Verified Trading Hub";
+        }
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+const txViewOnExplorerBtn = document.getElementById("txViewOnExplorerBtn");
+if (txViewOnExplorerBtn) {
+    txViewOnExplorerBtn.onclick = () =>
+        location.href = "explorer?q=" + encodeURIComponent(wallet.address);
+}
+
 refresh();
+loadTradingHubGate();
 pingLogin();
+checkBtcNetworkMismatchBanner();
 
 setInterval(refresh, 5000);

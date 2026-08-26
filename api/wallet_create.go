@@ -26,6 +26,14 @@ type createWalletRequest struct {
 	// either way for a reputation/voting-weight bonus with no real
 	// value at stake.
 	ReferredBy string `json:"referredBy"`
+	// ConnectedHub is optional - set when this wallet is being created
+	// via a Trading Hub's own shareable link (website/hub-link.html).
+	// Unlike ReferredBy, this IS validated against companyStore below:
+	// an unverified or nonexistent address is silently ignored rather
+	// than recorded, since ConnectedHub drives a real "verified hub"
+	// recommendation in the marketplace UI, not just a harmless bonus
+	// counter - see core.Wallet.ConnectedHub's doc comment.
+	ConnectedHub string `json:"connectedHub"`
 }
 
 func HandleCreateWallet(
@@ -62,6 +70,9 @@ func HandleCreateWallet(
 	registered.LastActivityAt = time.Now().Unix()
 	if req.ReferredBy != "" && req.ReferredBy != req.Address {
 		registered.ReferredBy = req.ReferredBy
+	}
+	if req.ConnectedHub != "" && req.ConnectedHub != req.Address && companyStore.IsVerified(req.ConnectedHub) {
+		registered.ConnectedHub = req.ConnectedHub
 	}
 	walletStore.Register(&registered)
 

@@ -29,7 +29,7 @@ type hubRateSetData struct {
 	// on its own.
 	SellRate uint64 `json:"sellRate"`
 	BuyRate  uint64 `json:"buyRate"`
-	Active     bool   `json:"active"`
+	Active   bool   `json:"active"`
 	// Mode is "" / "OFFAPP" (default, FiatSymbol is a free-text
 	// off-app label) or "ONCHAIN" (FiatSymbol must be a real,
 	// resolvable native token symbol, different from Symbol).
@@ -251,6 +251,10 @@ func HandleRequestHubTrade(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "hub is no longer a verified Trading Hub", http.StatusForbidden)
 		return
 	}
+	if rules, _ := hubRulesStore.Get(req.Hub); rules.RequiresKYC() && !hasSubmittedHubKYC(req.Hub, address) {
+		http.Error(w, "this hub requires ID verification before trading - submit your phone number and ID on the hub's page first", http.StatusForbidden)
+		return
+	}
 	if req.Operator != "" && !hubWorkerStore.IsActiveWorker(req.Hub, req.Operator) {
 		http.Error(w, "operator is no longer an active worker of that hub", http.StatusForbidden)
 		return
@@ -262,7 +266,7 @@ func HandleRequestHubTrade(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var counterStore *core.TokenStore
+	var counterStore wholeUnitStore
 	if rate.IsOnChain() {
 		counterStore, err = resolveTokenStore(rate.FiatSymbol)
 		if err != nil {
@@ -287,7 +291,7 @@ func HandleRequestHubTrade(w http.ResponseWriter, r *http.Request) {
 		// too, same as every other balance check in this handler.
 		if rate.IsOnChain() {
 			userCounterSide := resolveBalanceAddress(address, auth.PublicKey, rate.FiatSymbol)
-			if counterStore.BalanceOf(userCounterSide) < req.Amount*rate.SellRate/core.HubRateScale {
+			if counterStore.BalanceOf(userCounterSide) < hubTradeFiatAmountSmallest(req.Amount, req.Symbol, rate.SellRate, rate.FiatSymbol) {
 				http.Error(w, fmt.Sprintf("insufficient %s balance to pay for this trade", rate.FiatSymbol), http.StatusBadRequest)
 				return
 			}
@@ -305,7 +309,7 @@ func HandleRequestHubTrade(w http.ResponseWriter, r *http.Request) {
 		}
 		if rate.IsOnChain() {
 			hubCounterSide := resolveBalanceAddress(rate.InventoryAddress(), rate.HubPublicKey, rate.FiatSymbol)
-			if counterStore.BalanceOf(hubCounterSide) < req.Amount*rate.BuyRate/core.HubRateScale {
+			if counterStore.BalanceOf(hubCounterSide) < hubTradeFiatAmountSmallest(req.Amount, req.Symbol, rate.BuyRate, rate.FiatSymbol) {
 				http.Error(w, "does not currently have enough balance to pay for this trade", http.StatusBadRequest)
 				return
 			}

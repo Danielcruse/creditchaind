@@ -42,7 +42,25 @@ type HubRules struct {
 	// these, server-side validated, never free-form text - this is
 	// deliberately not a scripting surface.
 	CannedReplies []CannedReply
-	UpdatedAt     int64
+	// RequireKYC gates HandleRequestHubTrade (api/hub_rate.go): when
+	// true, a trader must already have a phone/ID record on file with
+	// this exact hub (see api/hub_kyc.go) before their trade request is
+	// even recorded - unlike the rest of HubRules, this IS a real
+	// security boundary enforced server-side at the HTTP layer, not
+	// just disclosure text a client could ignore.
+	RequireKYC bool
+	// ServiceProviders is a hub-authored list of the off-app payment
+	// methods/channels it accepts or pays out through (e.g. "Bank
+	// Transfer", "PayPal", "Zelle", "Western Union", "MoneyGram",
+	// "Mobile Money") - free text, not a fixed enum, so a hub can list
+	// a method nothing else in this codebase named in advance. Powers
+	// the marketplace directory's currency + provider filter bar (see
+	// api/hub_directory_filters.go) - purely informational/filterable,
+	// same disclosure-not-security-boundary status as the rest of
+	// HubRules; nothing server-side enforces that a hub genuinely
+	// supports what it lists here.
+	ServiceProviders []string
+	UpdatedAt        int64
 }
 
 // CannedReply is one hub-authored automated reply option.
@@ -82,7 +100,7 @@ func NewHubRulesStore() *HubRulesStore {
 // Set posts or replaces a hub's rules text and payment windows -
 // always the whole record, same "no partial-field update" convention
 // as HubRateStore.Set.
-func (s *HubRulesStore) Set(hub, text string, paymentWindowMinutes map[string]int, minReputationToApply uint64, cannedReplies []CannedReply, at int64) {
+func (s *HubRulesStore) Set(hub, text string, paymentWindowMinutes map[string]int, minReputationToApply uint64, cannedReplies []CannedReply, requireKYC bool, serviceProviders []string, at int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -92,8 +110,18 @@ func (s *HubRulesStore) Set(hub, text string, paymentWindowMinutes map[string]in
 		PaymentWindowMinutes: paymentWindowMinutes,
 		MinReputationToApply: minReputationToApply,
 		CannedReplies:        cannedReplies,
+		RequireKYC:           requireKYC,
+		ServiceProviders:     serviceProviders,
 		UpdatedAt:            at,
 	}
+}
+
+// RequiresKYC reports whether a hub has opted into requiring trader
+// ID verification before a trade - false for a nil *HubRules (a hub
+// that never posted rules at all), same "nil-safe" convention as
+// PaymentWindowFor.
+func (r *HubRules) RequiresKYC() bool {
+	return r != nil && r.RequireKYC
 }
 
 // HasCannedReply reports whether text exactly matches one of hub's own

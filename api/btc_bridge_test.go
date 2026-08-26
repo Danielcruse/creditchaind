@@ -53,7 +53,16 @@ func TestApplyTransfer_BTCBCCTNetworkFee(t *testing.T) {
 	from := core.GenerateAddress(pub)
 	fromBtcb := resolveBalanceAddress(from, hex.EncodeToString(pub), "BTCB")
 
-	const to = "recipient-btcb-address"
+	// BTCB resolves to a derived sub-address (core.BTCBAddressTag), which
+	// needs the recipient's real public key - populate walletStore the
+	// same way a wallet's own activity would (see core.Wallet.PublicKeyHex's
+	// doc comment), so applyTransfer can resolve `to` through the same
+	// path the recipient's own balance lookups use (the bug this test
+	// now guards against - see TestApplyTransfer_ETHBCCTNetworkFee).
+	toPub, _, _ := core.GenerateKeyPair()
+	to := core.GenerateAddress(toPub)
+	walletStore.Get(to).PublicKeyHex = hex.EncodeToString(toPub)
+	toBtcb := resolveBalanceAddress(to, hex.EncodeToString(toPub), "BTCB")
 
 	bridgedBtcStore.Mint(fromBtcb, 10_000+BTCBCCTNetworkFeeSats)
 
@@ -63,8 +72,8 @@ func TestApplyTransfer_BTCBCCTNetworkFee(t *testing.T) {
 	if got := bridgedBtcStore.BalanceOf(fromBtcb); got != 0 {
 		t.Fatalf("expected sender BTCB balance 0 (10000+fee sent), got %d", got)
 	}
-	if got := bridgedBtcStore.BalanceOf(to); got != 10_000 {
-		t.Fatalf("expected recipient BTCB balance 10000, got %d", got)
+	if got := bridgedBtcStore.BalanceOf(toBtcb); got != 10_000 {
+		t.Fatalf("expected recipient BTCB balance 10000 at their resolved derived address, got %d", got)
 	}
 	if got := bridgedBtcStore.BalanceOf(btcbBridgeFeeAddress()); got != BTCBCCTNetworkFeeSats {
 		t.Fatalf("expected the fee sink to hold %d sats, got %d", BTCBCCTNetworkFeeSats, got)
@@ -99,6 +108,8 @@ func TestApplyTransfer_BTCBCCTNetworkFee_InsufficientBalanceRejectsWholeTransfer
 // (api/bridge_test.go) for the BTCB deposit-report path.
 func TestApplyBridgeBtcDeposit_CreditsCorrectlyAndDedups(t *testing.T) {
 	resetApplyTestState()
+	allowDepositsForTest(t)
+	registerCurrentNodeAsAuthorizedValidator(t)
 
 	pub, _, _ := core.GenerateKeyPair()
 	ccAddress := core.GenerateAddress(pub)
@@ -121,6 +132,7 @@ func TestApplyBridgeBtcDeposit_CreditsCorrectlyAndDedups(t *testing.T) {
 		From:          reporterAddress(),
 		Type:          core.TxBridgeBtcDeposit,
 		Data:          string(data),
+		Timestamp:     env.Timestamp,
 		AuthAddress:   env.Address,
 		AuthPublicKey: env.PublicKey,
 		AuthTimestamp: env.Timestamp,
@@ -182,7 +194,7 @@ func TestApplyHubTradeRequest_OnChain_BTCB(t *testing.T) {
 
 	buyerPub, buyerPriv, _ := core.GenerateKeyPair()
 	buyerAddr := core.GenerateAddress(buyerPub)
-	tokenStore.Mint(buyerAddr, 1_000_000)
+	cctStore.Mint(buyerAddr, cctW(1_000_000))
 
 	tradeTx := signedHubTxAs(t, buyerPub, buyerPriv, core.TxHubTradeRequest, hubTradeRequestData{
 		Hub: hubAddr, Symbol: "BTCB", Amount: 100, FiatSymbol: "CCT", Direction: "BUY_FROM_HUB",
@@ -193,9 +205,14 @@ func TestApplyHubTradeRequest_OnChain_BTCB(t *testing.T) {
 	if got := bridgedBtcStore.BalanceOf(buyerBtcbAddr); got != 100 {
 		t.Fatalf("expected buyer to receive 100 sats of BTCB, got %d", got)
 	}
-	// 100 sats * 30*HubRateScale / HubRateScale == 3000 CCT.
-	if got := tokenStore.BalanceOf(hubAddr); got != 3_000 {
-		t.Fatalf("expected hub to receive 3000 CCT, got %d", got)
+	// 100 sats * 30*HubRateScale / HubRateScale == 3000 CCT, minus the
+	// 0.3% marketplace platform fee (see api/apply.go's
+	// splitPlatformFee) skimmed on receipt - 9 CCT, leaving 2991. The
+	// buyer's own BTCB leg carries no equivalent deduction here: 0.3%
+	// of 100 sats floors to 0 under integer math, so nothing was small
+	// enough to skim on that side.
+	if got := cctStore.BalanceOf(hubAddr); got != cctW(2_991) {
+		t.Fatalf("expected hub to receive 2991 CCT (3000 - 0.3%% platform fee), got %s", got)
 	}
 
 	offer, ok := p2pOfferStore.Get(tradeTx.ID)

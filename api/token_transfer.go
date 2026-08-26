@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"math/big"
 	"net/http"
 
 	"github.com/creditchain/creditchaind/core"
@@ -64,13 +65,29 @@ func HandleTokenTransfer(
 		required += ETHBCCTNetworkFeeWei
 	} else if req.Symbol == "BTCB" {
 		required += BTCBCCTNetworkFeeSats
+	} else if isCcc1TransferFeeSymbol(req.Symbol) {
+		required += ccc1TransferFeeSmallest(req.Symbol)
 	}
 
+	// Available balance is the confirmed balance minus whatever this
+	// same address already has reserved in a still-pending (mempool,
+	// unconfirmed) transaction - see pendingReservedBalance's own doc
+	// comment for why this matters: without it, two transactions
+	// submitted back-to-back against the same balance would each pass
+	// this check individually, and whichever confirms second would
+	// silently no-op with no reason ever surfaced to the caller.
 	fromSide := resolveBalanceAddress(from, auth.PublicKey, req.Symbol)
-	if store.BalanceOf(fromSide) < required {
+	confirmedBalance := store.BalanceOf(fromSide)
+	pending := pendingReservedBalance(from, req.Symbol)
+	if pending >= confirmedBalance || confirmedBalance-pending < required {
+		reason := "Insufficient balance."
+		if pending > 0 {
+			reason = "Insufficient available balance - part of it is reserved by a transaction you already submitted that hasn't confirmed yet."
+		}
 		json.NewEncoder(w).Encode(
-			map[string]bool{
+			map[string]any{
 				"success": false,
+				"reason":  reason,
 			},
 		)
 		return
@@ -81,10 +98,17 @@ func HandleTokenTransfer(
 	// authoritatively.
 	if req.Symbol == "USDCTEST" {
 		ethbSide := resolveBalanceAddress(from, auth.PublicKey, "ETHB")
-		if bridgedEthStore.BalanceOf(ethbSide) < UsdcTestTransferFeeWei {
+		ethbConfirmed := bridgedEthStore.BalanceOf(ethbSide)
+		ethbPending := pendingReservedBalance(from, "ETHB")
+		if ethbPending >= ethbConfirmed || ethbConfirmed-ethbPending < UsdcTestTransferFeeWei {
+			reason := "Insufficient ETH balance to cover the USDC send fee."
+			if ethbPending > 0 {
+				reason = "Insufficient available ETH balance to cover the USDC send fee - part of it is reserved by a transaction you already submitted that hasn't confirmed yet."
+			}
 			json.NewEncoder(w).Encode(
-				map[string]bool{
+				map[string]any{
 					"success": false,
+					"reason":  reason,
 				},
 			)
 			return
@@ -99,7 +123,8 @@ func HandleTokenTransfer(
 		"txId":   tx.ID,
 	}
 	if req.Symbol == "CCT" {
-		resp["fee"] = governanceParam("CCTTransferFee", CCTTransferFee)
+		feeSmallest := new(big.Int).SetUint64(governanceParam("CCTTransferFeeSmallestUnit", DefaultCCTTransferFeeSmallestUnit))
+		resp["fee"] = core.CctSmallestToDecimalString(feeSmallest)
 	}
 	if req.Symbol == "ETHB" {
 		resp["feeWei"] = ETHBCCTNetworkFeeWei
@@ -109,6 +134,9 @@ func HandleTokenTransfer(
 	}
 	if req.Symbol == "BTCB" {
 		resp["feeSats"] = BTCBCCTNetworkFeeSats
+	}
+	if isCcc1TransferFeeSymbol(req.Symbol) {
+		resp["fee"] = ccc1TransferFeeSmallest(req.Symbol)
 	}
 	json.NewEncoder(w).Encode(resp)
 }

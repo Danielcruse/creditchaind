@@ -28,21 +28,21 @@ html, body{
     color:#0f9d58;
 }
 
-/* White + green - replaces the earlier dark forest-green theme for
-   every page still using plain style.css (index.html now has its own
-   distinct white+blue landing.css instead - see that file's header
-   comment). Deliberately reuses theme.css's already-green
-   --cc-accent-1/2/--cc-glow tokens as-is (buttons/card-glow were
-   already green, only the dark BACKGROUND needed to flip to white),
-   so this is a background/text-color swap, not a full retheme. */
+/* Green background + white/blue mix - a deep green gradient backdrop
+   (theme.css's --cc-bg-* tokens) with white translucent cards and a
+   blue primary accent (--cc-accent-1/2) floating on top, replacing
+   the earlier all-white body this file used briefly. */
 body{
     background:
-        radial-gradient(1100px 650px at 12% -8%, rgba(15,157,88,0.24), transparent 60%),
-        radial-gradient(1000px 700px at 108% 8%, rgba(22,196,111,0.18), transparent 55%),
-        radial-gradient(900px 550px at 50% 118%, rgba(0,255,149,0.16), transparent 60%),
-        #ffffff;
+        radial-gradient(1100px 650px at 12% -8%, rgba(59,130,246,0.16), transparent 60%),
+        radial-gradient(1000px 700px at 108% 8%, rgba(15,157,88,0.22), transparent 55%),
+        radial-gradient(900px 550px at 50% 118%, rgba(0,255,149,0.14), transparent 60%),
+        linear-gradient(160deg,
+            var(--cc-bg-2, #082616),
+            var(--cc-bg-1, #04150d) 60%,
+            var(--cc-bg-3, #0c3a22));
 
-    color:#0d2818;
+    color:#eaf4ee;
     font-family:
         Arial,
         sans-serif;
@@ -65,18 +65,20 @@ input, textarea {
             255,
             255,
             255,
-            0.7
+            0.85
         );
+
+    color:#0d2818;
 
     backdrop-filter:
         blur(15px);
 
     border:
         1px solid rgba(
-            15,
-            157,
-            88,
-            0.16
+            29,
+            78,
+            216,
+            0.18
         );
 
     border-radius:20px;
@@ -156,10 +158,12 @@ button:hover{
             255,
             255,
             255,
-            0.6
+            0.85
         );
 
-    border-right:1px solid rgba(15,157,88,0.15);
+    color:#0d2818;
+
+    border-right:1px solid rgba(29,78,216,0.15);
 
     backdrop-filter:
         blur(20px);
@@ -176,10 +180,9 @@ button:hover{
 
 .network-live{
 
-    /* #00ff95 (the original bright mint) reads too low-contrast
-       against the new white background - var(--cc-accent-1) is the
-       same green family, darkened for legibility. */
-    color:var(--cc-accent-1, #0f9d58);
+    /* Blue primary accent, legible against the white card surface
+       this renders on. */
+    color:var(--cc-accent-1, #1d4ed8);
 
     animation:
         pulse 2s infinite;

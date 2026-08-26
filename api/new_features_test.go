@@ -383,9 +383,14 @@ func TestResolveBalanceAddress_USDCTESTUsesRealCustodialEthAddressWhenPresent(t 
 		KeyRef:               "test-key-ref",
 	})
 
+	// resolveBalanceAddress normalizes to lowercase (Ethereum addresses
+	// are case-insensitive - see normalizeEthAddress's doc comment,
+	// api/subaddress.go) - the stored EthAddress above intentionally
+	// uses mixed case to prove normalization actually happens, not just
+	// pass-through.
 	got := resolveBalanceAddress(cctAddress, pubHex, "USDCTEST")
-	if got != "0xRealCustodialEthAddress" {
-		t.Fatalf("expected USDCTEST to resolve to the real custodial ETH address, got %s", got)
+	if got != "0xrealcustodialethaddress" {
+		t.Fatalf("expected USDCTEST to resolve to the real custodial ETH address (lowercased), got %s", got)
 	}
 
 	// ETHB must resolve to the identical address - this is the literal

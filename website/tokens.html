@@ -2,9 +2,9 @@
 <html>
 <head>
     <title>Token Creation</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
     <style>
         .explorer-search{
             display:flex;
@@ -43,20 +43,42 @@
             opacity:0.6;
             padding:10px 0;
         }
+        html{
+            scroll-behavior:smooth;
+        }
     </style>
 </head>
 <body>
-<script src="js/device-lock.js"></script>
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <h1>Token Creation</h1>
 
-<div class="card">
-    <p style="opacity:0.75;font-size:13px;">
+<div class="dash-nav-grid">
+    <a class="dash-nav-tile" href="#registerTokenCard">
+        <div class="dash-nav-tile-icon">&#128187;</div>
+        <h3>Register a Token</h3>
+        <p id="tkNavRegisterSubtitle">Create a new testnet token</p>
+    </a>
+    <a class="dash-nav-tile" href="#yeneBridgeCard">
+        <div class="dash-nav-tile-icon">&#128279;</div>
+        <h3>YEN-e Bridge</h3>
+        <p id="tkNavYeneSubtitle">Claim testnet YEN-e</p>
+    </a>
+    <a class="dash-nav-tile" href="#registeredTokensCard">
+        <div class="dash-nav-tile-icon">&#128203;</div>
+        <h3>Registered Tokens</h3>
+        <p>Every token on the network</p>
+    </a>
+</div>
+
+<div class="card" id="registerTokenCard">
+    <p style="opacity:0.75;font-size:13px;" id="tkRegisterIntro">
         Register a new testnet token here. A registered token has no (testnet) price against CCT
         until liquidity has been seeded for it - that happens automatically behind the scenes as
         part of the trades and settlements that use it, so there's nothing extra for you to do.
         Registering requires some test ETH staked first (same "skin in the game" requirement as
-        borrowing) - see <a href="staking.html" style="color:var(--cc-accent-gold, #c9a227);">Stake</a> if you haven't yet -
+        borrowing) - see <a href="staking" style="color:var(--cc-accent-gold, #c9a227);">Stake</a> if you haven't yet -
         plus a <span id="tkFeeAmount">5</span> ETHTEST creation fee, charged from your ETHTEST
         address (see your wallet card on OUTERNET).
     </p>
@@ -68,7 +90,7 @@
     <div id="tokensNotStaked" style="display:none;">
         <p class="explorer-empty">
             You need some test ETH staked before you can register a token -
-            <a href="staking.html" style="color:var(--cc-accent-gold, #c9a227);">stake some here</a> first.
+            <a href="staking" style="color:var(--cc-accent-gold, #c9a227);">stake some here</a> first.
         </p>
     </div>
 
@@ -76,7 +98,7 @@
         <p class="explorer-empty">
             You need at least <span id="tkFeeAmount2">5</span> ETHTEST in your ETHTEST address to
             cover the token creation fee - claim some from the faucet on
-            <a href="outernet.html" style="color:var(--cc-accent-gold, #c9a227);">OUTERNET</a> first.
+            <a href="outernet" style="color:var(--cc-accent-gold, #c9a227);">OUTERNET</a> first.
         </p>
     </div>
 
@@ -99,9 +121,9 @@
 
 <br>
 
-<div class="card">
-    <h2>YEN-e Bridge (Testnet)</h2>
-    <p style="opacity:0.75;font-size:13px;">
+<div class="card" id="yeneBridgeCard">
+    <h2 id="tkYeneBridgeTitle">YEN-e Bridge (Testnet)</h2>
+    <p style="opacity:0.75;font-size:13px;" id="tkYeneIntro">
         YEN-e is a stable currency meant to eventually bridge in from a real Ethereum-side YEN-e token -
         that counterpart doesn't exist yet, so this is a testnet-only representation for now, not a real
         bridge. Claiming credits a random amount (1-100 YEN-e) to your wallet, once every 5 days.
@@ -113,19 +135,53 @@
 
 <br>
 
-<div class="card">
+<div class="card" id="registeredTokensCard">
     <h2>Registered Tokens</h2>
     <div id="tkTokenList" class="explorer-empty">Loading...</div>
 </div>
 
 <p style="margin-top:20px;">
-    <a href="explorer.html">Explorer</a> &nbsp;|&nbsp;
-    <a href="outernet.html">Back to OUTERNET</a>
+    <a href="explorer">Explorer</a> &nbsp;|&nbsp;
+    <a href="outernet">Back to OUTERNET</a>
 </p>
 
-<script src="js/api.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/tokens.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/ai-assistant.js?v=fixaug5b"></script>
+<script src="js/tokens.js?v=sec0816a"></script>
+<script>
+// Display-copy only - drops "testnet" wording from mainnet, where the
+// same registration/claim mechanics run against real mainnet state.
+// The YEN-e claim itself stays a disclosed stand-in for a real
+// Ethereum-side bridge that doesn't exist yet on either network - only
+// the word "testnet" in that disclosure is network-conditional here,
+// not the underlying limitation.
+(function mainnetAwareTokensCopy() {
+    if (window.CC_NETWORK !== "mainnet") return;
+    const swaps = {
+        tkNavRegisterSubtitle: "Create a new token",
+        tkNavYeneSubtitle: "Claim YEN-e",
+        tkYeneBridgeTitle: "YEN-e Bridge",
+    };
+    Object.keys(swaps).forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.innerText = swaps[id];
+    });
+    const registerIntro = document.getElementById("tkRegisterIntro");
+    if (registerIntro) {
+        registerIntro.innerHTML = registerIntro.innerHTML
+            .replace("Register a new testnet token here.", "Register a new token here.")
+            .replace("no (testnet) price against CCT", "no price against CCT");
+    }
+    const yeneIntro = document.getElementById("tkYeneIntro");
+    if (yeneIntro) {
+        yeneIntro.innerHTML = yeneIntro.innerHTML.replace(
+            "that counterpart doesn't exist yet, so this is a testnet-only representation for now, not a real",
+            "that counterpart doesn't exist yet, so this is a stand-in representation for now, not a real"
+        );
+    }
+})();
+</script>
 
 </body>
 </html>

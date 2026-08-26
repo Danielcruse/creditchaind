@@ -14,10 +14,14 @@ import (
 type lockCollateralData struct {
 	Amount uint64 `json:"amount"`
 	// Symbol is "CCT" (locks from the caller's STAKED CCT position,
-	// not liquid/spendable CCT) or "OETH" (locks from the caller's
-	// oETH receipt balance - see core.Wallet.OETHBalance's doc
-	// comment). oETH is deliberately never transferable/sendable
-	// anywhere else in this app - this lock is its only real use.
+	// not liquid/spendable CCT), "OETH" (locks from the caller's oETH
+	// receipt balance - see core.Wallet.OETHBalance's doc comment;
+	// oETH is deliberately never transferable/sendable anywhere else in
+	// this app - this lock is its only real use), or "STETH_CCC1"
+	// (locks from the caller's real vault-locked stETH balance - see
+	// api/vault_token.go's stethCcc1Store - the first collateral type
+	// backed by an actual real-world asset rather than a purely
+	// internal counter).
 	Symbol string `json:"symbol"`
 }
 
@@ -46,16 +50,19 @@ func HandleLockCollateral(
 		http.Error(w, "amount must be positive", http.StatusBadRequest)
 		return
 	}
-	if req.Symbol != "CCT" && req.Symbol != "OETH" {
-		http.Error(w, "symbol must be 'CCT' or 'OETH'", http.StatusBadRequest)
+	if req.Symbol != "CCT" && req.Symbol != "OETH" && req.Symbol != "STETH_CCC1" {
+		http.Error(w, "symbol must be 'CCT', 'OETH', or 'STETH_CCC1'", http.StatusBadRequest)
 		return
 	}
 
 	var available uint64
-	if req.Symbol == "CCT" {
+	switch req.Symbol {
+	case "CCT":
 		available = stakingStore.StakeOf(address, "CCT")
-	} else {
+	case "OETH":
 		available = walletStore.Get(address).OETHBalance
+	case "STETH_CCC1":
+		available = stethCcc1TransferAdapter.BalanceOf(resolveBalanceAddress(address, auth.PublicKey, "STETH_CCC1"))
 	}
 	if available < req.Amount {
 		json.NewEncoder(w).Encode(

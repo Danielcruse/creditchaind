@@ -2,9 +2,35 @@ package api
 
 import (
 	"encoding/hex"
+	"strings"
 
 	"github.com/creditchain/creditchaind/core"
 )
+
+// normalizeEthAddress lowercases a 0x-prefixed Ethereum address -
+// Ethereum addresses are case-INSENSITIVE (EIP-55 checksum casing is a
+// client-side typo-detection convention, not a semantically different
+// address), but every balance store keyed by one of these strings
+// (ethCcc1Store, usdcCcc1Store, bridgedEthStore, ethAddressStore) is a
+// plain case-sensitive map. Without normalizing at every entry/read
+// point, two differently-cased spellings of the identical real address
+// would silently behave as two unrelated accounts - a real gap caught
+// in review (website/js/hdwallet.js's deriveEthAddress checksums its
+// output; website/js/vendor/eth-tx.js's addressFromPrivateKey does not,
+// and both are used to derive "this wallet's ETH address" in different
+// parts of this codebase). Call this on every ETH address immediately
+// before it's used as a store key, on both the write side
+// (api/eth_bridge.go's HandleEthRegisterAddress) and the read side
+// (this file's resolveBalanceAddress, api/vault_info.go's
+// HandleVaultBalance) - non-hex or malformed input is returned
+// unchanged (never this function's job to validate shape).
+func normalizeEthAddress(addr string) string {
+	addr = strings.TrimSpace(addr)
+	if strings.HasPrefix(addr, "0x") || strings.HasPrefix(addr, "0X") {
+		return "0x" + strings.ToLower(addr[2:])
+	}
+	return addr
+}
 
 // resolveBalanceAddress returns which address a given token symbol's
 // balance actually lives under. CCT, REPT, and any developer-registered
@@ -36,9 +62,23 @@ func resolveBalanceAddress(cctAddress string, publicKeyHex string, symbol string
 	// wallet can receive and send USDC between other users/wallets
 	// exactly like it does elsewhere" literally true - the address is
 	// the same real Ethereum address other ETH/USDC wallets would use.
-	if symbol == "ETHB" || symbol == "USDCTEST" {
+	if symbol == "ETHB" || symbol == "USDCTEST" || symbol == "ETH_CCC1" || symbol == "USDC_CCC1" || symbol == "STETH_CCC1" {
+		// ethAddressStore (the free, self-custodial watched-address path
+		// - see core/eth_address.go's doc comment) takes priority over
+		// ethCustodialStore (the older paid AWS-KMS path, kept only for
+		// backward compatibility with any account provisioned before
+		// this changed) - every current UI flow registers into
+		// ethAddressStore, never creates a new custodial account.
+		// ETH_CCC1/USDC_CCC1 (the vault-backed tokens) unify with this
+		// same real self-custodial address for the same reason ETHB
+		// does: a vault-backed balance genuinely corresponds 1:1 to
+		// funds locked FROM that real address, so it belongs at the
+		// same address, not a separate derived hash.
+		if watched, ok := ethAddressStore.Get(cctAddress); ok {
+			return normalizeEthAddress(watched.EthAddress)
+		}
 		if account, ok := ethCustodialStore.Get(cctAddress); ok {
-			return account.EthAddress
+			return normalizeEthAddress(account.EthAddress)
 		}
 	}
 
@@ -46,6 +86,8 @@ func resolveBalanceAddress(cctAddress string, publicKeyHex string, symbol string
 	switch symbol {
 	case "ETHTEST":
 		tag = core.ETHTestAddressTag
+	case "BTCTEST":
+		tag = core.BtcTestAddressTag
 	case "USDCTEST":
 		tag = core.USDCTestAddressTag
 	case "YENE":
@@ -54,6 +96,14 @@ func resolveBalanceAddress(cctAddress string, publicKeyHex string, symbol string
 		tag = core.ETHBAddressTag
 	case "BTCB":
 		tag = core.BTCBAddressTag
+	case "ETH_CCC1":
+		tag = core.ETHCcc1AddressTag
+	case "USDC_CCC1":
+		tag = core.UsdcCcc1AddressTag
+	case "STETH_CCC1":
+		tag = core.StethCcc1AddressTag
+	case "BTC_CCC1":
+		tag = core.BtcCcc1AddressTag
 	default:
 		return cctAddress
 	}

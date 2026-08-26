@@ -70,7 +70,8 @@ async function loadSwapFromBalance(symbol) {
     }
     try {
         const balance = await fetchTokenBalance(plWallet, symbol);
-        document.getElementById("plSwapFromBalance").innerText = `Your balance: ${balance.balance} ${symbol}`;
+        const displayBalance = symbol === "CCT" ? cctFromSmallest(balance.balance) : balance.balance;
+        document.getElementById("plSwapFromBalance").innerText = `Your balance: ${displayBalance} ${symbol}`;
     } catch (e) {
         console.error(e);
     }
@@ -87,8 +88,13 @@ async function loadPoolInfo(symbol) {
         );
         plCurrentPoolTradeable = info.tradeable;
 
+        // cctReserve/totalShares/yourShares are 18-decimal smallest-unit
+        // decimal strings now (see api/token_registry.go's poolInfo) -
+        // convert to a human CCT amount before doing any arithmetic or
+        // display, same convention as a CCT balance.
+        const cctReserveDisplay = cctFromSmallest(info.cctReserve);
         const statusLine = info.tradeable
-            ? `Tradeable - 1 ${symbol} = ${(info.cctReserve / info.tokenReserve).toFixed(4)} CCT`
+            ? `Tradeable - 1 ${symbol} = ${(parseFloat(cctReserveDisplay) / info.tokenReserve).toFixed(4)} CCT`
             : "Not tradeable yet - add liquidity below to give it a price.";
 
         let balanceLine = "";
@@ -97,13 +103,13 @@ async function loadPoolInfo(symbol) {
                 fetchTokenBalance(plWallet, "CCT"),
                 fetchTokenBalance(plWallet, symbol),
             ]);
-            balanceLine = `<p>Your balance: ${cctBalance.balance} CCT / ${tokenBalance.balance} ${symbol}</p>`;
+            balanceLine = `<p>Your balance: ${cctFromSmallest(cctBalance.balance)} CCT / ${tokenBalance.balance} ${symbol}</p>`;
         }
 
         document.getElementById("plPoolInfo").innerHTML = `
-            <p>Reserves: ${info.cctReserve} CCT / ${info.tokenReserve} ${symbol}</p>
+            <p>Reserves: ${cctReserveDisplay} CCT / ${info.tokenReserve} ${symbol}</p>
             <p style="color:${info.tradeable ? "#8f8" : "#f88"};">${statusLine}</p>
-            <p>Your LP shares: ${info.yourShares || 0} of ${info.totalShares} total</p>
+            <p>Your LP shares: ${info.yourShares ? cctFromSmallest(info.yourShares) : 0} of ${cctFromSmallest(info.totalShares)} total</p>
             ${balanceLine}
         `;
 
@@ -152,7 +158,7 @@ async function loadPriceChart(symbol) {
 
         const first = prices[0];
         const last = prices[prices.length - 1];
-        const changeColor = last >= first ? "#00ff95" : "#ff5f5f";
+        const changeColor = last >= first ? "#0f9d58" : "#ff5f5f";
         const changePct = first !== 0 ? (((last - first) / first) * 100).toFixed(2) : "0.00";
 
         container.innerHTML = `
@@ -172,7 +178,7 @@ async function loadPriceChart(symbol) {
 
 async function addLiquidity() {
     const symbol = document.getElementById("plPoolSymbol").value;
-    const cctAmount = parseInt(document.getElementById("plAddCCT").value, 10);
+    const cctAmountStr = document.getElementById("plAddCCT").value.trim();
     const tokenAmount = parseInt(document.getElementById("plAddToken").value, 10);
     const statusEl = document.getElementById("plPoolStatus");
 
@@ -180,7 +186,7 @@ async function addLiquidity() {
         statusEl.innerText = "No token selected.";
         return;
     }
-    if (!cctAmount || !tokenAmount) {
+    if (!cctAmountStr || !tokenAmount) {
         statusEl.innerText = "Enter both a CCT amount and a token amount.";
         return;
     }
@@ -188,7 +194,10 @@ async function addLiquidity() {
     try {
         const result = await apiPostSigned("/pool/add-liquidity", {
             symbol,
-            cctAmount,
+            // cctAmount is now an 18-decimal smallest-unit string (see
+            // api/token_registry.go's poolAddLiquidityData) - tokenAmount
+            // (the OTHER leg, always non-CCT) stays a plain whole uint64.
+            cctAmount: cctToSmallest(cctAmountStr),
             tokenAmount,
         });
         statusEl.innerText = `Liquidity pending confirmation (tx ${result.txId}).`;
@@ -200,20 +209,25 @@ async function addLiquidity() {
 
 async function removeLiquidity() {
     const symbol = document.getElementById("plPoolSymbol").value;
-    const shares = parseInt(document.getElementById("plRemoveShares").value, 10);
+    const sharesStr = document.getElementById("plRemoveShares").value.trim();
     const statusEl = document.getElementById("plPoolStatus");
 
     if (!symbol) {
         statusEl.innerText = "No token selected.";
         return;
     }
-    if (!shares) {
+    if (!sharesStr) {
         statusEl.innerText = "Enter shares to remove.";
         return;
     }
 
     try {
-        const result = await apiPostSigned("/pool/remove-liquidity", { symbol, shares });
+        // Shares use the exact same 18-decimal smallest-unit decimal
+        // string encoding as CCT itself (see core/liquidity_pool.go) -
+        // the user types the same human amount shown by loadPoolInfo's
+        // "Your LP shares" line, so it round-trips through cctToSmallest
+        // the same way a CCT amount would.
+        const result = await apiPostSigned("/pool/remove-liquidity", { symbol, shares: cctToSmallest(sharesStr) });
         statusEl.innerText = `Removal pending confirmation (tx ${result.txId}).`;
         setTimeout(() => loadPoolInfo(symbol), 9000);
     } catch (e) {
@@ -224,14 +238,14 @@ async function removeLiquidity() {
 async function swapInPool() {
     const symbol = document.getElementById("plPoolSymbol").value;
     const direction = document.getElementById("plSwapDirection").value;
-    const amountIn = parseInt(document.getElementById("plSwapAmount").value, 10);
+    const amountInStr = document.getElementById("plSwapAmount").value.trim();
     const statusEl = document.getElementById("plPoolStatus");
 
     if (!symbol) {
         statusEl.innerText = "No token selected.";
         return;
     }
-    if (!amountIn) {
+    if (!amountInStr) {
         statusEl.innerText = "Enter an amount to swap.";
         return;
     }
@@ -239,6 +253,12 @@ async function swapInPool() {
         statusEl.innerText = `${symbol} isn't tradeable yet - add liquidity first.`;
         return;
     }
+
+    // AmountIn is a decimal string regardless of direction - CCT
+    // smallest units for "cct_to_token", plain whole units of symbol
+    // for "token_to_cct" (see api/token_registry.go's poolSwapData doc
+    // comment) - only the CCT leg needs the 18-decimal conversion.
+    const amountIn = direction === "cct_to_token" ? cctToSmallest(amountInStr) : String(parseInt(amountInStr, 10));
 
     try {
         const result = await apiPostSigned("/pool/swap", { symbol, direction, amountIn });
@@ -252,17 +272,22 @@ async function swapInPool() {
 async function swapViaCCT() {
     const fromSymbol = document.getElementById("plSwapFrom").value;
     const toSymbol = document.getElementById("plSwapTo").value;
-    const amountIn = parseInt(document.getElementById("plSwapViaAmount").value, 10);
+    const amountInStr = document.getElementById("plSwapViaAmount").value.trim();
     const statusEl = document.getElementById("plSwapViaStatus");
 
     if (fromSymbol === toSymbol) {
         statusEl.innerText = "Pick two different tokens.";
         return;
     }
-    if (!amountIn) {
+    if (!amountInStr) {
         statusEl.innerText = "Enter an amount to swap.";
         return;
     }
+
+    // Same one-wire-shape-for-both convention as poolSwapData.AmountIn -
+    // CCT smallest units when fromSymbol is CCT, plain whole units of
+    // fromSymbol otherwise (see api/token_registry.go's swapViaCCTData).
+    const amountIn = fromSymbol === "CCT" ? cctToSmallest(amountInStr) : String(parseInt(amountInStr, 10));
 
     try {
         const result = await apiPostSigned("/swap", { fromSymbol, toSymbol, amountIn });

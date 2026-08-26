@@ -59,8 +59,8 @@ func TestAdminMultisig_ProposeCountsAsFirstApprovalButDoesNotExecuteAlone(t *tes
 	if proposal.Status != core.AdminMultisigPending {
 		t.Fatalf("expected status PENDING with 1 of 3 required approvals, got %s", proposal.Status)
 	}
-	if got := tokenStore.BalanceOf("recipient-1"); got != 0 {
-		t.Fatalf("expected no mint yet with only 1 of 3 approvals, got balance %d", got)
+	if got := cctStore.BalanceOf("recipient-1"); got != "0" {
+		t.Fatalf("expected no mint yet with only 1 of 3 approvals, got balance %s", got)
 	}
 }
 
@@ -82,13 +82,13 @@ func TestAdminMultisig_ExecutesExactlyOnceOnceThresholdReached(t *testing.T) {
 	}
 
 	approve("proposal-2", signerB, 1001)
-	if got := tokenStore.BalanceOf("recipient-2"); got != 0 {
-		t.Fatalf("expected no mint yet with only 2 of 3 approvals, got balance %d", got)
+	if got := cctStore.BalanceOf("recipient-2"); got != "0" {
+		t.Fatalf("expected no mint yet with only 2 of 3 approvals, got balance %s", got)
 	}
 
 	approve("proposal-2", signerC, 1002)
-	if got := tokenStore.BalanceOf("recipient-2"); got != 777 {
-		t.Fatalf("expected the mint to execute exactly once threshold (3) was reached, got balance %d", got)
+	if got := cctStore.BalanceOf("recipient-2"); got != cctW(777) {
+		t.Fatalf("expected the mint to execute exactly once threshold (3) was reached, got balance %s", got)
 	}
 
 	proposal, _ := adminMultisigStore.Get("proposal-2")
@@ -103,8 +103,58 @@ func TestAdminMultisig_ExecutesExactlyOnceOnceThresholdReached(t *testing.T) {
 	// proposer approving their own already-executed proposal again)
 	// must never double-mint.
 	approve("proposal-2", signerA, 1003)
-	if got := tokenStore.BalanceOf("recipient-2"); got != 777 {
-		t.Fatalf("expected balance to stay at 777 after a late approval on an already-executed proposal, got %d", got)
+	if got := cctStore.BalanceOf("recipient-2"); got != cctW(777) {
+		t.Fatalf("expected balance to stay at 777 after a late approval on an already-executed proposal, got %s", got)
+	}
+}
+
+// TestAdminMultisig_RefundStuckVaultBurnIsWhitelistedAndExecutesViaProposal
+// is the regression test for a real gap found 2026-08-20:
+// core.TxAdminRefundStuckVaultBurn was missing from
+// allowedAdminMultisigActionType, so on a multisig-governed network
+// (mainnet's actual configuration) a correctly-signed refund request
+// would be silently swallowed at applyAdminMultisigPropose - no
+// proposal ever created, nothing for a second signer to approve, even
+// though the HTTP handler returned "pending" as if it had worked.
+// verifyAdminTxAuth unconditionally rejects a DIRECT
+// TxAdminRefundStuckVaultBurn submission once multisig is enabled (see
+// its own doc comment), so the propose/approve path is the ONLY way
+// this action can ever take effect on such a network - this test
+// exercises that full path end to end, not just the whitelist check in
+// isolation.
+func TestAdminMultisig_RefundStuckVaultBurnIsWhitelistedAndExecutesViaProposal(t *testing.T) {
+	resetApplyTestState()
+
+	const signerA, signerB = "signer-a", "signer-b"
+	t.Setenv("ADMIN_MULTISIG_ADDRESSES", signerA+","+signerB)
+	t.Setenv("ADMIN_MULTISIG_THRESHOLD", "2")
+
+	if !allowedAdminMultisigActionType(core.TxAdminRefundStuckVaultBurn) {
+		t.Fatal("expected TxAdminRefundStuckVaultBurn to be an allowed multisig action type")
+	}
+
+	const ccAddr, ethAddr = "burner-cc-addr", "0xf2002bEaAEC93e7533AD497E3ee4B78B9c637ee4"
+	ethAddressStore.Set(&core.EthWatchedAddress{CreditChainAddress: ccAddr, EthAddress: ethAddr})
+	seedStuckEthApproval("burn-multisig-1", ccAddr, "0", "2640000000000000")
+
+	refundData, _ := json.Marshal(adminRefundStuckVaultBurnData{BurnTxId: "burn-multisig-1"})
+	proposeData, _ := json.Marshal(adminMultisigProposeData{ActionType: core.TxAdminRefundStuckVaultBurn, Payload: string(refundData)})
+	applyAdminMultisigPropose(core.Transaction{ID: "proposal-refund-1", AuthAddress: signerA, Data: string(proposeData), Timestamp: 1000})
+
+	if _, ok := adminMultisigStore.Get("proposal-refund-1"); !ok {
+		t.Fatal("expected a real proposal to be created for TxAdminRefundStuckVaultBurn, not silently dropped")
+	}
+
+	approveData, _ := json.Marshal(adminMultisigApproveData{ProposalID: "proposal-refund-1"})
+	applyAdminMultisigApprove(core.Transaction{ID: "proposal-refund-1-approve", AuthAddress: signerB, Data: string(approveData), Timestamp: 1001})
+
+	normalized := normalizeEthAddress(ethAddr)
+	if got := ethCcc1Store.BalanceOf(normalized); got != "2640000000000000" {
+		t.Fatalf("expected the refund to actually execute once threshold was reached, got balance %s", got)
+	}
+	approval, _ := vaultReleaseApprovalStore.Get("burn-multisig-1")
+	if approval.Status != core.VaultReleaseRefunded {
+		t.Fatalf("expected status REFUNDED once the proposal executed, got %s", approval.Status)
 	}
 }
 
@@ -129,8 +179,8 @@ func TestAdminMultisig_DuplicateApprovalFromSameSignerDoesNotDoubleCount(t *test
 	if len(proposal.Approvals) != 2 {
 		t.Fatalf("expected exactly 2 distinct approvals (signerA, signerB), got %d", len(proposal.Approvals))
 	}
-	if got := tokenStore.BalanceOf("recipient-3"); got != 100 {
-		t.Fatalf("expected the mint to have executed once (threshold 2, 2 distinct approvers), got balance %d", got)
+	if got := cctStore.BalanceOf("recipient-3"); got != cctW(100) {
+		t.Fatalf("expected the mint to have executed once (threshold 2, 2 distinct approvers), got balance %s", got)
 	}
 }
 

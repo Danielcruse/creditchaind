@@ -64,7 +64,7 @@ func HandleGenesisPoolWithdraw(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "amount must be positive", http.StatusBadRequest)
 		return
 	}
-	if tokenStore.BalanceOf(genesisPoolAddress(req.Pool)) < req.Amount {
+	if !hasCctBalance(genesisPoolAddress(req.Pool), req.Amount) {
 		http.Error(w, "amount exceeds pool balance", http.StatusBadRequest)
 		return
 	}
@@ -92,5 +92,5 @@ func applyGenesisPoolWithdraw(tx core.Transaction) {
 		return
 	}
 
-	tokenStore.Transfer(genesisPoolAddress(data.Pool), data.To, data.Amount)
+	transferCctWhole(genesisPoolAddress(data.Pool), data.To, data.Amount)
 }

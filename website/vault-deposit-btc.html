@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Vault BTC to CreditChain Network - OUTERNET</title>
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+<link rel="stylesheet" href="css/style.css?v=fixaug5c">
+<link rel="stylesheet" href="css/outernet.css?v=fixaug5d">
+<style>
+    .vault-review-row{ display:flex; justify-content:space-between; padding:6px 0; }
+    .vault-warning{
+        background:rgba(255,176,32,0.12); border:1px solid #ffb020;
+        border-radius:8px; padding:10px; font-size:13px; margin:12px 0;
+    }
+    .status-pill{ display:inline-block; padding:2px 8px; border-radius:999px; background:rgba(0,0,0,0.08); font-size:12px; }
+</style>
+</head>
+<body class="outernet-light">
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
+
+<div class="main" style="max-width:520px;margin:0 auto;padding:24px 16px;">
+
+<p><a href="assets" style="color:#0284c7;">&larr; Assets</a></p>
+
+<h1>Vault BTC to CreditChain Network</h1>
+
+<div class="card" style="border:2px solid #0284c7;">
+<p style="margin:0;font-size:13px;">
+Vaulting real BTC to the CreditChain network mints a 1:1-backed <strong>BTC_CCC1</strong> balance for wallet compatibility,
+only once multiple bridge validators independently confirm your deposit really landed on-chain. Your transaction must carry
+a small embedded memo identifying your CreditChain wallet - this page builds that automatically.
+</p>
+</div>
+
+<div class="card">
+    <p>
+        Real BTC balance: <span id="realBalance">Loading...</span>
+        <br>
+        <span id="fromAddress" style="font-family:monospace;font-size:12px;opacity:0.7;"></span>
+    </p>
+    <p style="font-size:12px;opacity:0.75;">
+        Vault deposit address: <span id="vaultAddress" style="font-family:monospace;word-break:break-all;">Loading...</span>
+        <br>
+        Requires <span id="requiredThreshold">-</span> validator confirmations, ~<span id="requiredConfirmations">-</span> block confirmations.
+    </p>
+</div>
+
+<div class="card" id="formCard">
+    <input type="number" id="amount" placeholder="Amount in BTC" step="any">
+    <br><br>
+    <button onclick="review()">Review</button>
+    <p id="formStatus" style="opacity:0.75;font-size:13px;"></p>
+</div>
+
+<div class="card" id="reviewCard" style="display:none;">
+    <h3 style="margin-top:0;">Confirm Vault to CreditChain Network</h3>
+    <div class="vault-review-row"><span>Amount</span><span id="reviewAmount"></span></div>
+    <div class="vault-review-row"><span>Estimated network fee</span><span id="reviewFee"></span></div>
+    <div class="vault-warning">
+        This moves real Bitcoin into the vault's shared address for CreditChain network compatibility, signed entirely in
+        this browser - your private key never leaves it. This action is irreversible. Minting BTC_CCC1 only happens once
+        enough bridge validators independently confirm it - this can take longer than a typical send since Bitcoin's
+        confirmation depth requirement is deeper.
+    </div>
+    <button id="confirmBtn" onclick="confirmDeposit()">Confirm and Vault</button>
+    <button onclick="cancelReview()">Back</button>
+    <p id="reviewStatus" style="opacity:0.75;font-size:13px;"></p>
+</div>
+
+<div class="card" id="progressCard" style="display:none;">
+    <h3 style="margin-top:0;">Waiting for confirmation</h3>
+    <p>Validator attestations: <span id="attestCount">0</span> / <span id="attestThreshold">-</span> <span class="status-pill" id="attestStatusPill">PENDING</span></p>
+    <p id="progressNote" style="font-size:12px;opacity:0.75;"></p>
+    <a href="assets">Return to Assets</a>
+</div>
+
+</div>
+
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/vendor/bip39-wordlist.js?v=fixaug5b"></script>
+<script src="js/vendor/hd-crypto.js?v=fixaug5b"></script>
+<script src="js/vendor/btc-tx.js?v=fixaug5b"></script>
+<script src="js/vault.js?v=sec0816c"></script>
+<script src="js/vault-deposit-btc.js?v=sec0816c"></script>
+
+</body>
+</html>

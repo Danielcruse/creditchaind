@@ -2,11 +2,14 @@
 <html>
 <head>
     <title>OUTERNET Login</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/auth-cover.css?v=fixaug5a">
 </head>
-<body>
+<body class="auth-cover-page">
+
+<div class="auth-cover" aria-hidden="true"><img src="svg/auth-cover.svg?v=fixaug5a" alt=""></div>
 
 <h1>OUTERNET</h1>
 
@@ -23,7 +26,7 @@
         This app is secured by a wallet keypair, not a password -
         there's no account to "log in" to until you create one.
     </p>
-    <button onclick="location.href='register.html'">
+    <button onclick="location.href='register'">
         Create Account
     </button>
 
@@ -33,48 +36,55 @@
     <div id="restoreSection" style="display:none;margin-top:15px;">
 
         <h3>Restore With Backup Phrase</h3>
-        <p style="opacity:0.7;font-size:12px;">Paste the 64-word phrase you saved at registration.</p>
+        <p style="opacity:0.7;font-size:12px;">Paste the 12-word BIP-39 phrase you saved at registration.</p>
         <textarea id="restorePhrase" rows="3" style="width:100%;box-sizing:border-box;" placeholder="word word word ..."></textarea>
         <br><br>
         <button onclick="restoreFromPhrase()">Restore</button>
         <p id="restorePhraseStatus"></p>
 
-        <br>
-        <h3>Recover By Email</h3>
-        <p style="opacity:0.7;font-size:12px;">
-            <strong>This does not recover your old private key</strong> - it migrates your
-            balances and reputation to a brand new wallet in this browser, and permanently
-            freezes the old address. Only works if you set up recovery email on the old
-            wallet beforehand (see Settings). Testnet-only, deliberately weak security -
-            see <a href="companies.html" style="color:var(--cc-accent-gold, #c9a227);">disclosures</a> throughout this app.
+        <p style="opacity:0.7;font-size:12px;margin-top:15px;">
+            Your backup phrase is the <strong>only</strong> way to restore a wallet <em>and</em>
+            its derived ETH/BTC self-custodial addresses. There is no other recovery option -
+            not email, not support, nothing. If it's lost, the wallet and anything in it are
+            unrecoverable, the same as any real self-custody crypto wallet. Save it somewhere
+            safe when you first create your account.
         </p>
-        <input type="text" id="recoverOldAddress" placeholder="Your old wallet address">
+
+        <h3 style="margin-top:20px;">Sign In With Private Key</h3>
+        <p style="opacity:0.7;font-size:12px;">
+            Paste your CreditChain wallet's raw private key (hex) instead - either the full
+            64-byte key or just the 32-byte seed.
+        </p>
+        <input id="restorePrivateKey" type="password" style="width:100%;box-sizing:border-box;" placeholder="hex-encoded private key">
         <br><br>
-        <input type="email" id="recoverEmail" placeholder="Recovery email">
-        <br><br>
-        <button onclick="requestRecoveryCode()">1. Request Code</button>
-        <p id="recoveryCodeDisplay"></p>
-        <br>
-        <input type="number" id="recoverYear" placeholder="What year did you create this wallet?">
-        <br><br>
-        <input type="text" id="recoverCode" placeholder="Code shown above">
-        <br><br>
-        <input type="text" id="recoverOldPublicKey" placeholder="(Optional) old public key - migrates ETHTEST/USDCTEST too">
-        <br><br>
-        <button onclick="recoverWallet()">2. Recover Wallet</button>
-        <p id="recoverStatus"></p>
+        <button onclick="restoreFromPrivateKey()">Sign In</button>
+        <p id="restorePrivateKeyStatus"></p>
+
+        <p style="opacity:0.7;font-size:12px;margin-top:15px;">
+            This only restores your CreditChain wallet itself - it can't re-derive any
+            ETH/BTC self-custodial addresses (those come from the full 12-word phrase, not
+            this key alone). Use the backup phrase above instead if you need those back too.
+        </p>
 
     </div>
 </div>
 
-<script src="js/api.js"></script>
-<script src="js/mnemonic.js"></script>
-<script src="js/vendor/bip39-wordlist.js"></script>
-<script src="js/vendor/hd-crypto.js"></script>
-<script src="js/hdwallet.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/vendor/bip39-wordlist.js?v=fixaug5b"></script>
+<script src="js/vendor/hd-crypto.js?v=fixaug5b"></script>
+<script src="js/hdwallet.js?v=fixaug5b"></script>
 <script>
 
 const wallet = getWallet();
+
+// hubParam comes from a Trading Hub's own shareable link
+// (hub-link.html?hub=<address> -> "I already have a wallet" ->
+// login.html?hub=<address>) - an existing wallet holder connecting to
+// a hub they discovered later, rather than at registration (see
+// core.Wallet.ConnectedHub's doc comment for why this needs its own
+// signed transaction instead of just reusing ReferredBy).
+const hubParam = new URLSearchParams(window.location.search).get("hub") || "";
 
 if (wallet && wallet.address) {
     document.getElementById("returningAddress").innerText = wallet.address;
@@ -83,8 +93,29 @@ if (wallet && wallet.address) {
     document.getElementById("newCard").style.display = "block";
 }
 
+// connectToHubIfRequested submits the signed connect-hub transaction
+// when arriving via a hub link, then always continues to whichever
+// page the caller wants regardless of whether that submission
+// succeeded - a failed/racy hub-connect (e.g. the hub got deactivated
+// between the link being shared and clicked) should never block a
+// wallet holder from actually logging in.
+async function connectToHubIfRequested(nextPage) {
+    if (hubParam) {
+        try {
+            await apiPostSigned("/wallet/connect-hub", { hub: hubParam });
+        } catch (e) {
+            console.error(e);
+        }
+    }
+    location.href = nextPage;
+}
+
 function continueToApp() {
-    location.href = "outernet.html";
+    // Arriving through a hub link and picking up right where a
+    // returning wallet left off goes straight to the Marketplace (so
+    // the hub connection is immediately visible there), not the
+    // general dashboard.
+    connectToHubIfRequested(hubParam ? "p2p" : "outernet");
 }
 
 function logoutAndForget() {
@@ -99,85 +130,100 @@ function toggleRestore() {
     el.style.display = el.style.display === "none" ? "block" : "none";
 }
 
-async function addressFromPublicKeyHex(pubKeyHex) {
-    const pubBytes = hexToBytes(pubKeyHex);
-    const digest = new Uint8Array(await window.crypto.subtle.digest("SHA-256", pubBytes));
-    return bytesToHex(digest.slice(0, 20));
-}
-
+// restoreFromPhrase re-derives the exact same keypairs register.html's
+// continueAfterSeedPhrase originally generated from this mnemonic -
+// same HDWallet.deriveAllAccounts call, same cc_hd_accounts shape -
+// since HD derivation is deterministic, this is the only real way back
+// into a wallet from a fresh browser. Re-POSTs /wallet/create too:
+// HandleCreateWallet is idempotent for an address that already exists
+// (see api/wallet_create.go), and doing it unconditionally means a
+// restore also works for the (rare) case of a phrase that was saved
+// but whose original /wallet/create call never actually reached the
+// node.
 async function restoreFromPhrase() {
     const statusEl = document.getElementById("restorePhraseStatus");
+    const mnemonic = document.getElementById("restorePhrase").value.trim().toLowerCase();
+
     try {
-        const privateKey = mnemonicToPrivateKey(document.getElementById("restorePhrase").value);
-        if (privateKey.length !== 128) {
-            throw new Error(`expected 64 words (128 hex chars), got ${privateKey.length / 2} bytes`);
+        if (!(await HDWallet.validateMnemonic(mnemonic))) {
+            throw new Error("that doesn't look like a valid 12-word BIP-39 phrase - check for typos");
         }
-        const publicKey = privateKey.slice(64); // Go ed25519 layout: seed(32) || publicKey(32)
-        const address = await addressFromPublicKeyHex(publicKey);
 
-        setWallet({ address, publicKey, privateKey });
-        statusEl.innerText = `Restored ${address} - redirecting...`;
-        setTimeout(() => { location.href = "outernet.html"; }, 1000);
-    } catch (e) {
-        statusEl.innerText = "Could not restore: " + e.message;
-    }
-}
-
-async function requestRecoveryCode() {
-    const oldAddress = normalizeAddress(document.getElementById("recoverOldAddress").value.trim());
-    const statusEl = document.getElementById("recoveryCodeDisplay");
-    if (!oldAddress) {
-        statusEl.innerText = "Enter the old wallet address first.";
-        return;
-    }
-    try {
-        const result = await apiPost("/recovery/request-recovery-code", { oldAddress });
-        statusEl.innerText = result.code
-            ? `Code: ${result.code} (${result.note})`
-            : `Code sent to the email on file - check your inbox.`;
-    } catch (e) {
-        statusEl.innerText = "Could not request code: " + e.message;
-    }
-}
-
-async function recoverWallet() {
-    const statusEl = document.getElementById("recoverStatus");
-    const oldAddress = normalizeAddress(document.getElementById("recoverOldAddress").value.trim());
-    const email = document.getElementById("recoverEmail").value.trim();
-    const claimedYear = parseInt(document.getElementById("recoverYear").value, 10);
-    const code = document.getElementById("recoverCode").value.trim();
-    const oldPublicKey = document.getElementById("recoverOldPublicKey").value.trim();
-
-    if (!oldAddress || !email || !claimedYear || !code) {
-        statusEl.innerText = "Fill in address, email, year, and code.";
-        return;
-    }
-
-    try {
-        const mnemonic = await HDWallet.generateMnemonic();
-        const accounts = await HDWallet.deriveAllAccounts(mnemonic, "");
+        const btcNetwork = window.CC_NETWORK === "mainnet" ? "mainnet" : "testnet";
+        const seed = await HDWallet.mnemonicToSeed(mnemonic, "");
+        const accounts = await HDWallet.deriveAllAccounts(mnemonic, "", btcNetwork);
+        const btcMainnet = btcNetwork === "mainnet" ? accounts.btc : await HDWallet.deriveBtcAddress(seed, "mainnet");
+        const btcTestnet = btcNetwork === "testnet" ? accounts.btc : await HDWallet.deriveBtcAddress(seed, "testnet");
 
         await apiPost("/wallet/create", {
             address: accounts.creditchain.address,
             publicKey: accounts.creditchain.publicKey,
         });
+
         setWallet({
             address: accounts.creditchain.address,
             publicKey: accounts.creditchain.publicKey,
             privateKey: accounts.creditchain.privateKey,
             kind: "hd",
         });
-        localStorage.setItem("cc_hd_accounts", JSON.stringify({ eth: accounts.eth, btc: accounts.btc }));
+        localStorage.setItem("cc_hd_accounts", JSON.stringify({
+            eth: accounts.eth,
+            btc: { testnet: btcTestnet, mainnet: btcMainnet },
+        }));
 
-        const result = await apiPostSigned("/recovery/recover", {
-            oldAddress, email, claimedYear, code, oldPublicKey,
-        });
-        statusEl.innerHTML = `Recovery pending (tx ${result.txId}) - your new address is ${accounts.creditchain.address}.<br>` +
-            `<strong>Your new recovery phrase (save this now, it will not be shown again):</strong><br>` +
-            `<span style="font-family:monospace;">${mnemonic}</span>`;
-        setTimeout(() => { location.href = "outernet.html"; }, 8000);
+        statusEl.innerText = `Restored ${accounts.creditchain.address} - redirecting...`;
+        setTimeout(() => { connectToHubIfRequested(hubParam ? "p2p" : "outernet"); }, 1000);
     } catch (e) {
-        statusEl.innerText = "Could not recover: " + e.message;
+        statusEl.innerText = "Could not restore: " + e.message;
+    }
+}
+
+// restoreFromPrivateKey accepts either the full 64-byte Go-format
+// ed25519.PrivateKey (seed(32)||publicKey(32), hex - the exact shape
+// setWallet already stores, see deriveCreditChainKeypair's doc comment
+// in hdwallet.js) or just the bare 32-byte seed, re-deriving the
+// public key in the latter case the same way deriveCreditChainKeypair
+// does. Does NOT touch cc_hd_accounts - a raw key alone can't
+// reconstruct the ETH/BTC branches, which need the full BIP-39 seed,
+// not just this wallet's own derived Ed25519 key.
+async function restoreFromPrivateKey() {
+    const statusEl = document.getElementById("restorePrivateKeyStatus");
+    const raw = document.getElementById("restorePrivateKey").value.trim().replace(/^0x/i, "");
+
+    try {
+        if (!/^[0-9a-fA-F]+$/.test(raw)) {
+            throw new Error("must be hex-encoded (0-9, a-f only)");
+        }
+
+        let privateKeyBytes, publicKeyBytes;
+        if (raw.length === 128) {
+            privateKeyBytes = HDCrypto.hexToBytes(raw);
+            publicKeyBytes = privateKeyBytes.slice(32, 64);
+            const seed32 = privateKeyBytes.slice(0, 32);
+            const derivedPub = await HDCrypto.ed25519PublicKeyFromSeed(seed32);
+            if (HDCrypto.bytesToHex(derivedPub) !== HDCrypto.bytesToHex(publicKeyBytes)) {
+                throw new Error("the embedded public key doesn't match this seed - the key looks corrupted");
+            }
+        } else if (raw.length === 64) {
+            const seed32 = HDCrypto.hexToBytes(raw);
+            publicKeyBytes = await HDCrypto.ed25519PublicKeyFromSeed(seed32);
+            privateKeyBytes = HDCrypto.concatBytes(seed32, publicKeyBytes);
+        } else {
+            throw new Error("expected 64 hex chars (32-byte seed) or 128 hex chars (64-byte full key), got " + raw.length);
+        }
+
+        const addressHash = new Uint8Array(await crypto.subtle.digest("SHA-256", publicKeyBytes));
+        const address = HDCrypto.bytesToHex(addressHash.slice(0, 20));
+        const publicKey = HDCrypto.bytesToHex(publicKeyBytes);
+
+        await apiPost("/wallet/create", { address, publicKey });
+
+        setWallet({ address, publicKey, privateKey: HDCrypto.bytesToHex(privateKeyBytes), kind: "raw" });
+
+        statusEl.innerText = `Signed in as ${address} - redirecting...`;
+        setTimeout(() => { connectToHubIfRequested(hubParam ? "p2p" : "outernet"); }, 1000);
+    } catch (e) {
+        statusEl.innerText = "Could not sign in: " + e.message;
     }
 }
 

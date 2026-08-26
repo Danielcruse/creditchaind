@@ -36,6 +36,7 @@ type miningPowerResponse struct {
 	AccountAgeFactor       uint64 `json:"accountAgeFactor"`
 	NetworkContribWeight   uint64 `json:"networkContributionsWeight"`
 	NetworkContribStatus   string `json:"networkContributionsStatus"`
+	RCInfusionBoost        uint64 `json:"rcInfusionBoost"`
 }
 
 // miningPowerScore is the single source of truth for a wallet's Mining
@@ -71,13 +72,27 @@ func miningPowerScore(address string, asOf int64) uint64 {
 	lendingFactor := successfulLendingFactorFor(address)
 	ageFactor := accountAgeFactorFor(wallet, asOf)
 
-	return trustScoreFactor*30/100 +
+	base := trustScoreFactor*30/100 +
 		repaymentFactor*20/100 +
 		stakingFactor*15/100 +
 		governanceFactor*10/100 +
 		validatorFactor*10/100 +
 		lendingFactor*10/100 +
 		ageFactor*5/100
+
+	return base + rcInfusionBoostFor(wallet)
+}
+
+// rcInfusionBoostFor is the additive, capped term TxRCInfuse
+// (api/rc_infuse.go) feeds into Mining Power - infusing RC as "real
+// world trust" makes a wallet's own future continuous mining a little
+// stronger, capped at rcInfusionBoostCap so infusion alone can never
+// produce unbounded emission (effective score caps around 100+cap).
+func rcInfusionBoostFor(wallet *core.Wallet) uint64 {
+	if wallet.RCInfusionWeightBps > rcInfusionBoostCap {
+		return rcInfusionBoostCap
+	}
+	return wallet.RCInfusionWeightBps
 }
 
 func validatorFactorFor(address string) uint64 {
@@ -147,5 +162,6 @@ func HandleMiningPower(w http.ResponseWriter, r *http.Request) {
 		AccountAgeFactor:        accountAgeFactorFor(wallet, asOf),
 		NetworkContribWeight:    0,
 		NetworkContribStatus:    "not yet active",
+		RCInfusionBoost:         rcInfusionBoostFor(wallet),
 	})
 }

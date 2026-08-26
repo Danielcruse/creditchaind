@@ -14,12 +14,16 @@ const DormancyPeriodSeconds = 300 // 5 minutes, demo-scale stand-in for 50 years
 // to be swept. LastActivityAt == 0 means "never eligible" (see its
 // doc comment) - deliberately not "dormant since the epoch," and a
 // wallet that's already been reclaimed never becomes dormant again
-// (there's nothing left in it to reclaim).
-func (w *Wallet) IsDormant(asOf int64) bool {
+// (there's nothing left in it to reclaim). dormancyPeriodSeconds is
+// passed in rather than read from the package const directly - the
+// api package's GovernanceParamsStore (which core can't import) may
+// override it per-network, so core stays a pure function of its
+// inputs and lets the caller resolve the effective value.
+func (w *Wallet) IsDormant(asOf int64, dormancyPeriodSeconds int64) bool {
 	if w.ReclaimedAt != 0 || w.LastActivityAt == 0 {
 		return false
 	}
-	return asOf-w.LastActivityAt >= DormancyPeriodSeconds
+	return asOf-w.LastActivityAt >= dormancyPeriodSeconds
 }
 
 // QualifiesForAirdrop reports whether w is a legitimate recipient of
@@ -33,9 +37,9 @@ func (w *Wallet) IsDormant(asOf int64) bool {
 // that was reclaimed once and then never touched again could keep
 // re-qualifying for every later airdrop forever, off the strength of
 // activity from before it went dormant in the first place.
-func (w *Wallet) QualifiesForAirdrop(asOf int64) bool {
+func (w *Wallet) QualifiesForAirdrop(asOf int64, dormancyPeriodSeconds int64) bool {
 	if w.LastActivityAt == 0 {
 		return false
 	}
-	return asOf-w.LastActivityAt < DormancyPeriodSeconds
+	return asOf-w.LastActivityAt < dormancyPeriodSeconds
 }

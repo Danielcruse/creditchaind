@@ -2,19 +2,21 @@
 <html>
 <head>
     <title>OUTERNET Staking</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5d">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5d">
 </head>
 <body>
-<script src="js/device-lock.js"></script>
+<script src="js/device-lock.js?v=fixaug5d"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <h1>Staking Vault</h1>
 
 <p style="opacity:0.8; font-size:13px;">
-    CCT/ETHTEST/USDCTEST staked here are test/demo amounts only, with no
-    guaranteed monetary value. CCT earned as a staking reward is a
-    testnet participation reward, not real money.
+    Staking here is a pure locking mechanism - it earns no CCT reward.
+    Mining CCT happens through validators instead (see the Validator
+    page). CCT/ETH staked here are test/demo amounts only, with no
+    guaranteed monetary value.
 </p>
 
 <div class="card">
@@ -29,14 +31,18 @@
 
 <br>
 
+<div class="card" id="legacyPositions" style="display:none;">
+</div>
+
+<br>
+
 <div class="card">
 
     <h2>Stake</h2>
 
     <select id="stakeSymbol">
         <option value="CCT">CCT</option>
-        <option value="ETHTEST">ETHTEST</option>
-        <option value="USDCTEST">USDCTEST</option>
+        <option value="ETHB">ETH</option>
     </select>
 
     <br><br>
@@ -44,6 +50,7 @@
     <input
         type="number"
         id="stakeAmount"
+        step="any"
         placeholder="Amount">
 
     <br><br>
@@ -64,8 +71,9 @@
 
     <select id="unstakeSymbol">
         <option value="CCT">CCT</option>
-        <option value="ETHTEST">ETHTEST</option>
-        <option value="USDCTEST">USDCTEST</option>
+        <option value="ETHB">ETH</option>
+        <option value="ETHTEST">ETHTEST (legacy)</option>
+        <option value="USDCTEST">USDCTEST (legacy)</option>
     </select>
 
     <br><br>
@@ -73,6 +81,7 @@
     <input
         type="number"
         id="unstakeAmount"
+        step="any"
         placeholder="Amount">
 
     <br><br>
@@ -109,22 +118,26 @@
 
     <h2>Rewards</h2>
 
-    <button onclick="claimRewards()">
-        Claim CCT Rewards
-    </button>
+    <p style="opacity:0.75;font-size:13px;">
+        Staking doesn't earn a CCT reward - it's a pure locking mechanism.
+        CCT is mined by validators instead; see the
+        <a href="validator" style="color:var(--cc-accent-gold, #c9a227);">Validator page</a>.
+    </p>
 
 </div>
 
 <br>
 
 <button
-    onclick="location.href='outernet.html'">
+    onclick="location.href='outernet'">
     Back To Wallet
 </button>
 
-<script src="js/api.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/staking.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/ai-assistant.js?v=fixaug5d"></script>
+<script src="js/vault.js?v=sec0816c"></script>
+<script src="js/staking.js?v=sec0818a"></script>
 
 </body>
 </html>

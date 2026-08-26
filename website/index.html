@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>CreditChain</title>
-<link rel="stylesheet" href="css/theme.css">
-  <link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+  <link rel="stylesheet" href="css/style.css?v=fixaug5c">
   <link rel="stylesheet" href="css/landing.css">
 </head>
 <body>
@@ -18,9 +18,9 @@
       <li><a href="#about">About</a></li>
       <li><a href="#features">Features</a></li>
       <li><a href="#roadmap">Roadmap</a></li>
-      <li><a href="whitepaper.html">Whitepaper</a></li>
-      <li><a href="faq.html">FAQ</a></li>
-      <li><a href="login.html">Launch App</a></li>
+      <li><a href="whitepaper" id="navWhitepaperLink">Whitepaper</a></li>
+      <li><a href="faq">FAQ</a></li>
+      <li><a href="login">Launch App</a></li>
     </ul>
   </nav>
 </header>
@@ -35,17 +35,17 @@
   <p>
     Build reputation on-chain.
     Borrow anywhere.
-    Stake ETHTEST and CCT.
+    <span id="heroStakeLine">Stake ETHTEST and CCT.</span>
     Become part of the future of lending.
   </p>
 
   <div class="buttons">
-    <button onclick="location.href='login.html'">
+    <button onclick="location.href='login'">
       Launch OUTERNET
     </button>
 
-    <button class="secondary"
-      onclick="location.href='whitepaper.html'">
+    <button class="secondary" id="heroWhitepaperBtn"
+      onclick="location.href='whitepaper'">
       Read Whitepaper
     </button>
   </div>
@@ -57,7 +57,7 @@
   <h2>Enter the Ecosystem</h2>
 
   <div class="card"
-       onclick="location.href='login.html'">
+       onclick="location.href='login'">
       <h3>🟦 OUTERNET</h3>
       <p>
         Borrow, lend, stake and build reputation.
@@ -65,17 +65,17 @@
   </div>
 
   <div class="card"
-       onclick="location.href='explorer.html'">
+       onclick="location.href='explorer'">
       <h3>🟩 Explorer</h3>
       <p>
         View blocks, loans and transactions.
       </p>
   </div>
 
-  <div class="card"
-       onclick="location.href='whitepaper.html'">
-      <h3>🟨 Whitepaper</h3>
-      <p>
+  <div class="card" id="ecosystemWhitepaperCard"
+       onclick="location.href='whitepaper'">
+      <h3 id="ecosystemWhitepaperTitle">🟨 Whitepaper</h3>
+      <p id="ecosystemWhitepaperDesc">
         Learn how CreditChain works.
       </p>
   </div>
@@ -92,7 +92,7 @@
   </div>
 
   <div class="card"
-       onclick="location.href='developers.html'">
+       onclick="location.href='developers'">
       <h3>🟥 Developers</h3>
       <p>
         Connect to the API and start building - or spin up your own testnet.
@@ -115,7 +115,7 @@
 
   <div class="card">
     <h2>Staking</h2>
-    <p>ETHTEST + CCT Rewards</p>
+    <p id="statsStakingLine">ETHTEST + CCT Rewards</p>
   </div>
 
 </section>
@@ -147,7 +147,7 @@
     </div>
 
     <div class="feature-card">
-      <h3>ETHTEST & CCT Staking</h3>
+      <h3 id="featureStakingTitle">ETHTEST & CCT Staking</h3>
       <p>Earn points and strengthen reputation.</p>
     </div>
 
@@ -185,9 +185,52 @@
 
 </footer>
 
-<script src="js/api.js"></script>
-<script src="js/landing-news.js"></script>
-<script src="js/governance-tab.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/landing-news.js?v=fixaug5b"></script>
+<script src="js/governance-tab.js?v=sec0815a"></script>
+<script>
+// Display-label swap only - the underlying token symbol (ETHTEST) is
+// unchanged, this just avoids showing "test" wording on mainnet, where
+// the same staking flow works against the real bridged ETH balance.
+(function mainnetAwareStakingCopy() {
+    if (window.CC_NETWORK !== "mainnet") return;
+    const stakeLine = document.getElementById("heroStakeLine");
+    if (stakeLine) stakeLine.innerText = "Stake ETH and CCT.";
+    const statsLine = document.getElementById("statsStakingLine");
+    if (statsLine) statsLine.innerText = "ETH + CCT Rewards";
+    const featureTitle = document.getElementById("featureStakingTitle");
+    if (featureTitle) featureTitle.innerText = "ETH & CCT Staking";
+})();
+
+// On mainnet, "Read Whitepaper" (and every other in-page whitepaper
+// link) routes to the Developers Manual's Roadmap/Mainnet Mechanics
+// section instead of the local whitepaper.html page, which is written
+// specifically around testnet usage tips and would be misleading on a
+// real network. Testnet keeps linking to whitepaper.html unchanged.
+// The separate site-wide banner's "Read the original whitepaper" link
+// (api.js's buildDisclosureFooter) is unrelated to this - it already
+// points to the real external whitepaper docx on both networks.
+(function mainnetAwareWhitepaperLinks() {
+    if (window.CC_NETWORK !== "mainnet") return;
+    const target = "developers#mainnet-mechanics";
+
+    const navLink = document.getElementById("navWhitepaperLink");
+    if (navLink) navLink.href = target;
+
+    const heroBtn = document.getElementById("heroWhitepaperBtn");
+    if (heroBtn) heroBtn.setAttribute("onclick", `location.href='${target}'`);
+
+    const ecoCard = document.getElementById("ecosystemWhitepaperCard");
+    if (ecoCard) {
+        ecoCard.setAttribute("onclick", `location.href='${target}'`);
+        const title = document.getElementById("ecosystemWhitepaperTitle");
+        if (title) title.innerText = "🟨 Mainnet Mechanics";
+        const desc = document.getElementById("ecosystemWhitepaperDesc");
+        if (desc) desc.innerText = "Learn how CreditChain's mainnet actually works.";
+    }
+})();
+</script>
 
 </body>
 </html>

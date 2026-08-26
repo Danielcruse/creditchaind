@@ -1,0 +1,49 @@
+<svg viewBox="0 0 800 600" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="ac-bg" cx="50%" cy="30%" r="85%">
+      <stop offset="0%" stop-color="#0c3a22"/>
+      <stop offset="55%" stop-color="#082616"/>
+      <stop offset="100%" stop-color="#04150d"/>
+    </radialGradient>
+    <linearGradient id="ac-figure" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2fbf71"/>
+      <stop offset="100%" stop-color="#0f9d58"/>
+    </linearGradient>
+    <filter id="ac-soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="1.4"/>
+    </filter>
+  </defs>
+
+  <rect width="800" height="600" fill="url(#ac-bg)"/>
+
+  <!-- faint floating orbs for depth -->
+  <circle cx="120" cy="90" r="2.5" fill="#e0c674" opacity="0.35"/>
+  <circle cx="660" cy="140" r="2" fill="#c9a227" opacity="0.3"/>
+  <circle cx="740" cy="420" r="3" fill="#3b82f6" opacity="0.25"/>
+  <circle cx="60" cy="480" r="2" fill="#2fbf71" opacity="0.3"/>
+  <circle cx="400" cy="60" r="2" fill="#e0c674" opacity="0.25"/>
+
+  <!-- exchange connectors, drawn first so figures sit above them -->
+  <g stroke="#c9a227" stroke-width="1.6" stroke-dasharray="2 7" fill="none" opacity="0.55">
+    <path d="M 190 230 Q 300 180 400 235"/>
+    <path d="M 430 250 Q 540 300 610 245"/>
+  </g>
+  <circle cx="300" cy="196" r="9" fill="#c9a227" opacity="0.85" filter="url(#ac-soft)"/>
+  <circle cx="300" cy="196" r="9" fill="none" stroke="#e0c674" stroke-width="1"/>
+  <circle cx="516" cy="278" r="9" fill="#c9a227" opacity="0.85" filter="url(#ac-soft)"/>
+  <circle cx="516" cy="278" r="9" fill="none" stroke="#e0c674" stroke-width="1"/>
+
+  <!-- floating figure: simple flat silhouette (circle head + soft
+       trapezoid body), reused via <use> at different positions/scales/
+       opacities so each reads as floating at its own depth -->
+  <g id="ac-person" filter="url(#ac-soft)">
+    <circle cx="0" cy="-34" r="12" fill="url(#ac-figure)"/>
+    <path d="M -16 -18 Q 0 -26 16 -18 L 20 30 Q 0 40 -20 30 Z" fill="url(#ac-figure)"/>
+  </g>
+
+  <use href="#ac-person" x="150" y="260" opacity="0.9"/>
+  <use href="#ac-person" x="430" y="285" opacity="0.85" transform="scale(1.05)"/>
+  <use href="#ac-person" x="640" y="230" opacity="0.55" transform="scale(0.8)"/>
+  <use href="#ac-person" x="90" y="420" opacity="0.4" transform="scale(0.65)"/>
+  <use href="#ac-person" x="580" y="440" opacity="0.35" transform="scale(0.6)"/>
+</svg>

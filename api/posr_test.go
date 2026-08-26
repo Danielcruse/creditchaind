@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"math/big"
 	"testing"
 
 	"github.com/creditchain/creditchaind/core"
@@ -25,7 +26,7 @@ func TestApplyValidatorRegister_RequiresCCTStakeNotETHTEST(t *testing.T) {
 	w.Reputation = 50
 	validatorApplicationStore.Apps[addr] = &core.ValidatorApplication{Address: addr, Status: core.ValidatorApplicationApproved}
 	stakingStore.Stakes[addr] = map[string]uint64{"ETHTEST": 5000}
-	tokenStore.Mint(addr, ValidatorRegisterFeeCCT)
+	cctStore.Mint(addr, cctW(ValidatorRegisterFeeCCT))
 
 	tx := core.Transaction{
 		ID:   "posr-test-register-ethtest-only",
@@ -44,7 +45,7 @@ func TestApplyValidatorRegister_RequiresCCTStakeNotETHTEST(t *testing.T) {
 	w2.Reputation = 50
 	validatorApplicationStore.Apps[addr2] = &core.ValidatorApplication{Address: addr2, Status: core.ValidatorApplicationApproved}
 	stakingStore.Stakes[addr2] = map[string]uint64{"CCT": core.MinValidatorStake}
-	tokenStore.Mint(addr2, ValidatorRegisterFeeCCT)
+	cctStore.Mint(addr2, cctW(ValidatorRegisterFeeCCT))
 
 	tx2 := core.Transaction{
 		ID:   "posr-test-register-cct",
@@ -111,8 +112,8 @@ func TestApplySlashReport_MissedBlock_SlashesStakeAndBansAfterThreshold(t *testi
 	w := walletStore.Get(addr)
 	w.Reputation = 100
 	stakingStore.Stakes[addr] = map[string]uint64{"CCT": 10000}
-	tokenStore.Mint(stakeEscrowAddress("CCT"), 10000)
-	initialSupply := tokenStore.Token.TotalSupply
+	cctStore.Mint(stakeEscrowAddress("CCT"), cctW(10000))
+	initialSupply, _ := core.ParseCctSmallest(cctStore.TotalSupply)
 
 	validatorStore.Register(addr, "node-1", "abc")
 
@@ -134,8 +135,11 @@ func TestApplySlashReport_MissedBlock_SlashesStakeAndBansAfterThreshold(t *testi
 	if got := stakingStore.Stakes[addr]["CCT"]; got != 10000-expectedSlash {
 		t.Fatalf("expected stake reduced by %d after one missed-block slash, got %d remaining", expectedSlash, got)
 	}
-	if got := tokenStore.Token.TotalSupply; got != initialSupply-expectedSlash {
-		t.Fatalf("expected TotalSupply to drop by the burned amount %d, got delta %d", expectedSlash, initialSupply-got)
+	currentSupply, _ := core.ParseCctSmallest(cctStore.TotalSupply)
+	expectedSupply := new(big.Int).Sub(initialSupply, core.CctWholeToSmallest(expectedSlash))
+	if currentSupply.Cmp(expectedSupply) != 0 {
+		delta := new(big.Int).Sub(initialSupply, currentSupply)
+		t.Fatalf("expected TotalSupply to drop by the burned amount %d, got delta %s", expectedSlash, core.FormatCctSmallest(delta))
 	}
 	if status, _ := validatorStore.Get(addr); status.PermanentlyBanned {
 		t.Fatalf("did not expect a ban after a single missed-block strike")
@@ -159,58 +163,23 @@ func TestApplySlashReport_MissedBlock_SlashesStakeAndBansAfterThreshold(t *testi
 	}
 }
 
-func TestBlockRewardForTimestamp_ReturnsCorrectEraTier(t *testing.T) {
-	resetPoSRTestState()
-
-	genesisTs := int64(1_700_000_000)
-	blockchain = &core.Blockchain{Blocks: []core.Block{{Index: 0, Timestamp: genesisTs}}}
-
-	cases := []struct {
-		name      string
-		elapsed   int64
-		wantCCT   uint64
-	}{
-		{"year 1, at genesis", 0, 10},
-		{"year 1, near end", secondsPerYear - 1, 10},
-		{"year 2 boundary", secondsPerYear, 8},
-		{"year 3 boundary", secondsPerYear * 2, 6},
-		{"year 4 boundary", secondsPerYear * 3, 5},
-		{"year 5 boundary", secondsPerYear * 4, 3},
-		{"year 10, held at floor", secondsPerYear * 9, 3},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got := blockRewardForTimestamp(genesisTs + c.elapsed)
-			if got != c.wantCCT {
-				t.Fatalf("expected %d CCT, got %d", c.wantCCT, got)
-			}
-		})
-	}
-}
-
-func TestBlockRewardForTimestamp_NoBlockchainFallsBackToBaseline(t *testing.T) {
-	resetPoSRTestState()
-	if got := blockRewardForTimestamp(123); got != ProduceBlockReward {
-		t.Fatalf("expected fallback to ProduceBlockReward when blockchain is unset, got %d", got)
-	}
-}
-
 func TestMintCCTCapped_ClampsAtSupplyCap(t *testing.T) {
 	resetPoSRTestState()
 
-	tokenStore.Token.TotalSupply = MaxTotalCCTSupply - 5
+	nearCap := new(big.Int).Sub(maxTotalCCTSupplySmallest, big.NewInt(5))
+	cctStore.TotalSupply = core.FormatCctSmallest(nearCap)
 
-	minted := mintCCTCapped("posr-test-cap-recipient", 100)
-	if minted != 5 {
-		t.Fatalf("expected mint to clamp to the remaining headroom (5), got %d", minted)
+	minted := mintCCTCapped("posr-test-cap-recipient", "100")
+	if minted != "5" {
+		t.Fatalf("expected mint to clamp to the remaining headroom (5), got %s", minted)
 	}
-	if got := tokenStore.Token.TotalSupply; got != MaxTotalCCTSupply {
-		t.Fatalf("expected TotalSupply to land exactly at the cap, got %d", got)
+	if got := cctStore.TotalSupply; got != core.FormatCctSmallest(maxTotalCCTSupplySmallest) {
+		t.Fatalf("expected TotalSupply to land exactly at the cap, got %s", got)
 	}
 
-	mintedAtCap := mintCCTCapped("posr-test-cap-recipient", 50)
-	if mintedAtCap != 0 {
-		t.Fatalf("expected a mint attempt once already at the cap to mint 0, got %d", mintedAtCap)
+	mintedAtCap := mintCCTCapped("posr-test-cap-recipient", "50")
+	if mintedAtCap != "0" {
+		t.Fatalf("expected a mint attempt once already at the cap to mint 0, got %s", mintedAtCap)
 	}
 }
 
@@ -222,16 +191,27 @@ func TestApplyGenesisPoolAllocation_MintsOnceAndSumsCorrectly(t *testing.T) {
 
 	applyGenesisPoolAllocation(core.Transaction{ID: "posr-genesis-alloc-1", Data: "{}"})
 
-	total := tokenStore.BalanceOf(genesisPoolAddress(genesisPoolValidatorReward)) +
-		tokenStore.BalanceOf(foundationAddr) +
-		tokenStore.BalanceOf(genesisPoolAddress(genesisPoolEcosystemDev)) +
-		tokenStore.BalanceOf(genesisPoolAddress(genesisPoolGovernanceTreasury)) +
-		tokenStore.BalanceOf(genesisPoolAddress(genesisPoolCommunityIncentives))
+	sumGenesisPools := func() *big.Int {
+		total := big.NewInt(0)
+		for _, addr := range []string{
+			genesisPoolAddress(genesisPoolValidatorReward),
+			foundationAddr,
+			genesisPoolAddress(genesisPoolEcosystemDev),
+			genesisPoolAddress(genesisPoolGovernanceTreasury),
+			genesisPoolAddress(genesisPoolCommunityIncentives),
+		} {
+			n, _ := core.ParseCctSmallest(cctStore.BalanceOf(addr))
+			total.Add(total, n)
+		}
+		return total
+	}
 
-	const wantTotal = genesisPoolValidatorRewardAmount + genesisPoolFoundationTreasuryAmount +
+	total := sumGenesisPools()
+	const wantTotalWhole = genesisPoolValidatorRewardAmount + genesisPoolFoundationTreasuryAmount +
 		genesisPoolEcosystemDevAmount + genesisPoolGovernanceTreasuryAmount + genesisPoolCommunityIncentivesAmount
-	if total != wantTotal {
-		t.Fatalf("expected genesis pools to sum to %d, got %d", wantTotal, total)
+	wantTotal := core.CctWholeToSmallest(wantTotalWhole)
+	if total.Cmp(wantTotal) != 0 {
+		t.Fatalf("expected genesis pools to sum to %s, got %s", wantTotal, total)
 	}
 	if !treasuryStore.Treasury.GenesisPoolsAllocated {
 		t.Fatalf("expected GenesisPoolsAllocated to be set true")
@@ -239,13 +219,9 @@ func TestApplyGenesisPoolAllocation_MintsOnceAndSumsCorrectly(t *testing.T) {
 
 	// Second attempt must be a no-op.
 	applyGenesisPoolAllocation(core.Transaction{ID: "posr-genesis-alloc-2", Data: "{}"})
-	totalAfterSecondAttempt := tokenStore.BalanceOf(genesisPoolAddress(genesisPoolValidatorReward)) +
-		tokenStore.BalanceOf(foundationAddr) +
-		tokenStore.BalanceOf(genesisPoolAddress(genesisPoolEcosystemDev)) +
-		tokenStore.BalanceOf(genesisPoolAddress(genesisPoolGovernanceTreasury)) +
-		tokenStore.BalanceOf(genesisPoolAddress(genesisPoolCommunityIncentives))
-	if totalAfterSecondAttempt != wantTotal {
-		t.Fatalf("expected a second allocation attempt to be a no-op, total changed from %d to %d", wantTotal, totalAfterSecondAttempt)
+	totalAfterSecondAttempt := sumGenesisPools()
+	if totalAfterSecondAttempt.Cmp(wantTotal) != 0 {
+		t.Fatalf("expected a second allocation attempt to be a no-op, total changed from %s to %s", wantTotal, totalAfterSecondAttempt)
 	}
 }
 
@@ -254,16 +230,16 @@ func TestApplyAdminTransfer_MovesExistingBalanceWithoutSenderSignature(t *testin
 
 	const from = "posr-test-unreachable-validator"
 	const to = "posr-test-new-validator-wallet"
-	tokenStore.Mint(from, 5000)
+	cctStore.Mint(from, core.FormatCctSmallest(core.CctWholeToSmallest(5000)))
 
 	data, _ := json.Marshal(adminTransferData{From: from, To: to, Amount: 1000, Symbol: "CCT"})
 	applyAdminTransfer(core.Transaction{ID: "posr-admin-transfer-1", Data: string(data)})
 
-	if got := tokenStore.BalanceOf(from); got != 4000 {
-		t.Fatalf("expected sender balance reduced to 4000, got %d", got)
+	if got := cctStore.BalanceOf(from); got != core.FormatCctSmallest(core.CctWholeToSmallest(4000)) {
+		t.Fatalf("expected sender balance reduced to 4000, got %s", got)
 	}
-	if got := tokenStore.BalanceOf(to); got != 1000 {
-		t.Fatalf("expected recipient balance 1000, got %d", got)
+	if got := cctStore.BalanceOf(to); got != core.FormatCctSmallest(core.CctWholeToSmallest(1000)) {
+		t.Fatalf("expected recipient balance 1000, got %s", got)
 	}
 }
 
@@ -272,15 +248,15 @@ func TestApplyAdminTransfer_InsufficientBalanceIsNoOp(t *testing.T) {
 
 	const from = "posr-test-poor-sender"
 	const to = "posr-test-recipient"
-	tokenStore.Mint(from, 10)
+	cctStore.Mint(from, core.FormatCctSmallest(core.CctWholeToSmallest(10)))
 
 	data, _ := json.Marshal(adminTransferData{From: from, To: to, Amount: 1000, Symbol: "CCT"})
 	applyAdminTransfer(core.Transaction{ID: "posr-admin-transfer-2", Data: string(data)})
 
-	if got := tokenStore.BalanceOf(from); got != 10 {
-		t.Fatalf("expected insufficient-balance transfer to be a no-op, sender balance changed to %d", got)
+	if got := cctStore.BalanceOf(from); got != core.FormatCctSmallest(core.CctWholeToSmallest(10)) {
+		t.Fatalf("expected insufficient-balance transfer to be a no-op, sender balance changed to %s", got)
 	}
-	if got := tokenStore.BalanceOf(to); got != 0 {
-		t.Fatalf("expected recipient to receive nothing, got %d", got)
+	if got := cctStore.BalanceOf(to); got != "0" {
+		t.Fatalf("expected recipient to receive nothing, got %s", got)
 	}
 }

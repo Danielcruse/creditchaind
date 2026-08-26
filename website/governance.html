@@ -2,14 +2,49 @@
 <html>
 <head>
     <title>OUTERNET Governance</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
+    <style>html{scroll-behavior:smooth;}</style>
 </head>
 <body>
-<script src="js/device-lock.js"></script>
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <h1>Governance</h1>
+
+<div class="dash-nav-grid">
+    <a class="dash-nav-tile" href="#votingRightsCard">
+        <div class="dash-nav-tile-icon">&#128220;</div>
+        <h3>Voting Rights</h3>
+        <p>Activate governance, post updates</p>
+    </a>
+    <a class="dash-nav-tile" href="#communitySpace">
+        <div class="dash-nav-tile-icon">&#128226;</div>
+        <h3>Community</h3>
+        <p>Live status feed &amp; voting ballots</p>
+    </a>
+    <a class="dash-nav-tile" href="#userLogCard">
+        <div class="dash-nav-tile-icon">&#128100;</div>
+        <h3>User Log</h3>
+        <p>Any wallet's vote record</p>
+    </a>
+    <a class="dash-nav-tile" href="#createProposalCard">
+        <div class="dash-nav-tile-icon">&#9999;</div>
+        <h3>Create Proposal</h3>
+        <p>Plain, param change, or version</p>
+    </a>
+    <a class="dash-nav-tile" href="#activeProposalsCard">
+        <div class="dash-nav-tile-icon">&#128203;</div>
+        <h3>Active Proposals</h3>
+        <p>Vote on what's open now</p>
+    </a>
+    <a class="dash-nav-tile" href="#intendingValidatorsCard">
+        <div class="dash-nav-tile-icon">&#128737;</div>
+        <h3>Intending Validators</h3>
+        <p>Support who's applying</p>
+    </a>
+</div>
 
 <div class="card" id="announcementsCard" style="display:none;">
 
@@ -21,7 +56,7 @@
 
 <br>
 
-<div class="card">
+<div class="card" id="votingRightsCard">
 
     <h2>Voting Rights</h2>
 
@@ -39,7 +74,7 @@
         <p style="opacity:0.75;font-size:13px;">
             Your current voting weight: <b id="myVotingWeight">-</b> -
             weighted by your staked CCT and Trust Score, not just by having a wallet
-            (see the <a href="reputation.html" style="color:inherit;">PoSR explainer</a>).
+            (see the <a href="reputation" style="color:inherit;">PoSR explainer</a>).
         </p>
 
         <textarea id="statusText" placeholder="Post a status update or news for the community..." maxlength="500" rows="3" style="width:100%;box-sizing:border-box;"></textarea>
@@ -52,17 +87,76 @@
 
 <br>
 
-<div class="card">
+<section id="communitySpace">
 
-    <h2>Community Updates</h2>
+<h2 style="margin-bottom:4px;">Community</h2>
+<p style="opacity:0.7;font-size:13px;margin-top:0;">
+    A scrollable feed of what's happening across governance - status updates from
+    activated wallets, and every ballot currently open for a vote, in one place.
+</p>
 
-    <div id="statusFeed">Loading...</div>
+<div class="card" id="communityUpdatesCard">
+
+    <h3>Community Updates</h3>
+
+    <div id="statusFeed" style="max-height:420px;overflow-y:auto;">Loading...</div>
 
 </div>
 
 <br>
 
-<div class="card">
+<div class="card" id="votingBallotsCard">
+
+    <h3>Voting Ballots</h3>
+    <p style="opacity:0.7;font-size:13px;">
+        Every open ballot you can currently act on - decision votes (proposals) and support
+        votes (validator applications) - in one scrollable list.
+    </p>
+
+    <div id="votingBallotsList" style="max-height:420px;overflow-y:auto;">Loading...</div>
+
+</div>
+
+<div class="card" id="executiveCreateCard" style="display:none;">
+
+    <h3>Executive Ballots</h3>
+    <p style="opacity:0.7;font-size:13px;">
+        You're currently one of the top-<span id="execCommitteeSizeHint">5</span> RC (REPT) holders -
+        this network's live-computed governance "executives." Only executives may create or vote on
+        this narrow ballot type, which is the sole way <code>RealWorldTrustWeightBps</code> (how much
+        <a href="reputation#infuseRcCard">Infused real-world trust</a> boosts mining power) ever
+        changes. Open executive ballots appear above, in the Voting Ballots list.
+    </p>
+
+    <div>
+        <select id="execParamKey">
+            <option value="RealWorldTrustWeightBps">RealWorldTrustWeightBps</option>
+            <option value="ModeratorRegisterFeeCCT">ModeratorRegisterFeeCCT (default 10 CCT)</option>
+            <option value="ModeratorStakeRequirementCCT">ModeratorStakeRequirementCCT (default 200 CCT)</option>
+        </select>
+        <input type="number" id="execParamValue" min="0" placeholder="New value">
+        <button onclick="createExecutiveProposal()">Propose New Value</button>
+    </div>
+
+    <p style="opacity:0.7;font-size:13px;margin-top:16px;">
+        Executives may also vote to deactivate a moderator who has abused their assigned role
+        (the ledger of a moderator's own certificate-review decisions is executive-only -
+        <a href="companies">Trading Hub</a> disputes are the usual reason). Deactivation is
+        permanent: the moderator is removed from future trade-oversight assignment and can never
+        re-register.
+    </p>
+    <div>
+        <input type="text" id="execModeratorTarget" placeholder="Moderator address to deactivate">
+        <button onclick="createModeratorDeactivateProposal()">Propose Deactivation</button>
+    </div>
+
+</div>
+
+</section>
+
+<br>
+
+<div class="card" id="userLogCard">
 
     <h2>Community User Log</h2>
 
@@ -81,7 +175,7 @@
 
 <br>
 
-<div class="card">
+<div class="card" id="createProposalCard">
 
     <h2>Create Proposal</h2>
 
@@ -103,18 +197,79 @@
         <option value="">Plain (informational)</option>
         <option value="PARAM_CHANGE">Parameter Change</option>
         <option value="VERSION_ACTIVATION">Version Activation</option>
+        <option value="TOKEN_CREATION">Token Creation</option>
+        <option value="PREDICTION">Prediction (RC mini-bet market)</option>
+        <option value="MODERATOR_DISPUTE">Moderator Dispute</option>
     </select>
 
     <div id="paramChangeFields" style="display:none;margin-top:8px;">
         <select id="paramKey">
             <option value="ValidatorRegisterFeeCCT">ValidatorRegisterFeeCCT</option>
             <option value="CCTTransferFee">CCTTransferFee</option>
+            <option value="ModeratorRegisterFeeCCT">ModeratorRegisterFeeCCT (default 10 CCT)</option>
+            <option value="ModeratorStakeRequirementCCT">ModeratorStakeRequirementCCT (default 200 CCT)</option>
         </select>
         <input id="paramValue" type="number" min="0" placeholder="New value">
     </div>
 
     <div id="versionActivationFields" style="display:none;margin-top:8px;">
         <input id="targetVersion" placeholder="Target version (e.g. v2)">
+    </div>
+
+    <div id="tokenCreationFields" style="display:none;margin-top:8px;">
+        <p style="opacity:0.7;font-size:12px;">
+            Token creation only happens on a real PASSED vote - the 500 CCT fee below is
+            charged the instant this proposal is submitted, win or lose, and is never refunded.
+        </p>
+        <input id="tcSymbol" placeholder="Symbol (e.g. MYTOK)" maxlength="10" style="text-transform:uppercase;">
+        <br><br>
+        <input id="tcName" placeholder="Token name" maxlength="64">
+        <br><br>
+        <input id="tcSupply" type="number" min="1" placeholder="Initial supply">
+        <br><br>
+        <select id="tcStandard"></select>
+        <input id="tcPegReference" placeholder="Peg reference (e.g. USD)" style="display:none;">
+        <p style="opacity:0.6;font-size:12px;">Fee: 500 CCT, charged on submission regardless of outcome.</p>
+    </div>
+
+    <div id="predictionFields" style="display:none;margin-top:8px;">
+        <p style="opacity:0.7;font-size:12px;">
+            A public Yes/No prediction against a real, developer-accessible price pool. Anyone can
+            attach RC to their vote to back a side with a real stake - the first RC-backed vote
+            instantly forms a visible bet pool. At resolution, if the target was met the YES side
+            wins (otherwise NO); winners split the losing side's pooled RC pro-rata to their own
+            stake. A pool that stays open 14+ days mints a small bonus (up to 10% of the total
+            pooled RC) shared across every infuser on both sides, regardless of outcome.
+        </p>
+        <label style="font-size:12px;opacity:0.75;">Target pool</label><br>
+        <select id="predTargetSymbol">
+            <option value="BTCTEST">BTCTEST (developer-only BTC/CCT price pool)</option>
+            <option value="ETHTEST">ETHTEST (developer-only ETH/CCT price pool)</option>
+        </select>
+        <br><br>
+        <input id="predTargetPrice" type="number" min="1" placeholder="Target price (CCT per unit, e.g. 1000000 = 1 CCT)">
+        <br><br>
+        <input id="predDurationDays" type="number" min="1" max="60" placeholder="Voting window in days (default 7, max 60)">
+        <p style="opacity:0.6;font-size:12px;">RC-backed votes cost 1 CCT (pays the validators processing the extra load) - a plain Yes/No vote with no RC attached stays free.</p>
+    </div>
+
+    <div id="moderatorDisputeFields" style="display:none;margin-top:8px;">
+        <p style="opacity:0.7;font-size:12px;">
+            Reference a specific past decision by a moderator you believe abused the role - the
+            moderator must have genuinely been assigned to that exact record, checked server-side
+            before this proposal can even be created. If the vote passes, that moderator takes a
+            real reputation penalty. This does not automatically refund any money - see the
+            <a href="companies">Trading Hub</a>/marketplace dispute flow for that.
+        </p>
+        <input id="mdModeratorAddress" placeholder="Moderator's address">
+        <br><br>
+        <select id="mdReferenceType">
+            <option value="negotiation">Loan negotiation</option>
+            <option value="offer">P2P offer</option>
+            <option value="company">Trading Hub application</option>
+        </select>
+        <br><br>
+        <input id="mdReferenceId" placeholder="Negotiation / offer / application ID">
     </div>
 
     <p style="opacity:0.6;font-size:12px;margin-top:8px;">
@@ -136,7 +291,7 @@
 
 <br>
 
-<div class="card">
+<div class="card" id="activeProposalsCard">
 
     <h2>Active Proposals</h2>
 
@@ -148,14 +303,33 @@
 
 <br>
 
+<div class="card" id="intendingValidatorsCard">
+
+    <h2>Intending Validators</h2>
+    <p style="opacity:0.7;font-size:13px;">
+        Wallets currently gathering community support to become a validator.
+        Any activated-governance wallet with reputation 30 or higher can support
+        up to 3 different applicants - once an application gets enough support
+        weight, it advances to the next onboarding stage.
+    </p>
+
+    <p id="myValidatorVoteStatus" style="font-size:13px;opacity:0.85;"></p>
+
+    <div id="intendingValidatorsList">Loading...</div>
+
+</div>
+
+<br>
+
 <button
-    onclick="location.href='wallet.html'">
+    onclick="location.href='wallet'">
     Back To Wallet
 </button>
 
-<script src="js/api.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/governance.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/ai-assistant.js?v=fixaug5b"></script>
+<script src="js/governance.js?v=sec0816a"></script>
 
 </body>
 </html>

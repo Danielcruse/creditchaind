@@ -3,7 +3,6 @@ package core
 import (
 	"crypto/sha256"
 	"encoding/binary"
-	"math"
 )
 
 // Locked PoSR (Proof of Stake and Reputation) parameters.
@@ -11,10 +10,22 @@ import (
 // reputation dominates wealth by design ("Proof of Stake and
 // Reputation", not "Proof of Richest"). All constants here are
 // bootstrap defaults intended to become governance-adjustable.
+//
+// Selection weights and the slash decay are integer fixed-point
+// (scale posrPrecision), not float64. IEEE-754's basic operators (+,
+// -, *, /) are bit-identical across every conforming platform, but
+// math.Pow (previously used for the slash decay below) carries no
+// such cross-implementation guarantee - different libm builds can
+// legitimately disagree in the last bit, which would let
+// independently-run nodes disagree about who gets selected. Integer
+// arithmetic has no such ambiguity, so validator selection stays
+// byte-for-byte reproducible across every node/OS/architecture.
 const (
-	posrStakeWeight      = 0.25
-	posrReputationWeight = 0.55
-	posrUptimeWeight     = 0.20
+	posrPrecision = 1_000_000
+
+	posrStakeWeightFixed      = 250_000 // 0.25 * posrPrecision
+	posrReputationWeightFixed = 550_000 // 0.55 * posrPrecision
+	posrUptimeWeightFixed     = 200_000 // 0.20 * posrPrecision
 
 	// StakeCap normalizes stake so no single whale can dominate
 	// selection purely through wealth.
@@ -29,29 +40,52 @@ const (
 	// Each slashing strike decays a validator's selection weight by
 	// 10%, compounding. Reputation itself never goes below 1 (see
 	// reputation.go) - this decay is a separate, additional
-	// consequence on top of the reputation penalty.
-	slashDecayFactor = 0.9
+	// consequence on top of the reputation penalty. Represented as an
+	// exact fraction (9/10) and applied via repeated integer
+	// multiplication in validatorWeight, rather than math.Pow.
+	slashDecayNumerator   = 9
+	slashDecayDenominator = 10
 )
 
-// validatorWeight computes a validator's PoSR selection weight.
+// validatorWeight computes a validator's PoSR selection weight,
+// fixed-point scaled by posrPrecision (a validator at max stake/
+// reputation/uptime with no slashes returns exactly posrPrecision).
 // Reputation is read from the validator's own Wallet - Validator has
 // no separate reputation field (see validator.go).
-func validatorWeight(v *Validator) float64 {
-	normalizedStake := float64(v.Stake) / float64(StakeCap)
-	if normalizedStake > 1.0 {
-		normalizedStake = 1.0
+//
+// v.Uptime is sourced elsewhere (ValidatorStatus.Uptime in
+// validator_store.go) as a float64 ratio of two basic divisions,
+// which IEEE-754 already guarantees is bit-identical everywhere; it's
+// converted to fixed-point here with a single multiply+truncate,
+// itself a basic, deterministic operation.
+func validatorWeight(v *Validator) uint64 {
+	normalizedStake := v.Stake
+	if normalizedStake > StakeCap {
+		normalizedStake = StakeCap
+	}
+	stakeFixed := normalizedStake * posrPrecision / StakeCap
+
+	reputationFixed := v.Wallet.Reputation * posrPrecision / MaxReputation
+
+	uptimeFixed := uint64(v.Uptime * posrPrecision)
+
+	raw := (stakeFixed*posrStakeWeightFixed +
+		reputationFixed*posrReputationWeightFixed +
+		uptimeFixed*posrUptimeWeightFixed) / posrPrecision
+
+	// decay starts at "full weight" (posrPrecision) and is repeatedly
+	// scaled by 9/10, dividing back down to posrPrecision scale at
+	// every step so intermediate values stay bounded no matter how
+	// large SlashCount is. It reaches 0 after roughly 130 strikes -
+	// break out then instead of looping SlashCount times (SlashCount
+	// is attacker-adjacent via repeated slashing, so this keeps the
+	// loop's cost independent of how high it's been driven).
+	decay := uint64(posrPrecision)
+	for i := uint64(0); i < v.SlashCount && decay > 0; i++ {
+		decay = decay * slashDecayNumerator / slashDecayDenominator
 	}
 
-	reputationFactor := float64(v.Wallet.Reputation) / float64(MaxReputation)
-	uptimeFactor := v.Uptime
-
-	raw := (normalizedStake * posrStakeWeight) +
-		(reputationFactor * posrReputationWeight) +
-		(uptimeFactor * posrUptimeWeight)
-
-	decay := math.Pow(slashDecayFactor, float64(v.SlashCount))
-
-	return raw * decay
+	return raw * decay / posrPrecision
 }
 
 // isEligible gates validators out of the selection pool entirely
@@ -119,37 +153,45 @@ func isEligibleBootstrap(v *Validator) bool {
 	return v.Active
 }
 
+// weightedValidator pairs a pool index with its precomputed weight -
+// used instead of a parallel weights slice so skipped (zero-weight)
+// validators can't desync the index between the weight list and pool.
+type weightedValidator struct {
+	poolIndex int
+	weight    uint64
+}
+
 // selectFrom runs the actual deterministic weighted-random draw over
 // whichever pool (strict or relaxed) SelectValidator decided to use.
 func selectFrom(pool []*Validator, previousBlockHash string) *Validator {
-	weights := make([]float64, 0, len(pool))
-	var totalWeight float64
+	weighted := make([]weightedValidator, 0, len(pool))
+	var totalWeight uint64
 
-	for _, v := range pool {
+	for i, v := range pool {
 		w := validatorWeight(v)
-		if w <= 0 {
+		if w == 0 {
 			continue
 		}
-		weights = append(weights, w)
+		weighted = append(weighted, weightedValidator{poolIndex: i, weight: w})
 		totalWeight += w
 	}
 
-	if totalWeight <= 0 {
+	if totalWeight == 0 {
 		return nil
 	}
 
 	seed := sha256.Sum256([]byte(previousBlockHash))
 	seedInt := binary.BigEndian.Uint64(seed[:8])
-	point := (float64(seedInt%1_000_000) / 1_000_000.0) * totalWeight
+	point := (seedInt % posrPrecision) * totalWeight / posrPrecision
 
-	var cumulative float64
-	for i, w := range weights {
-		cumulative += w
+	var cumulative uint64
+	for _, wv := range weighted {
+		cumulative += wv.weight
 		if point <= cumulative {
-			return pool[i]
+			return pool[wv.poolIndex]
 		}
 	}
-	return pool[len(pool)-1]
+	return pool[weighted[len(weighted)-1].poolIndex]
 }
 
 // AnyStrictlyEligible reports whether at least one validator currently

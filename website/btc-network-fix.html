@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Switch BTC Network - OUTERNET</title>
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+<link rel="stylesheet" href="css/style.css?v=fixaug5c">
+<link rel="stylesheet" href="css/outernet.css?v=fixaug5d">
+<style>
+    .btcfix-warning{
+        background:rgba(255,176,32,0.12); border:1px solid #ffb020;
+        border-radius:8px; padding:10px; font-size:13px; margin:12px 0;
+    }
+    textarea#btcfixPhrase{ width:100%; box-sizing:border-box; min-height:70px; font-family:monospace; }
+</style>
+</head>
+<body class="outernet-light">
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
+
+<div class="main" style="max-width:520px;margin:0 auto;padding:24px 16px;">
+
+<p><a href="outernet" style="color:#0284c7;">&larr; OUTERNET</a></p>
+
+<h1>Switch BTC to <span id="btcfixNetworkLabel">this network</span></h1>
+
+<div class="card">
+<p style="margin:0 0 8px 0;font-size:13px;">
+Bitcoin's mainnet and testnet addresses aren't just different labels on the same key - they're derived from
+genuinely different paths off your recovery phrase. Your currently cached BTC address:
+</p>
+<p style="font-family:monospace;font-size:12px;word-break:break-all;opacity:0.8;" id="btcfixCurrentAddress">-</p>
+<div class="btcfix-warning">
+This does not match the network you're currently on. Re-enter your 12-word recovery phrase once to derive the
+correct address for this network - it never leaves your browser, and your CreditChain/ETH accounts are unaffected.
+</div>
+</div>
+
+<div class="card" id="formCard">
+    <label for="btcfixPhrase">Recovery phrase (12 words)</label>
+    <textarea id="btcfixPhrase" placeholder="word1 word2 word3 ..."></textarea>
+    <br><br>
+    <button onclick="confirmSwitch()">Derive and Save</button>
+    <p id="btcfixStatus" style="opacity:0.75;font-size:13px;"></p>
+</div>
+
+</div>
+
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/vendor/bip39-wordlist.js?v=fixaug5b"></script>
+<script src="js/vendor/hd-crypto.js?v=fixaug5b"></script>
+<script src="js/hdwallet.js?v=fixaug5b"></script>
+<script src="js/btc-network-fix.js?v=fixaug5b"></script>
+
+</body>
+</html>

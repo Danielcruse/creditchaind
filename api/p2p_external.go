@@ -168,6 +168,65 @@ func HandleP2PSellerDispute(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+type p2pBuyerDisputeData struct {
+	OfferID string `json:"offerId"`
+}
+
+// HandleP2PBuyerDispute is the buyer's own escalation path - see
+// core.P2POfferStore.DisputeAwaitingPaymentByBuyer's doc comment for
+// why it exists alongside the seller's own, immediate
+// HandleP2PSellerDispute: a buyer who marked payment sent and got no
+// response (no confirm, no dispute) from the seller within
+// core.DisputeEligibleAfterSeconds isn't stuck waiting indefinitely -
+// they can summon a moderator themselves.
+func HandleP2PBuyerDispute(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req p2pBuyerDisputeData
+
+	auth, address, err := requireSignedRequest(r, &req)
+	if err != nil {
+		writeUnauthorized(w, err)
+		return
+	}
+
+	offer, ok := p2pOfferStore.Get(req.OfferID)
+	if !ok {
+		http.Error(w, "offer not found", http.StatusNotFound)
+		return
+	}
+	if offer.AcceptedBy != address {
+		http.Error(w, "only the buyer can use this dispute path", http.StatusForbidden)
+		return
+	}
+	if offer.SettlementStatus != core.SettlementAwaitingPayment {
+		http.Error(w, "not awaiting payment confirmation", http.StatusBadRequest)
+		return
+	}
+	if offer.BuyerMarkedPaidAt == 0 {
+		http.Error(w, "you haven't marked payment sent yet - nothing to escalate", http.StatusBadRequest)
+		return
+	}
+	if waited := time.Now().Unix() - offer.BuyerMarkedPaidAt; waited < core.DisputeEligibleAfterSeconds {
+		remaining := core.DisputeEligibleAfterSeconds - waited
+		http.Error(w, fmt.Sprintf("the seller still has %dm to respond before you can escalate this", remaining/60+1), http.StatusBadRequest)
+		return
+	}
+
+	data, _ := json.Marshal(req)
+	tx := recordTx(auth, address, "", 0, core.TxP2PBuyerDispute, string(data))
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"status": "pending",
+		"txId":   tx.ID,
+	})
+}
+
 type p2pBuyerMarkPaidData struct {
 	OfferID string `json:"offerId"`
 }

@@ -39,7 +39,12 @@ async function startHDMigration() {
 
     try {
         const mnemonic = await HDWallet.generateMnemonic();
-        const accounts = await HDWallet.deriveAllAccounts(mnemonic, "");
+        // Derive BTC for both networks while the mnemonic is in hand -
+        // see register.html's identical comment and getHdAccounts() in
+        // api.js for why.
+        const seed = await HDWallet.mnemonicToSeed(mnemonic, "");
+        const accounts = await HDWallet.deriveAllAccounts(mnemonic, "", "testnet");
+        const btcMainnet = await HDWallet.deriveBtcAddress(seed, "mainnet");
 
         statusEl.innerText = "Registering new address...";
         await apiPost("/wallet/create", {
@@ -66,7 +71,7 @@ async function startHDMigration() {
         });
         localStorage.setItem("cc_hd_accounts", JSON.stringify({
             eth: accounts.eth,
-            btc: accounts.btc,
+            btc: { testnet: accounts.btc, mainnet: btcMainnet },
         }));
 
         document.getElementById("hdMigrateIntro").style.display = "none";

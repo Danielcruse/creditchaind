@@ -2,25 +2,33 @@
 <html>
 <head>
     <title>Transaction Detail</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
     <style>
-        /* Same black explorer theme as explorer.html - this page is
-           reached FROM the explorer's transaction list, so it should
-           feel like the same tool, not a different app. */
+        /* White "vault/ledger" theme, matching explorer.html's own
+           white-background treatment (this page is reached FROM the
+           explorer's transaction list, so it should feel like the
+           same tool) - this file previously had its own separate
+           black theme left over from before explorer.html was
+           switched to white, which is exactly the "black background
+           on the follow-up transaction pages" report this fixes. */
+        body.outernet-light{
+            background:#ffffff;
+            color:#111827;
+        }
         body{
-            background:#000000;
+            display:block;
         }
         .tx-page{
             max-width:700px;
             margin:0 auto;
             padding:24px 16px 40px;
         }
-        .card{
-            background:#0a0a0a;
-            border:1px solid rgba(255,255,255,0.08);
-            box-shadow:none;
+        body.outernet-light .card{
+            background:#ffffff;
+            border:1px solid #e5e7eb;
+            box-shadow:0 1px 2px rgba(16,24,40,.04);
         }
         .card:hover{
             transform:none;
@@ -31,14 +39,14 @@
             justify-content:space-between;
             gap:16px;
             padding:10px 0;
-            border-bottom:1px solid rgba(255,255,255,0.06);
+            border-bottom:1px solid #e5e7eb;
             font-size:13px;
         }
         .tx-row:last-child{
             border-bottom:none;
         }
         .tx-row-label{
-            opacity:0.55;
+            opacity:0.6;
             font-size:11px;
             text-transform:uppercase;
             letter-spacing:0.5px;
@@ -57,11 +65,11 @@
             letter-spacing:0.5px;
             padding:2px 8px;
             border-radius:8px;
-            border:1px solid rgba(255,255,255,0.2);
+            border:1px solid #d1d5db;
         }
         .explorer-pill.confirmed{
-            color:#00ff95;
-            border-color:#00ff95;
+            color:#0f9d58;
+            border-color:#0f9d58;
         }
         .tx-summary{
             font-size:15px;
@@ -78,8 +86,8 @@
         .tx-raw pre{
             margin-top:10px;
             padding:12px;
-            background:rgba(255,255,255,0.03);
-            border:1px solid rgba(255,255,255,0.08);
+            background:#f9fafb;
+            border:1px solid #e5e7eb;
             border-radius:8px;
             font-size:11px;
             overflow-x:auto;
@@ -92,12 +100,13 @@
         }
     </style>
 </head>
-<body>
-<script src="js/device-lock.js"></script>
+<body class="outernet-light">
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <div class="tx-page">
 
-    <p><a href="explorer.html" style="color:var(--cc-accent-gold, #c9a227);">&larr; Explorer</a></p>
+    <p><a href="explorer" style="color:var(--cc-accent-gold, #c9a227);">&larr; Explorer</a></p>
 
     <h1 style="margin-bottom:4px;">Transaction</h1>
     <p style="opacity:0.6;font-size:13px;margin-top:0;">Full detail for a single confirmed transaction.</p>
@@ -110,9 +119,10 @@
 
 </div>
 
-<script src="js/api.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/tx.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/ai-assistant.js?v=fixaug5b"></script>
+<script src="js/tx.js?v=sec0816a"></script>
 
 </body>
 </html>

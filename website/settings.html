@@ -2,19 +2,20 @@
 <html>
 <head>
     <title>Settings</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
 </head>
 <body>
-<script src="js/device-lock.js"></script>
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <h1>Settings</h1>
 
 <div class="card">
 
     <button onclick="settingsLogout()">
-        Logout
+        Sign Out
     </button>
 
     <br><br>
@@ -29,27 +30,45 @@
 
 <div class="card">
 
-    <h2>Recovery Email</h2>
+    <h2>Wallet Backup</h2>
 
     <p style="opacity:0.75;font-size:13px;">
-        Testnet placeholder - links a verified email to this wallet so it can later be
-        <strong>migrated</strong> (not literally recovered - see
-        <a href="login.html" style="color:var(--cc-accent-gold, #c9a227);">Login</a> for what that means) if you lose
-        this browser. Combined with your wallet's creation year as a security question.
-        A real deployment would email the code below instead of showing it here.
+        Your 12-word BIP-39 backup phrase - shown once, at registration - is the
+        <strong>only</strong> way to restore this wallet on a new browser or device. There is
+        no email recovery, no support-assisted recovery, no alternative. If it's lost, the
+        wallet and everything in it are unrecoverable, the same as any real self-custody
+        crypto wallet. CreditChain never stores it and cannot show it to you again - if you
+        haven't saved it somewhere safe, do that now while you still have access.
     </p>
 
-    <p id="recoveryEmailStatus"></p>
+</div>
 
-    <input type="email" id="settingsRecoveryEmail" placeholder="Email">
+<br>
+
+<div class="card">
+
+    <h2>Contact Email</h2>
+
+    <p style="opacity:0.75;font-size:13px;">
+        Optional. Used only to notify you - e.g. a validator application confirmation link, a P2P trade
+        starting, or a dispute needing your attention. This is <strong>not</strong> a recovery method:
+        it never grants access to this wallet or anyone else's, and losing it changes nothing about your
+        ability to sign in (your 12-word phrase is still the only key to that).
+    </p>
+
+    <p id="contactEmailStatus" style="font-size:13px;"></p>
+
+    <input type="email" id="contactEmailInput" placeholder="you@example.com" style="width:100%;box-sizing:border-box;">
     <br><br>
-    <button onclick="requestSettingsEmailCode()">1. Request Code</button>
-    <p id="settingsCodeDisplay"></p>
-    <br>
-    <input type="text" id="settingsEmailCode" placeholder="Code shown above">
-    <br><br>
-    <button onclick="confirmSettingsEmail()">2. Confirm Email</button>
-    <p id="settingsEmailStatus"></p>
+    <button onclick="requestContactEmailCode()">Send Verification Code</button>
+
+    <div id="contactEmailConfirmRow" style="display:none;margin-top:10px;">
+        <input type="text" id="contactEmailCodeInput" placeholder="6-digit code" maxlength="6" style="width:100%;box-sizing:border-box;">
+        <br><br>
+        <button onclick="confirmContactEmailCode()">Confirm Code</button>
+    </div>
+
+    <p id="contactEmailActionStatus" style="opacity:0.75;font-size:13px;"></p>
 
 </div>
 
@@ -76,16 +95,18 @@
     <details>
         <summary style="cursor:pointer;font-weight:bold;">How your ETH/BTC balance works</summary>
         <p style="opacity:0.75;font-size:13px;margin-top:10px;">
-            The ETH and BTC balances shown on your Assets page are backed 1:1 by real bridged funds -
-            deposits to your real Ethereum/Bitcoin testnet address auto-credit here, and the balance moves
-            instantly and for free within CreditChain (no fee, no delay) just like any other token here.
+            CreditChain never holds an ETH or BTC signing key on your behalf. The ETH and BTC balances shown
+            on your Assets page are backed 1:1 by real funds sitting at your own self-custodial address
+            (derived from your recovery phrase, right on this device) - deposits there auto-credit here, and
+            the balance moves instantly and for free within CreditChain (no fee, no delay) just like any
+            other token here.
         </p>
         <p style="opacity:0.75;font-size:13px;">
-            When you send and choose "ERC network" (for ETH) or "BTC network" (for BTC) instead of "CCT
-            network," that's the one moment a real bridge action happens: CreditChain sends real ETH or BTC
-            to the address you specify on the real network, and a small bridge fee applies to cover that.
-            Choosing "CCT network" instead just moves the balance to another CreditChain wallet, free of
-            that fee, same as sending any other token here.
+            When you send and choose "Direct" (for ETH) or "BTC network" (for BTC) instead of "CCT
+            network," that's a real send: the transaction is signed entirely in your browser with your own
+            key and broadcast straight to the real network - no CreditChain fee, only the real network gas
+            cost. Choosing "CCT network" instead just moves the balance to another CreditChain wallet
+            instantly, for a small flat fee, same as sending any other token here.
         </p>
     </details>
 
@@ -110,10 +131,11 @@
 
 </div>
 
-<script src="js/api.js"></script>
-<script src="js/currency.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/settings.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/currency.js?v=fixaug5b"></script>
+<script src="js/ai-assistant.js?v=fixaug5b"></script>
+<script src="js/settings.js?v=sec0816b"></script>
 
 </body>
 </html>

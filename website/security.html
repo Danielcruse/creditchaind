@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1">
+
+    <title>CreditChain Security Disclosures</title>
+
+    <link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet"
+          href="css/style.css?v=fixaug5c">
+</head>
+<body>
+
+<header>
+    <nav class="navbar">
+        <div class="logo">
+            CreditChain Security Disclosures
+        </div>
+
+        <ul>
+            <li>
+                <a href="/">
+                    Home
+                </a>
+            </li>
+
+            <li>
+                <a href="faq">
+                    FAQ
+                </a>
+            </li>
+
+            <li>
+                <a href="login">
+                    Launch OUTERNET
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+<section>
+
+<h1>Security Disclosures</h1>
+
+<p style="opacity:0.8;">
+A plain-language list of every known, currently-open gap that could
+affect the safety of funds or data on this network - kept current as
+things are found and fixed. Nothing here is held back for later; if a
+gap exists and isn't fixed yet, it's listed. This page is updated as
+gaps close or new ones are found - it is not a one-time snapshot.
+</p>
+
+<h3>Audit status</h3>
+<p>
+An internal preliminary review has been completed. A full, independent
+professional security audit has <strong>not</strong> been completed yet -
+that engagement is planned as a separate, follow-up step. Nothing on
+this network should be treated as independently verified safe until
+that audit is finished and its findings are addressed. Separate
+legal/regulatory review is also still pending.
+</p>
+
+<h3 style="color:#dc2626;">Critical: a single bridge validator can currently move vault funds alone</h3>
+<p>
+The smart contract that holds real ETH/USDC locked for this network's
+1:1-backed balances (<code>CreditChainVault</code>, deployed on Ethereum
+mainnet) currently requires only <strong>one</strong> signature to
+release funds, even though more than one bridge validator is registered.
+In practice, this means any single registered validator - if compromised,
+dishonest, or coerced - could today move the vault's real balance to an
+address of their choosing, without needing agreement from any other
+validator. The same single-signature threshold also applies to approving
+new deposits, meaning a single validator could similarly attest to a
+deposit that never happened.
+</p>
+<p>
+This is the single most important reason the combined-deposit cap below
+exists, and it is the top item flagged for the upcoming professional
+audit. Work toward removing human signers from this path entirely (a
+trust-minimized, cryptographic proof of the real Ethereum chain state,
+rather than a validator's word) has started as a proof of concept but is
+not yet built into the running network. Raising the signature threshold
+alone is being weighed too, but only once genuinely independent
+validator keys exist to raise it to - a higher signature count from the
+same underlying operator would not add real security.
+</p>
+
+<h3>Deposit cap</h3>
+<p>
+Because of the gap above, each account's combined BTC + ETH holdings
+bridged onto this network are capped at $10,000 during this
+stabilization period. A deposit that would push a total above the cap
+is only partially credited - the excess requires manual recovery, so
+check your current total before sending a large deposit. This cap stays
+in place until the underlying signer risk is addressed.
+</p>
+
+<h3>Bitcoin vault signing</h3>
+<p>
+The Bitcoin side of the vault's signing key is, on some deployments,
+still a local development fallback rather than production-grade custody
+(e.g. hardware security module or cloud KMS). Where this applies, it's
+logged plainly by the server itself rather than silently treated as
+production-ready.
+</p>
+
+<h3>Withdrawal timing depends on an operator-funded relay wallet</h3>
+<p>
+Moving approved withdrawals from the vault back out onto Ethereum
+requires a small amount of real ETH in an operator-controlled wallet to
+pay gas fees. If that wallet runs low, already-approved withdrawals can
+be delayed until it's topped up again - this is an operational
+dependency, not a fund-safety issue (nothing is at risk in the
+meantime), but it can mean a delay before your withdrawal actually
+completes on-chain.
+</p>
+
+<h3>No rollback from a deep chain fork</h3>
+<p>
+If two versions of this network's chain ever diverge past a point both
+sides have already applied (a deep fork/reorg), there is currently no
+automatic mechanism to roll back and reconcile - a node in that state
+would need manual intervention. The much more common case (a node
+falling behind and catching back up) is handled safely and
+automatically; this gap is specifically about a genuine, adversarial
+deep fork, which has not occurred in practice.
+</p>
+
+<h3>Peer network is governance-gated, not fully permissionless yet</h3>
+<p>
+Nodes previously joined this network's peer-to-peer gossip layer using
+only a shared network secret. That's been replaced: a new node now needs
+a passed community governance vote to be admitted, publicly attributing
+who sponsored the request and which vote approved it - a small number of
+already-connected nodes were grandfathered in once, visibly marked as
+such, rather than needing to re-vote themselves in. This is real
+progress on accountability and decentralization over a bare shared
+secret, but it isn't a complete Sybil-resistance guarantee on its own:
+governance voting power itself isn't a hard economic barrier to
+acquiring, so this layer is stronger than before, not a finished
+permissionless network - something to be aware of if you're evaluating
+decentralization claims specifically.
+</p>
+
+<h3>Economic parameters are still early-stage</h3>
+<p>
+Values like unbonding/dormancy periods, reward weights, and fee levels
+are set at conservative, demo-appropriate levels rather than fully
+tuned, final production economics. They're adjustable by governance,
+but haven't yet been through a real, extended production tuning period.
+</p>
+
+<h3>Key custody is your (or the operator's) responsibility</h3>
+<p>
+This app is self-custodial: your private key/recovery phrase is the
+only thing that controls your funds, and it lives in your own browser -
+CreditChain never holds it. Losing it means losing access, with no
+recovery path CreditChain can perform for you. Separately, the
+network's own admin and bridge-validator keys are an operating
+responsibility (secure generation, storage, and rotation) that this
+codebase cannot itself enforce.
+</p>
+
+<hr>
+
+<p style="opacity:0.7;font-size:13px;">
+See also the <a href="whitepaper">whitepaper</a> for the full technical
+architecture, and the <a href="faq">FAQ</a> for general questions.
+</p>
+
+</section>
+
+<footer>
+    <p>
+        CreditChain • Build Reputation.
+        Borrow Anywhere.
+    </p>
+</footer>
+
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+
+</body>
+</html>

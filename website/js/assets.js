@@ -21,28 +21,6 @@ function weiToEth(weiString) {
     return `${whole}.${frac}`;
 }
 
-// satsToBtc mirrors send-bridged-btc.js's helper - /btcb/balance
-// returns a plain sats integer (safe within JS's number range, unlike
-// ETHB's wei), so this is a much simpler base-1e8 conversion.
-function satsToBtc(sats) {
-    const n = Number(sats || 0);
-    const whole = Math.floor(n / 1e8);
-    const frac = String(n % 1e8).padStart(8, "0").replace(/0+$/, "") || "0";
-    return `${whole}.${frac}`;
-}
-
-// hdAccount reads the self-custodial Ethereum/Bitcoin accounts derived
-// at registration/migration time (see hdwallet.js) - null if this
-// wallet predates the Multi-Chain HD Wallet and hasn't migrated yet.
-function hdAccount(chain) {
-    try {
-        const accounts = JSON.parse(localStorage.getItem("cc_hd_accounts") || "null");
-        return accounts ? accounts[chain] : null;
-    } catch (e) {
-        return null;
-    }
-}
-
 async function priceLine(symbol) {
     try {
         const history = await apiGet(`/pool/price-history?symbol=${encodeURIComponent(symbol)}`);
@@ -60,12 +38,13 @@ function assetRowHTML(iconLabel, symbol, name, address, balanceText, priceText, 
         ? `<span class="asset-name asset-address">${address}</span>${copyIconHTML(address, copyId)}`
         : `<span class="asset-name">${name}</span>`;
     const fiatHTML = fiatText ? `<span class="asset-fiat" style="opacity:0.65;font-size:12px;">${fiatText}</span>` : "";
+    const symbolLabel = symbol === "CCT" ? "CCT" : tokenLabel(symbol);
     return `
-        <div class="asset-row" style="cursor:pointer;" onclick="location.href='asset.html?symbol=${symbol}'">
+        <div class="asset-row" style="cursor:pointer;" onclick="location.href='asset?symbol=${symbol}'">
             <div class="asset-row-left">
-                <div class="asset-icon">${iconLabel}</div>
+                <div class="asset-icon">${coinIconSVG(symbol, 38)}</div>
                 <div class="asset-info">
-                    <span class="asset-symbol">${symbol === "CCT" ? "CCT" : tokenLabel(symbol)}</span>
+                    <span class="asset-symbol">${symbolLabel}</span>
                     ${addressHTML}
                 </div>
             </div>
@@ -78,33 +57,89 @@ function assetRowHTML(iconLabel, symbol, name, address, balanceText, priceText, 
     `;
 }
 
+// hdEthAddress reads the self-custodial Ethereum address (see
+// hdwallet.js) - null if this wallet hasn't migrated to the HD wallet
+// yet. Used only on mainnet, where the real, non-custodial ETH/USDC
+// rows replace ETHB/USDCTEST (see loadAssets's isMainnet branch below).
+function hdEthAddress() {
+    try {
+        const accounts = getHdAccounts();
+        return accounts && accounts.eth ? accounts.eth.address : null;
+    } catch (e) {
+        return null;
+    }
+}
+
 async function loadAssets() {
     if (!assetsWallet) return;
     const listEl = document.getElementById("assetsList");
+    const isMainnet = window.CC_NETWORK === "mainnet";
 
     try {
-        const [cctBalance, usdcTestAddress, ethbAddress, btcbAddress] = await Promise.all([
+        const [cctBalance, yenAddress] = await Promise.all([
             apiGet(`/token/balance?address=${assetsWallet.address}`),
-            getUsdcTestAddress(assetsWallet),
-            getEthbAddress(assetsWallet),
-            deriveTokenAddress(assetsWallet.publicKey, "BTCB-SUBADDRESS"),
+            getYenAddress(assetsWallet),
         ]);
+        const yenBalance = await apiGet(`/yene/balance?address=${yenAddress}`);
 
-        const [usdcTestBalance, ethbBalance, btcbBalance, usdcPrice] = await Promise.all([
-            apiGet(`/usdctest/balance?address=${usdcTestAddress}`),
-            apiGet(`/ethb/balance?address=${ethbAddress}`),
-            apiGet(`/btcb/balance?address=${btcbAddress}`),
-            priceLine("USDCTEST"),
-        ]);
+        // The "BTC" row shows BTC_CCC1 (vault-locked), the SAME figure
+        // asset.html?symbol=BTCB now shows as its primary balance (see
+        // that file's loadHero) - showing BTCB's old mirror-model figure
+        // here instead was a real inconsistency: the landing page and
+        // the token detail page told two different stories about "your
+        // BTC balance." Applies on both networks, matching asset.html's
+        // own (network-unconditional) BTCB branch.
+        const btcCcc1 = await fetchCcc1Balance(assetsWallet, "BTC");
+        const btcbBtc = smallestToDecimal(btcCcc1.balance, VAULT_CHAIN_INFO.BTC.decimals);
 
-        const ethbEth = weiToEth(ethbBalance.balance);
-        const btcbBtc = satsToBtc(btcbBalance.balance);
+        // On mainnet, this row shows ETH_CCC1/USDC_CCC1 (vault-locked) -
+        // the SAME figures asset.html?symbol=ETH/USDC now show as their
+        // primary balance (see that file's loadHero) - same "landing
+        // page and token detail page must agree" fix as the BTC row
+        // above. Any real ETH/USDC sitting at the self-custodial address
+        // but not yet vaulted shows on the token detail page's own
+        // "Received - not yet vaulted" banner, not summed in here.
+        // USDCTEST is blocked entirely by MAINNET_MODE
+        // (api/mainnet_gate.go). Testnet keeps today's exact
+        // ETHB/USDCTEST behavior unchanged.
+        let ethRowHTML, usdcRowHTML, ethFiat, usdcFiat;
+        if (isMainnet) {
+            const ethAddr = hdEthAddress();
+            if (ethAddr) {
+                registerEthWatchAddressOnce(assetsWallet, ethAddr);
+            }
+            const [ethCcc1, usdcCcc1] = await Promise.all([
+                fetchCcc1Balance(assetsWallet, "ETH"),
+                fetchCcc1Balance(assetsWallet, "USDC"),
+            ]);
+            const ethEth = smallestToDecimal(ethCcc1.balance, VAULT_CHAIN_INFO.ETH.decimals);
+            const usdcAmount = smallestToDecimal(usdcCcc1.balance, VAULT_CHAIN_INFO.USDC.decimals);
+            [ethFiat, usdcFiat] = await Promise.all([fiatLine("ETH", ethEth), fiatLine("USDC", usdcAmount)]);
+            ethRowHTML = assetRowHTML("ETH", "ETH", "Real Ethereum.", ethAddr, `${ethEth} ETH`, "", ethFiat);
+            usdcRowHTML = assetRowHTML("USDC", "USDC", "Real USDC, self-custodial.", ethAddr, `${usdcAmount} USDC`, "", usdcFiat);
+        } else {
+            const [usdcTestAddress, ethbAddress] = await Promise.all([
+                getUsdcTestAddress(assetsWallet),
+                getEthbAddress(assetsWallet),
+            ]);
+            const [usdcTestBalance, ethbBalance, usdcPrice] = await Promise.all([
+                apiGet(`/usdctest/balance?address=${usdcTestAddress}`),
+                apiGet(`/ethb/balance?address=${ethbAddress}`),
+                priceLine("USDCTEST"),
+            ]);
+            const ethbEth = weiToEth(ethbBalance.balance);
+            [ethFiat, usdcFiat] = await Promise.all([
+                fiatLine("ETHB", ethbEth),
+                fiatLine("USDCTEST", usdcTestBalance.balance),
+            ]);
+            ethRowHTML = assetRowHTML("ETH", "ETHB", "Your ETH balance.", null, `${ethbEth} ETH`, "", ethFiat);
+            usdcRowHTML = assetRowHTML("USDC", "USDCTEST", "Imported token", usdcTestAddress, `${usdcTestBalance.balance} USDCTEST`, usdcPrice, usdcFiat);
+        }
 
-        const [cctFiat, ethbFiat, btcbFiat, usdcFiat] = await Promise.all([
-            fiatLine("CCT", cctBalance.balance),
-            fiatLine("ETHB", ethbEth),
+        const [cctFiat, btcbFiat, yenFiat] = await Promise.all([
+            fiatLine("CCT", cctFromSmallest(cctBalance.balance)),
             fiatLine("BTCB", btcbBtc),
-            fiatLine("USDCTEST", usdcTestBalance.balance),
+            fiatLine("YENE", yenBalance.balance),
         ]);
 
         let customRowsHTML = "";
@@ -138,62 +173,33 @@ async function loadAssets() {
             console.error(e);
         }
 
-        // Two BTC-related rows, mirroring the ETH row split: "BTC" is
-        // the self-custodial testnet address itself (its own network,
-        // real UTXOs, spent directly via BIP143 signing - see
-        // send-bridged-btc.html's "BTC network" mode); "BTCB" is the
-        // bridged ledger balance credited when deposits to that same
-        // address are detected (see api/btc_bridge.go) - unlike ETHB
-        // there's no separate custodial address for BTCB, deposits
-        // land on the user's own self-custodial address.
-        let btcRowHTML = "";
-        const btcAccount = hdAccount("btc");
-        if (btcAccount) {
-            btcRowHTML = assetRowHTML(
-                "BTC",
-                "BTC",
-                "Bitcoin (testnet), self-custodial address",
-                btcAccount.address,
-                "View on Bitcoin network",
-                ""
-            );
-        }
+        // One "BTC" row, showing BTC_CCC1 (see btcbBtc above) - clicking
+        // through lands on asset.html?symbol=BTCB, which shows the same
+        // figure as ITS primary balance plus any real-but-not-yet-
+        // vaulted BTC as a secondary banner. The self-custodial BTC
+        // network address itself is reachable from that page's own
+        // network breakdown, not a second top-level row here.
         const btcbRowHTML = assetRowHTML(
             "BTC",
             "BTCB",
-            "Bridged BTC (deposits to your Bitcoin address auto-credit here; send picks CCT or BTC network)",
+            "Your BTC balance.",
             null,
             `${btcbBtc} BTC`,
             "",
             btcbFiat
         );
 
-        // One "ETH" row - real bridged Sepolia ETH (the auto-bridge
-        // balance, symbol ETHB internally). Deposits to your custodial
-        // Sepolia address auto-credit here; send picks CCT network
-        // (instant, internal) or ERC network (real Sepolia, triggers a
-        // bridge withdrawal) - see send-bridged-eth.html. The old
-        // synthetic ETHTEST faucet token is deliberately NOT shown or
-        // added into this balance - it's a separate, no-real-value
-        // internal token still used for staking/collateral on the
-        // Borrow page, and mixing its number into real (if testnet)
-        // ETH would misrepresent what's actually real.
-        const ethRowHTML = assetRowHTML(
-            "ETH",
-            "ETHB",
-            "Real bridged Sepolia ETH (deposits auto-credit; send picks CCT or ERC network)",
-            null,
-            `${ethbEth} ETH`,
-            "",
-            ethbFiat
-        );
-
+        // No separate ETH_CCC1/USDC_CCC1/BTC_CCC1 rows here - each
+        // chain's vault-locked balance IS the figure shown above for
+        // ETH/BTC/USDC, matching asset.html's own per-chain page (see
+        // that file's loadHero) so the landing page and the token detail
+        // page always agree.
         listEl.innerHTML =
-            assetRowHTML("CCT", "CCT", "CreditChain native token", null, `${cctBalance.balance} CCT`, "Hub currency", cctFiat) +
+            assetRowHTML("CCT", "CCT", "CreditChain native token", null, `${cctFromSmallest(cctBalance.balance)} CCT`, "Hub currency", cctFiat) +
             ethRowHTML +
             btcbRowHTML +
-            assetRowHTML("USDC", "USDCTEST", "Imported token", usdcTestAddress, `${usdcTestBalance.balance} USDCTEST`, usdcPrice, usdcFiat) +
-            btcRowHTML +
+            usdcRowHTML +
+            assetRowHTML("YEN", "YENE", isMainnet ? "Borrowed funds (Engage)" : "Testnet YEN-e", null, `${yenBalance.balance} YENE`, "", yenFiat) +
             customRowsHTML;
     } catch (e) {
         console.error(e);

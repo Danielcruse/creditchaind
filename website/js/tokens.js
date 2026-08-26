@@ -1,10 +1,5 @@
 const tkWallet = getWallet();
 
-// Mirrors api/token_registry.go's TokenCreationFeeETHTest - only used
-// here for an early, friendlier warning; the server-side check is the
-// one that actually matters.
-const TOKEN_CREATION_FEE_ETHTEST = 5;
-
 let tkSelectedStandard = "C1";
 
 async function tkLoadStandards() {
@@ -55,16 +50,6 @@ async function tkInit() {
         console.error(e);
     }
 
-    try {
-        const ethTestBalance = await fetchTokenBalance(tkWallet, "ETHTEST");
-        if (ethTestBalance.balance < TOKEN_CREATION_FEE_ETHTEST) {
-            document.getElementById("tokensNotEnoughFee").style.display = "block";
-            document.getElementById("tokensLoggedIn").style.display = "none";
-        }
-    } catch (e) {
-        console.error(e);
-    }
-
     loadTokenList();
 }
 
@@ -82,10 +67,10 @@ async function loadTokenList() {
             .map(
                 (t) => `
             <div class="explorer-row">
-                <span>${t.symbol} <span style="opacity:0.6;font-size:11px;">[${t.standard || "C1"}]</span></span>
-                <span class="explorer-hash">${t.name}${t.pegReference ? ` (pegged: ${t.pegReference})` : ""}</span>
+                <span>${escapeHtml(t.symbol)} <span style="opacity:0.6;font-size:11px;">[${escapeHtml(t.standard || "C1")}]</span></span>
+                <span class="explorer-hash">${escapeHtml(t.name)}${t.pegReference ? ` (pegged: ${escapeHtml(t.pegReference)})` : ""}</span>
                 <span>supply: ${t.totalSupply}</span>
-                <span>pool: ${t.cctReserve} CCT / ${t.tokenReserve} ${t.symbol}</span>
+                <span>pool: ${cctFromSmallest(t.cctReserve)} CCT / ${t.tokenReserve} ${t.symbol}</span>
                 <span style="color:${t.tradeable ? "#8f8" : "#f88"};">
                     ${t.tradeable ? "Tradeable" : "Not tradeable yet - needs liquidity"}
                 </span>
@@ -119,7 +104,7 @@ async function registerToken() {
             standard: tkSelectedStandard,
             pegReference: tkSelectedStandard === "C117S" ? pegReference : "",
         });
-        statusEl.innerText = `Registered as ${tkSelectedStandard} - pending confirmation (tx ${result.txId}), ${TOKEN_CREATION_FEE_ETHTEST} ETHTEST fee charged. Head to the Pool page to give it a price.`;
+        statusEl.innerText = `Registered as ${tkSelectedStandard} - pending confirmation (tx ${result.txId}). Head to the Pool page to give it a price.`;
         setTimeout(loadTokenList, 9000);
     } catch (e) {
         statusEl.innerText = e.message;

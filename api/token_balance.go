@@ -15,14 +15,10 @@ func HandleTokenBalance(
 		r.URL.Query().
 			Get("address")
 
-	balance :=
-		tokenStore.
-			BalanceOf(
-				address,
-			)
+	balance := cctStore.BalanceOf(address)
 
 	json.NewEncoder(w).Encode(
-		map[string]uint64{
+		map[string]string{
 			"balance":
 				balance,
 		},

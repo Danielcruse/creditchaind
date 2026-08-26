@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/creditchain/creditchaind/core"
 )
@@ -30,10 +31,10 @@ func HandleBorrow(
 		return
 	}
 
-	if !hasEnoughCollateral(address, req.Amount) {
+	if !hasEnoughCollateral(address, req.Amount, time.Now().Unix()) {
 		http.Error(
 			w,
-			"insufficient locked collateral - lock staked CCT or oETH covering at least this amount first",
+			"insufficient locked collateral - lock staked CCT, oETH, or STETH_CCC1 covering at least this amount first",
 			http.StatusBadRequest,
 		)
 		return
@@ -43,8 +44,15 @@ func HandleBorrow(
 		address,
 	)
 
+	// Repayment Trust specifically, not overall TSI - credit terms
+	// should key off the actually-relevant credit-risk signal, so a
+	// weak Trading/Governance/etc. dimension can never mask (or a
+	// strong one paper over) real repayment history. See
+	// core.TrustDimensionValue's doc comment for why this needs no
+	// cutover check of its own - it already falls back to the flat
+	// Reputation for any wallet whose Trust isn't seeded yet.
 	limit := core.BorrowLimit(
-		wallet.Reputation,
+		core.TrustDimensionValue(wallet, core.DimensionRepayment),
 	)
 
 	if req.Amount > limit {
@@ -63,7 +71,7 @@ func HandleBorrow(
 	// would silently change the terms of a loan the borrower already
 	// agreed to.
 	interest := core.InterestRate(
-		wallet.Reputation,
+		core.TrustDimensionValue(wallet, core.DimensionRepayment),
 	)
 
 	// oETH collateral is a 1:1 receipt for staked ETHTEST, so its
@@ -72,7 +80,7 @@ func HandleBorrow(
 	// CCT is the numeraire everything else prices IN, so there's no
 	// separate "CCT price" to react to. See
 	// core.PriceAdjustedInterestRate's doc comment.
-	if collateralSymbol, ok := peekCollateralSymbolForLoan(address, req.Amount); ok && collateralSymbol == "OETH" {
+	if collateralSymbol, ok := peekCollateralSymbolForLoan(address, req.Amount, time.Now().Unix()); ok && collateralSymbol == "OETH" {
 		interest = core.PriceAdjustedInterestRate(interest, priceHistoryStore.Get("ETHTEST"))
 	}
 

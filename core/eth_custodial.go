@@ -14,11 +14,17 @@ import "sync"
 // production - the key material never enters this process's memory - or
 // a clearly-labeled local dev-only fallback when KMS isn't configured).
 //
-// Scoped to Sepolia testnet ETH only - real (worthless) testnet value,
-// same "no real value" framing as CCT/ETHTEST/USDCTEST elsewhere in this
-// app. Do not point this at Ethereum mainnet without the licensing/legal
-// review flagged in audit/KNOWN_GAPS.md - custodying real mainnet ETH on
-// a user's behalf is money transmission in most jurisdictions.
+// Sepolia testnet ETH by default - real (worthless) testnet value, same
+// "no real value" framing as CCT/ETHTEST/USDCTEST elsewhere in this app.
+// A mainnet instance (ETH_EXPECTED_CHAIN_ID=1) is possible but hard-
+// gated: api/eth_rpc.go's InitEthRPC refuses to enable this corner at
+// all against any non-Sepolia chain unless ETH_CUSTODIAL_KMS_ENABLED=
+// true with real AWS credentials - see that function's doc comment.
+// This gate is an engineering safety rail only, NOT a substitute for
+// the licensing/legal review flagged in audit/KNOWN_GAPS.md - custodying
+// real mainnet ETH on a user's behalf is money transmission in most
+// jurisdictions, and that review is still a separate, outstanding
+// prerequisite regardless of what this code technically allows.
 type EthCustodialAccount struct {
 	// CreditChainAddress is this account's own wallet address (the one
 	// that authenticated the request that created this custodial
@@ -57,6 +63,20 @@ type EthCustodialAccount struct {
 	// field only once a corresponding TxBridgeDeposit has actually
 	// been applied - never optimistically bumped at report time.
 	LastCreditedWei string
+
+	// UncreditedExcessWei accumulates (never overwritten) the portion
+	// of any deposit that would have pushed this account's total
+	// BTCB+ETHB USD holdings over the admin-set
+	// "AccountHoldingsCapUsdCents" limit at the time it was observed -
+	// see api/apply.go's applyBridgeDeposit and
+	// api/account_holdings_cap.go. If the admin hasn't set both
+	// EthUsdCentsPerEth/BtcUsdCentsPerBtc rates, this never
+	// accumulates anything (matching today's unlimited testnet
+	// behavior). Real, on-chain wei this account's custodial address
+	// genuinely received but that this ledger only partially credited
+	// - not lost, just requiring manual admin follow-up (see GET
+	// /admin/bridge/excess-deposits).
+	UncreditedExcessWei string
 }
 
 type EthCustodialStore struct {

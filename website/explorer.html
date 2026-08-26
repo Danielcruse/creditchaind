@@ -2,26 +2,50 @@
 <html>
 <head>
     <title>Blockchain Explorer</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/outernet.css?v=fixaug5d">
     <style>
-        /* Explorer-specific theme: predominantly black, like a real
-           block explorer (Etherscan/Blockchain.com), rather than this
-           site's usual blue-gradient background - a deliberate local
-           override, not a site-wide style.css change. */
-        body{
-            background:#000000;
+        html{
+            scroll-behavior:smooth;
         }
         .explorer-page{
             max-width:1100px;
             margin:0 auto;
             padding:0 16px 40px;
         }
-        .card{
-            background:#0a0a0a;
-            border:1px solid rgba(255,255,255,0.08);
-            box-shadow:none;
+        /* Light "vault/ledger" theme (body.outernet-light, per the
+           explicit "white background" request) - these rules are this
+           page's own overrides on top of outernet.css's generic
+           .card/.dash-nav-tile light rules, since this file's own
+           .explorer-* selectors were previously dark-only. */
+        body.outernet-light{
+            /* Plain white, not the shared .outernet-light mint tint
+               (#eef8f1 in css/outernet.css) - explorer specifically
+               asked for a literal white background, overridden here
+               rather than in the shared class since other pages still
+               use the mint tint. */
+            background:#ffffff;
+        }
+        /* outernet.css sets body{display:flex} sitewide (css/outernet.css:21)
+           for pages built around a .sidebar + .main row layout. This page
+           has neither - .explorer-page is a plain single column - but it
+           still inherits that flex row, which makes it a flex item with
+           the default min-width:auto, i.e. it refuses to shrink below its
+           OWN content's min-content width regardless of viewport size.
+           That's the real cause of the "doesn't load well on mobile"
+           report: at narrow widths .explorer-page (and everything inside
+           it) stayed pinned near its max-width instead of shrinking,
+           overflowing the visible viewport. Reverting to a plain block
+           body here (this page never needed the flex row) fixes it. */
+        body{
+            display:block;
+        }
+        body.outernet-light .card{
+            background:#ffffff;
+            border:1px solid #e5e7eb;
+            box-shadow:0 1px 2px rgba(16,24,40,.04);
         }
         .card:hover{
             transform:none;
@@ -33,9 +57,13 @@
             gap:14px;
             margin:20px 0;
         }
+        body.outernet-light .explorer-stat{
+            background:#ffffff;
+            border:1px solid #e5e7eb;
+            border-radius:12px;
+            padding:16px;
+        }
         .explorer-stat{
-            background:#0a0a0a;
-            border:1px solid rgba(255,255,255,0.08);
             border-radius:12px;
             padding:16px;
         }
@@ -62,10 +90,19 @@
             min-width:200px;
             padding:10px 14px;
             border-radius:10px;
-            border:1px solid rgba(255,255,255,0.15);
-            background:rgba(255,255,255,0.05);
-            color:white;
             box-sizing:border-box;
+        }
+        body.outernet-light .explorer-search input{
+            border:1px solid #e5e7eb;
+            background:#f9fafb;
+            color:#111827;
+        }
+        /* Transaction/block rows scroll as one rectangular line each on
+           narrow viewports instead of stacking every field into a tall,
+           label-above-value card - see the mobile media query below,
+           which is what actually removes the old stacked layout. */
+        .explorer-table-scroll{
+            overflow-x:auto;
         }
         .explorer-table{
             width:100%;
@@ -80,19 +117,25 @@
             opacity:0.55;
             font-weight:600;
             padding:8px 10px;
-            border-bottom:1px solid rgba(255,255,255,0.12);
+            white-space:nowrap;
+        }
+        body.outernet-light .explorer-table th{
+            border-bottom:1px solid #e5e7eb;
         }
         .explorer-table td{
             padding:10px;
-            border-bottom:1px solid rgba(255,255,255,0.06);
             font-family:monospace;
             vertical-align:top;
+            white-space:nowrap;
+        }
+        body.outernet-light .explorer-table td{
+            border-bottom:1px solid #f3f4f6;
         }
         .explorer-table tr:last-child td{
             border-bottom:none;
         }
-        .explorer-table tr:hover td{
-            background:rgba(255,255,255,0.03);
+        body.outernet-light .explorer-table tr:hover td{
+            background:#f9fafb;
         }
         .explorer-hash{
             opacity:0.75;
@@ -106,9 +149,12 @@
             border-radius:8px;
             border:1px solid rgba(255,255,255,0.2);
         }
+        body.outernet-light .explorer-pill{
+            border-color:#e5e7eb;
+        }
         .explorer-pill.confirmed{
-            color:#00ff95;
-            border-color:#00ff95;
+            color:#0f9d58;
+            border-color:#0f9d58;
         }
         .explorer-pill.pending{
             color:#ffb020;
@@ -136,7 +182,9 @@
            cube instead of a table row, echoing how a real blockchain's
            blocks link to one another. Horizontally scrollable so the
            full page of blocks stays reachable on any viewport without
-           the cubes needing to shrink past legibility. */
+           the cubes needing to shrink past legibility. Kept dark
+           (matches an Etherscan-style "chain" strip regardless of page
+           theme - these are small, high-contrast chips, not full cards). */
         .block-chain{
             display:flex;
             align-items:stretch;
@@ -185,6 +233,7 @@
             overflow:hidden;
             text-overflow:ellipsis;
             white-space:nowrap;
+            color:#e5e7eb;
         }
         .block-cube-txns{
             display:inline-block;
@@ -196,50 +245,56 @@
             border-radius:8px;
             border:1px solid rgba(255,255,255,0.25);
             opacity:0.85;
+            color:#e5e7eb;
         }
         .block-cube:hover{
             border-color:#00ff95;
             cursor:pointer;
         }
 
+        /* Rectangular, single-line rows on mobile - each transaction/
+           block stays exactly one row (its own horizontal scroll,
+           not a tall stacked label-over-value card) instead of the
+           previous "display:block per cell" layout that made this
+           tab elongate the whole page. */
         @media (max-width: 700px){
-            .explorer-table thead{
-                display:none;
+            .explorer-table{
+                font-size:12px;
             }
-            .explorer-table, .explorer-table tbody, .explorer-table tr, .explorer-table td{
-                display:block;
-                width:100%;
-            }
-            .explorer-table tr{
-                border-bottom:1px solid rgba(255,255,255,0.12);
-                padding:10px 0;
-            }
+            .explorer-table th,
             .explorer-table td{
-                border-bottom:none;
-                padding:4px 0;
+                padding:8px 6px;
             }
-            .explorer-table td::before{
-                content:attr(data-label);
-                display:block;
-                font-size:10px;
-                text-transform:uppercase;
-                letter-spacing:0.5px;
-                opacity:0.5;
-                margin-bottom:2px;
+        }
+
+        /* .explorer-stats' minmax(160px, 1fr) needs 4*160px = 640px
+           minimum before auto-fit will even consider wrapping to fewer
+           columns - wider than most phone viewports, so the grid
+           itself forced the WHOLE PAGE to scroll horizontally on
+           mobile (the actual cause of "does not load well on mobile" -
+           not a broken script, a layout that never fit). Force exactly
+           2 columns under 700px so no minimum-width constraint can
+           exceed the viewport. */
+        @media (max-width: 700px){
+            .explorer-stats{
+                grid-template-columns:repeat(2, 1fr);
+            }
+        }
+        @media (max-width: 420px){
+            .explorer-stats{
+                grid-template-columns:1fr;
             }
         }
     </style>
 </head>
-<body>
-<script src="js/device-lock.js"></script>
+<body class="outernet-light">
 
 <div class="explorer-page">
 
 <h1>OUTERNET Explorer</h1>
 
 <p style="margin-top:-10px;">
-    <a href="tokens.html">Token Creation</a> &nbsp;|&nbsp;
-    <a href="reputation.html#math">How Reputation Is Calculated</a>
+    <a href="reputation#math">How Reputation Is Calculated</a>
 </p>
 
 <div class="explorer-stats">
@@ -261,7 +316,25 @@
     </div>
 </div>
 
-<div class="card">
+<div class="dash-nav-grid">
+    <a class="dash-nav-tile" href="#explorerSearchCard">
+        <div class="dash-nav-tile-icon">&#128269;</div>
+        <h3>Search</h3>
+        <p>Block #, hash, tx id, or address</p>
+    </a>
+    <a class="dash-nav-tile" href="#recentBlocksCard">
+        <div class="dash-nav-tile-icon">&#129521;</div>
+        <h3>Recent Blocks</h3>
+        <p>Browse the full chain</p>
+    </a>
+    <a class="dash-nav-tile" href="#recentTxCard">
+        <div class="dash-nav-tile-icon">&#128179;</div>
+        <h3>Recent Transactions</h3>
+        <p>Latest confirmed activity</p>
+    </a>
+</div>
+
+<div class="card" id="explorerSearchCard">
     <div class="explorer-search">
         <input id="explorerSearchInput" type="text" placeholder="Search by block #, block hash, tx id, or address">
         <button id="explorerSearchBtn">Search</button>
@@ -270,7 +343,7 @@
     <div id="explorerSearchResult"></div>
 </div>
 
-<div class="card">
+<div class="card" id="recentBlocksCard">
     <h2>Recent Blocks</h2>
     <p style="opacity:0.6;font-size:12px;margin-top:-8px;">
         The chain holds every block ever produced (currently up to the live block height) - browse it a page at a time with Newer/Older below.
@@ -285,8 +358,9 @@
     </div>
 </div>
 
-<div class="card">
+<div class="card" id="recentTxCard">
     <h2>Recent Transactions</h2>
+    <div class="explorer-table-scroll">
     <table class="explorer-table">
         <thead>
             <tr>
@@ -301,6 +375,7 @@
             <tr><td colspan="5" class="explorer-empty">Loading...</td></tr>
         </tbody>
     </table>
+    </div>
     <div class="explorer-pager">
         <button id="txPrev">&larr; Newer</button>
         <span id="txRange"></span>
@@ -310,9 +385,11 @@
 
 </div>
 
-<script src="js/api.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/explorer.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/ai-assistant.js?v=fixaug5b"></script>
+<script src="js/explorer.js?v=sec0816a"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 </body>
 </html>

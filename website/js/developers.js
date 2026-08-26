@@ -109,6 +109,8 @@ const ENDPOINT_GROUPS = [
             ["POST /governance/vote", "(signed) Vote on a proposal"],
             ["POST /governance/activate", "(signed) Activate voting rights"],
             ["/governance/status/recent", "Recent community status posts (public, no auth)"],
+            ["POST /predictions/vote", "(signed) Vote on a PREDICTION proposal, optionally staking RC"],
+            ["/predictions/pool?proposalId=", "A PREDICTION proposal's live RC bet pool"],
         ],
     },
     {

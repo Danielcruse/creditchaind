@@ -2,18 +2,18 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Send ETH - OUTERNET</title>
-<link rel="stylesheet" href="css/theme.css">
-<link rel="stylesheet" href="css/style.css">
-<link rel="stylesheet" href="css/outernet.css">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+<link rel="stylesheet" href="css/style.css?v=fixaug5c">
+<link rel="stylesheet" href="css/outernet.css?v=fixaug5d">
 <style>
     .address-row{ display:flex; gap:8px; align-items:center; }
     .address-row input{ flex:1; }
     .scan-btn{
-        width:40px; height:40px; flex-shrink:0; border-radius:8px;
+        height:40px; flex-shrink:0; border-radius:8px; display:flex; align-items:center; gap:6px; padding:0 14px;
         border:1px solid rgba(0,0,0,0.15); background:rgba(0,0,0,0.05);
-        font-size:18px; cursor:pointer;
+        font-size:16px; font-weight:600; cursor:pointer; white-space:nowrap;
     }
     .modal-overlay{
         display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7);
@@ -36,40 +36,49 @@
 </style>
 </head>
 <body class="outernet-light">
-<script src="js/device-lock.js"></script>
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <div class="main" style="max-width:520px;margin:0 auto;padding:24px 16px;">
 
-<p><a href="asset.html?symbol=ETHB" style="color:#0284c7;">&larr; ETH</a></p>
+<p><a href="asset?symbol=ETHB" style="color:#0284c7;">&larr; ETH</a></p>
 
 <h1>Send ETH</h1>
 
 <div class="card" style="border:2px solid #0284c7;">
-<p style="margin:0;font-size:13px;">
-Your unified bridged-ETH balance. Choose a network: <strong>CCT network</strong> moves it
-instantly inside CreditChain for a flat CCT fee. <strong>ERC network</strong> sends real
-Sepolia ETH to any 0x address, for a bridge fee that covers CreditChain's gas cost.
+<p style="margin:0;font-size:13px;" id="topNotice">
+This is your one ETH balance, bridged - a deposit to your self-custodial address is
+automatically credited here. CreditChain never holds a signing key for either side of it.
+Choose how to send it: <strong>Direct</strong> broadcasts to any 0x address straight from
+your self-custodial account (signed entirely in this browser) for free - real network gas
+only, no CreditChain fee. <strong>CCT network</strong> moves it instantly to another
+CreditChain user for a flat fee.
 </p>
 </div>
 
 <div class="card">
     <p>
-        Your balance: <span id="ethbBalance">Loading...</span>
+        Bridged ETH balance (CCT network): <span id="ethbBalance">Loading...</span>
         <br>
         <span id="ethbFromAddress" style="font-family:monospace;font-size:12px;opacity:0.7;"></span>
+    </p>
+    <p>
+        Real ETH balance (Direct network): <span id="realEthBalance">Loading...</span>
+        <br>
+        <span id="realEthAddress" style="font-family:monospace;font-size:12px;opacity:0.7;"></span>
     </p>
 </div>
 
 <div class="card" id="formCard">
     <div class="network-toggle">
+        <button type="button" id="modeDirectBtn" onclick="setMode('DIRECT')">Direct</button>
         <button type="button" id="modeCctBtn" class="active" onclick="setMode('CCT')">CCT network</button>
-        <button type="button" id="modeErcBtn" onclick="setMode('ERC')">ERC network</button>
     </div>
     <p class="network-note" id="modeNote"></p>
 
     <div class="address-row">
         <input type="text" id="toAddress" placeholder="Recipient CreditChain address">
-        <button type="button" class="scan-btn" onclick="openScanModal()" title="Scan a QR code">&#9678;</button>
+        <button type="button" class="scan-btn" onclick="openScanModal()" title="Scan a QR code"><span>&#9678;</span>Scan</button>
     </div>
     <br>
     <input type="number" id="amount" placeholder="Amount in ETH" step="any">
@@ -107,10 +116,14 @@ Sepolia ETH to any 0x address, for a bridge fee that covers CreditChain's gas co
 
 </div>
 
-<script src="js/api.js"></script>
-<script src="js/qrcode.js"></script>
-<script src="js/qr-decode.js"></script>
-<script src="js/send-bridged-eth.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/vendor/bip39-wordlist.js?v=fixaug5b"></script>
+<script src="js/vendor/hd-crypto.js?v=fixaug5b"></script>
+<script src="js/vendor/eth-tx.js?v=fixaug5b"></script>
+<script src="js/qrcode.js?v=fixaug5b"></script>
+<script src="js/qr-decode.js?v=fixaug5b"></script>
+<script src="js/send-bridged-eth.js?v=fixaug5b"></script>
 
 </body>
 </html>

@@ -36,7 +36,7 @@ func TestCreditEngine_DefaultLoan_ScalesReputationByShortfall(t *testing.T) {
 	loan := &Loan{ID: "test-ce-default", Borrower: "ce-default-borrower", Status: LoanFunded}
 	wallets.Get(loan.Borrower).Reputation = 50
 
-	delta := ce.DefaultLoan(loan, 50, 100)
+	delta := ce.DefaultLoan(loan, 50, 100, false)
 
 	if delta != ReputationDeltaLoanDefault/2 {
 		t.Fatalf("expected delta %d (half shortfall), got %d", ReputationDeltaLoanDefault/2, delta)
@@ -61,7 +61,7 @@ func TestCreditEngine_DefaultLoan_ZeroShortfallSkipsReputationPenalty(t *testing
 	loan := &Loan{ID: "test-ce-default-zero", Borrower: "ce-default-zero-borrower", Status: LoanFunded}
 	wallets.Get(loan.Borrower).Reputation = 50
 
-	delta := ce.DefaultLoan(loan, 0, 100)
+	delta := ce.DefaultLoan(loan, 0, 100, false)
 
 	if delta != 0 {
 		t.Fatalf("expected delta 0, got %d", delta)

@@ -2,10 +2,10 @@
 <html>
 <head>
     <title>Lender Dashboard - OUTERNET</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/outernet.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/outernet.css?v=fixaug5d">
     <style>
         .explorer-search{ display:flex; gap:10px; margin-bottom:15px; flex-wrap:wrap; }
         .explorer-search input, .explorer-search select{
@@ -20,15 +20,16 @@
     </style>
 </head>
 <body class="outernet-light">
-<script src="js/device-lock.js"></script>
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <div class="main" style="max-width:1000px;margin:0 auto;padding:24px 16px;">
 
-<p><a href="outernet.html" style="color:#0284c7;">&larr; OUTERNET</a></p>
+<p><a href="outernet" style="color:#0284c7;">&larr; OUTERNET</a></p>
 
 <h1>Lender Dashboard</h1>
 <p style="margin-top:-10px;opacity:.7;">
-    Looking to borrow instead? <a href="borrow.html">Go to the Borrow marketplace</a>.
+    Looking to borrow instead? <a href="borrow">Go to the Borrow marketplace</a>.
 </p>
 
 <!-- Lender Portfolio -->
@@ -65,7 +66,7 @@
     </p>
 
     <div id="lendKycNotice" style="display:none;">
-        <p style="opacity:0.8; font-size:13px;">
+        <p style="opacity:0.8; font-size:13px;" id="lendKycDisclosure">
             Posting a lend offer requires a security pass (a minimum on-chain reputation) plus
             basic KYC compliance - self-attested identity details, not a real document check
             (this is a testnet demo, not audited).
@@ -158,7 +159,7 @@
     <div id="negotiationList" class="explorer-empty">No negotiations yet.</div>
 </div>
 
-<button onclick="location.href='wallet.html'">Back To Wallet</button>
+<button onclick="location.href='wallet'">Back To Wallet</button>
 
 <div class="modal-overlay" id="chatModalOverlay">
     <div class="modal-box">
@@ -179,11 +180,18 @@
 
 </div>
 
-<script src="js/api.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/lending-shared.js"></script>
-<script src="js/negotiation-chat.js"></script>
-<script src="js/lend.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script>
+if (window.CC_NETWORK === "mainnet") {
+    document.getElementById("lendKycDisclosure").innerText =
+        "Posting a lend offer requires a security pass (a minimum on-chain reputation) plus basic KYC compliance - self-attested identity details, not a real document check (this network has not yet completed a professional security audit).";
+}
+</script>
+<script src="js/ai-assistant.js?v=fixaug5b"></script>
+<script src="js/lending-shared.js?v=fixaug5b"></script>
+<script src="js/negotiation-chat.js?v=sec0815a"></script>
+<script src="js/lend.js?v=fixaug5b"></script>
 
 </body>
 </html>

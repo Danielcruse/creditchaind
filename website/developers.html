@@ -2,9 +2,9 @@
 <html>
 <head>
     <title>CreditChain Developers</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
     <style>
         .dev-page{
             max-width:820px;
@@ -53,7 +53,7 @@
 
 <div class="dev-page">
 
-<p><a href="index.html" style="color:var(--cc-accent-gold, #c9a227);">&larr; CreditChain</a></p>
+<p><a href="/" style="color:var(--cc-accent-gold, #c9a227);">&larr; CreditChain</a></p>
 
 <h1>Developers</h1>
 <p style="opacity:0.8;">
@@ -76,6 +76,27 @@
     (this website's static files are served separately, from a different port, purely for local development
     convenience). In production that's <code>https://creditchain.site:8080</code> (or wherever the node you're
     talking to is actually hosted, if you're running your own - see "Run your own node/testnet" below).
+</p>
+
+<h2>Connecting to Testnet vs Mainnet</h2>
+<p>
+    Testnet and Mainnet are two completely independent CreditChain networks - separate chains, separate genesis,
+    separate validator pools, separate everything - reachable through the exact same protocol on two different
+    ports of the same host. There's no separate API shape for either: build against the Base URL above, and point
+    it at whichever network's port you want.
+</p>
+<ul>
+    <li><strong>Testnet</strong> - <code>https://creditchain.site:8080</code> - no real value, freely reset-able.</li>
+    <li><strong>Mainnet</strong> - <code>https://creditchain.site:9090</code> - real value, <strong>not yet
+        professionally audited</strong> (see the site-wide banner). Each account's total BTC + ETH holdings are
+        capped during this stabilization period.</li>
+</ul>
+<p style="opacity:0.85;">
+    CORS is wide open (<code>Access-Control-Allow-Origin: *</code>) on both, same as every other endpoint documented
+    here - a third-party wallet or app can call either network directly with no special allowlisting. The
+    OUTERNET website itself switches between the two the same way: the network picker in the top banner just
+    changes which port its own requests go to and reloads - there's no hidden coordination between the two chains,
+    they're genuinely separate.
 </p>
 
 <h2>Reading data (no auth needed)</h2>
@@ -108,6 +129,110 @@
 
 <div id="devEndpointGroups"></div>
 
+<h2>Price-reference pools (ETHTEST / BTCTEST)</h2>
+<p style="opacity:0.85;">
+    Two developer-only, CCT-paired AMM pools exist purely as real, on-chain price-discovery
+    references - <code>ETHTEST</code> and <code>BTCTEST</code>. Both use the exact same
+    <code>core.LiquidityPool</code> constant-product mechanics every custom-token pool uses, and both are
+    fully reachable through the ordinary public endpoints (<code>/pool?symbol=ETHTEST</code>,
+    <code>/token/balance?symbol=BTCTEST&address=...</code>, the existing swap/add-liquidity handlers,
+    <code>GET /pool/price-history?symbol=BTCTEST</code>). <strong>CreditChain itself does not surface a
+    direct trading UI for these two</strong> - no nav link, no swap page entry - so if you want to seed
+    liquidity or trade against them, do it directly against the API, same as any other pool endpoint.
+    They exist so governance's <code>PREDICTION</code> proposal kind (see <code>api/prediction_vote.go</code>)
+    has a real, tamper-resistant price to resolve against, not a UI feature of their own.
+</p>
+
+<h2 id="mainnet-mechanics">Roadmap / Mainnet Mechanics</h2>
+<p style="opacity:0.85;">
+    A real explainer of the mechanics already live on both networks today - not a marketing roadmap.
+    This is where "Read Whitepaper" points to on mainnet (see the site-wide banner), since the
+    separate <a href="whitepaper" style="color:var(--cc-accent-gold, #c9a227);">whitepaper.html</a>
+    page is written around testnet usage tips specifically.
+</p>
+
+<div class="card" style="margin:14px 0;">
+    <h3 style="margin-top:0;">Consensus - Proof of Stake with Reputation (PoSR)</h3>
+    <p style="opacity:0.8;font-size:14px;">
+        Block-producer selection blends three weighted factors, not raw stake size:
+        <strong>25% normalized stake</strong>, <strong>55% reputation (Trust Score)</strong>, and
+        <strong>20% uptime</strong> - deliberately reputation-dominant so this isn't "Proof of Richest."
+        A validator needs at least 1,000 CCT staked, 20+ reputation, and 90%+ uptime to be selection-eligible.
+        Missed blocks and double-signs both cost real stake (slashed, burned) and reputation, with a
+        permanent-ban threshold after repeated offenses. See <code>core/consensus.go</code>/<code>core/slashing.go</code>.
+    </p>
+</div>
+
+<div class="card" style="margin:14px 0;">
+    <h3 style="margin-top:0;">Staking and validator delegation</h3>
+    <p style="opacity:0.8;font-size:14px;">
+        Staking CCT/ETHB mints a small proportional reward plus, for ETHB specifically, an oETH receipt
+        usable as loan collateral (<code>core/staking.go</code>'s <code>RewardForStake</code>). Anyone can
+        delegate stake to an existing registered validator rather than running their own node - the
+        validator's own dashboard can generate a shareable delegate-join link (see "Run your own node" below
+        and the Validator page's Download/Join section).
+    </p>
+</div>
+
+<div class="card" style="margin:14px 0;">
+    <h3 style="margin-top:0;">Moderators</h3>
+    <p style="opacity:0.8;font-size:14px;">
+        Moderators are auto-assigned round-robin to P2P trades, loan negotiations, and Trading Hub
+        applications to arbitrate disputes and verify hub certificates. Registering costs a small
+        anti-spam CCT fee. A moderator's decisions are visible in that trade/application's own history;
+        governance can act on a pattern of bad decisions through the ordinary proposal/voting system.
+    </p>
+</div>
+
+<div class="card" style="margin:14px 0;">
+    <h3 style="margin-top:0;">Trading Hubs</h3>
+    <p style="opacity:0.8;font-size:14px;">
+        A Trading Hub is a moderator-verified market-maker that posts buy/sell rates for CCT and other
+        tokens (both OFF_APP off-chain-settled and ONCHAIN atomic modes). Applying costs a flat CCT fee
+        (<code>HubApplyFeeCCT</code> in <code>api/companies.go</code>); a moderator reviews the application
+        before it's marked verified. Only verified hubs can post EXTERNAL-settlement offers on the
+        Marketplace - see <code>core/company.go</code>/<code>api/companies.go</code>.
+    </p>
+</div>
+
+<div class="card" style="margin:14px 0;">
+    <h3 style="margin-top:0;">Governance</h3>
+    <p style="opacity:0.8;font-size:14px;">
+        Any activated wallet can create and vote on a proposal; vote weight is a blend of staked CCT and
+        reputation, not one-address-one-vote. Beyond plain informational proposals, dedicated proposal
+        kinds exist for protocol parameter changes (<code>PARAM_CHANGE</code>), version activation gates,
+        token creation, and RC-backed prediction markets - see <code>core/governance.go</code> and
+        <code>website/governance.html</code>'s Voting Ballots tab. A small top-reputation "executive"
+        tier can vote on a narrower set of higher-trust parameters.
+    </p>
+</div>
+
+<div class="card" style="margin:14px 0;">
+    <h3 style="margin-top:0;">Bridge / unification (ETHB, BTCB)</h3>
+    <p style="opacity:0.8;font-size:14px;">
+        CreditChain never holds an ETH or BTC signing key on any user's behalf. ETH and BTC deposited into
+        your own self-custodial address (derived client-side from your recovery phrase) are automatically
+        credited as ETHB/BTCB - CreditChain-native balances that mirror the real self-custodial funds 1:1.
+        Sending picks a network at send time (CCT network = fast internal move to another CreditChain user,
+        flat network fee; Direct/BTC network = a real external broadcast signed entirely in your browser,
+        live-gas-based fee only, no CreditChain fee) - there's no separate manual "bridge" step and no
+        CreditChain-controlled custodian anywhere in the flow. See
+        <code>api/eth_bridge.go</code>/<code>api/btc_bridge.go</code> and the Settings page's own
+        "How your ETH/BTC balance works" explainer.
+    </p>
+</div>
+
+<div class="card" style="margin:14px 0;">
+    <h3 style="margin-top:0;">Token standards</h3>
+    <p style="opacity:0.8;font-size:14px;">
+        Every registered token declares a standard: <code>C101</code> (CCT itself, reserved),
+        <code>C117S</code> (stable/pegged - pool intentionally left unseeded), or <code>C1</code>
+        (independent/market-priced - a real AMM pool auto-created, price floats once liquidity is added).
+        New token creation is governance-gated (a passed <code>TOKEN_CREATION</code> proposal), not
+        instant self-service. See <code>core/token_standard.go</code>.
+    </p>
+</div>
+
 <h2>Run your own node - or your own entire testnet</h2>
 <p style="opacity:0.85;">
     <strong>Yes</strong> - a node is a separate, ordinary process (<code>creditchaind</code>) with its own
@@ -132,15 +257,33 @@ DATA_DIR=./data PORT=8080 ./creditchaind
 
 <h2>Disclosures</h2>
 <ul style="opacity:0.8;font-size:14px;">
-    <li>This is a testnet. CCT/ETHTEST/USDCTEST/REPT have no real monetary value.</li>
-    <li>Not yet professionally audited - see <a href="whitepaper.html" style="color:var(--cc-accent-gold, #c9a227);">the whitepaper</a> for the full disclosed-gaps list.</li>
+    <li id="devDisclosureTestnet">This is a testnet. CCT/ETHTEST/USDCTEST/REPT have no real monetary value.</li>
+    <li>Not yet professionally audited - see <a href="whitepaper" id="devDisclosureWhitepaperLink" style="color:var(--cc-accent-gold, #c9a227);">the whitepaper</a> for the full disclosed-gaps list.</li>
     <li>The public network is permissioned - see "Run your own node" above.</li>
 </ul>
 
 </div>
 
-<script src="js/api.js"></script>
-<script src="js/developers.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/developers.js?v=fixaug5b"></script>
+<script>
+(function mainnetAwareDeveloperDisclosures() {
+    if (window.CC_NETWORK !== "mainnet") return;
+    const testnetLine = document.getElementById("devDisclosureTestnet");
+    if (testnetLine) {
+        testnetLine.innerText = "This is Mainnet - CCT and other mainnet balances carry real value. ETHTEST/USDCTEST are testnet-only and unavailable here.";
+    }
+    // The two whitepaper links already inside this page's own body
+    // (near "Roadmap / Mainnet Mechanics") should keep pointing at
+    // whitepaper.html - it's fine to reference from within the manual
+    // itself. Only this disclosures-list link, which is presented as
+    // "read this for real network context," redirects to the manual's
+    // own anchor instead.
+    const link = document.getElementById("devDisclosureWhitepaperLink");
+    if (link) link.href = "#mainnet-mechanics";
+})();
+</script>
 
 </body>
 </html>

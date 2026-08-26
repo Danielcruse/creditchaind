@@ -24,7 +24,7 @@ function btcTxRow(tx, address) {
     }
     const net = received - sent;
     const sign = net >= 0 ? "+" : "";
-    const color = net >= 0 ? "#00ff95" : "#ff6b6b";
+    const color = net >= 0 ? "#0f9d58" : "#ff6b6b";
     const confirmed = tx.status && tx.status.confirmed;
 
     return `
@@ -104,12 +104,7 @@ document.getElementById("btcAddressInput").addEventListener("keydown", (e) => {
 // them, and gives the BTC lookup tool above a one-click way to look up
 // the user's own address instead of only accepting a blind paste.
 function initHDAccountsCard() {
-    let accounts = null;
-    try {
-        accounts = JSON.parse(localStorage.getItem("cc_hd_accounts") || "null");
-    } catch (e) {
-        accounts = null;
-    }
+    const accounts = getHdAccounts();
 
     if (!accounts || !accounts.eth || !accounts.btc) {
         document.getElementById("hdAccountsMissing").style.display = "block";
@@ -128,116 +123,3 @@ function initHDAccountsCard() {
 }
 
 initHDAccountsCard();
-
-// --- ETH custodial corner (Sepolia testnet) -------------------------------
-// Unlike the BTC viewer above, CreditChain holds this key on the user's
-// behalf - see core/eth_custodial.go's doc comment and audit/KNOWN_GAPS.md
-// for exactly what that means and doesn't mean here. Every function below
-// talks to /eth-custodial/* (api/eth_custodial.go), never anything on this
-// page constructs or signs a real transaction itself.
-
-const ethWallet = getWallet();
-
-async function initEthCustodial() {
-    if (!ethWallet) return;
-
-    try {
-        const resp = await fetch(`${API_BASE}/eth-custodial/balance?address=${ethWallet.address}`);
-        if (resp.status === 404) {
-            // No custodial account yet - leave the "create" view showing.
-            return;
-        }
-        if (!resp.ok) {
-            // ETH custodial corner not enabled on this server (no RPC
-            // configured) - nothing more to do; leave the create button
-            // visible, it'll surface a clear error if clicked.
-            return;
-        }
-        const data = await resp.json();
-        showEthCustodialAccount(data.ethAddress, data.weiBalance);
-    } catch (e) {
-        console.error(e);
-    }
-}
-
-function weiToEth(weiString) {
-    const wei = BigInt(weiString);
-    const whole = wei / 1000000000000000000n;
-    const frac = (wei % 1000000000000000000n).toString().padStart(18, "0").replace(/0+$/, "") || "0";
-    return `${whole}.${frac}`;
-}
-
-function showEthCustodialAccount(ethAddress, weiBalance) {
-    document.getElementById("ethCustodialNoAccount").style.display = "none";
-    document.getElementById("ethCustodialAccount").style.display = "block";
-    document.getElementById("ethCustodialAddress").innerText = ethAddress;
-    if (weiBalance !== undefined) {
-        document.getElementById("ethCustodialBalance").innerText = `${weiToEth(weiBalance)} ETH (Sepolia)`;
-    }
-}
-
-async function createEthCustodialAccount() {
-    const statusEl = document.getElementById("ethCustodialCreateStatus");
-    try {
-        const result = await apiPostSigned("/eth-custodial/create", {});
-        statusEl.innerText = "";
-        showEthCustodialAccount(result.ethAddress);
-        loadEthCustodialBalance();
-    } catch (e) {
-        statusEl.innerText = e.message;
-    }
-}
-
-async function loadEthCustodialBalance() {
-    if (!ethWallet) return;
-    const balanceEl = document.getElementById("ethCustodialBalance");
-    balanceEl.innerText = "Loading...";
-    try {
-        const resp = await fetch(`${API_BASE}/eth-custodial/balance?address=${ethWallet.address}`);
-        if (!resp.ok) {
-            balanceEl.innerText = await resp.text();
-            return;
-        }
-        const data = await resp.json();
-        balanceEl.innerText = `${weiToEth(data.weiBalance)} ETH (Sepolia)`;
-    } catch (e) {
-        balanceEl.innerText = "Failed to load balance.";
-        console.error(e);
-    }
-}
-
-async function withdrawEthCustodial() {
-    const to = document.getElementById("ethWithdrawTo").value.trim();
-    const amountEth = document.getElementById("ethWithdrawAmount").value.trim();
-    const statusEl = document.getElementById("ethCustodialWithdrawStatus");
-
-    if (!to || !amountEth) {
-        statusEl.innerText = "Enter a destination address and amount.";
-        return;
-    }
-
-    let amountWei;
-    try {
-        const [whole, frac = ""] = amountEth.split(".");
-        const fracPadded = (frac + "0".repeat(18)).slice(0, 18);
-        amountWei = (BigInt(whole || "0") * 1000000000000000000n + BigInt(fracPadded || "0")).toString();
-    } catch (e) {
-        statusEl.innerText = "Invalid amount.";
-        return;
-    }
-
-    if (!confirm(`Withdraw ${amountEth} Sepolia ETH to ${to}? This broadcasts a real (testnet) transaction and cannot be undone.`)) {
-        return;
-    }
-
-    statusEl.innerText = "Broadcasting...";
-    try {
-        const result = await apiPostSigned("/eth-custodial/withdraw", { to, amountWei });
-        statusEl.innerText = `Sent - tx ${result.txHash}`;
-        setTimeout(loadEthCustodialBalance, 5000);
-    } catch (e) {
-        statusEl.innerText = e.message;
-    }
-}
-
-initEthCustodial();

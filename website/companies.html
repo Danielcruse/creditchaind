@@ -2,12 +2,13 @@
 <html>
 <head>
     <title>OUTERNET Trading Hub</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="css/theme.css">
-    <link rel="stylesheet" href="css/style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
 </head>
 <body>
-<script src="js/device-lock.js"></script>
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
 
 <h1>Trading Hub</h1>
 
@@ -21,10 +22,10 @@
     </p>
 
     <p style="opacity:0.75;font-size:12px;">
-        <strong>Testnet placeholder - not real KYC/AML.</strong> This is a
-        stand-in for a real identity-verification and compliance system that
-        will be built before mainnet (real licensing, a real KYC/AML vendor,
-        legal review). Right now, "Verified" means a moderator read what an
+        <strong>Placeholder - not real KYC/AML.</strong> This is a
+        stand-in for a real identity-verification and compliance system
+        (real licensing, a real KYC/AML vendor, legal review - still not yet
+        built). Right now, "Verified" means a moderator read what an
         applicant wrote and vouched for it - nothing here is independently
         verified, no real documents are collected, and no real-world fiat
         moves through this app. Do not treat a badge here as a real
@@ -48,8 +49,41 @@
         <input id="companyContactEmail" type="email" placeholder="Optional: contact email for trade-attention alerts (e.g. a trade needing your response)" maxlength="200">
     </div>
 
-    <button onclick="applyCompany()">Submit Application</button>
+    <br>
+
+    <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;">
+        <input type="checkbox" id="hubTermsAck" style="margin-top:4px;">
+        <span>
+            I confirm I am regulated and registered by my own government to operate as a Trading Hub, and I
+            have read and agree to the
+            <a href="p2p-terms" target="_blank" style="color:var(--cc-accent-gold, #c9a227);">Terms of the P2P Marketplace</a>.
+        </span>
+    </label>
+
+    <br>
+
+    <button id="companyApplyBtn" disabled onclick="applyCompany()">Submit Application</button>
     <p id="companyApplyStatus"></p>
+
+</div>
+
+<br>
+
+<div class="card" id="myApplicationCard" style="display:none;">
+
+    <h2>My Application</h2>
+
+    <p id="myApplicationStatus"></p>
+
+    <div id="certificateUploadBox" style="display:none;">
+        <p style="opacity:0.75;font-size:13px;">
+            Your application can't be approved until a moderator has a certificate/registration document to
+            review - text alone isn't enough. Upload one below (PDF, PNG, or JPG, up to 5 MB).
+        </p>
+        <input id="certificateFileInput" type="file" accept=".pdf,.png,.jpg,.jpeg">
+        <button onclick="uploadCertificate()">Upload Certificate</button>
+        <p id="certificateUploadStatus"></p>
+    </div>
 
 </div>
 
@@ -84,18 +118,19 @@
 <br>
 
 <button
-    onclick="location.href='outernet.html'">
+    onclick="location.href='outernet'">
     Back To Dashboard
 </button>
 &nbsp;|&nbsp;
 <button
-    onclick="location.href='p2p.html'">
+    onclick="location.href='p2p'">
     Marketplace (P2P)
 </button>
 
-<script src="js/api.js"></script>
-<script src="js/ai-assistant.js"></script>
-<script src="js/companies.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/ai-assistant.js?v=fixaug5b"></script>
+<script src="js/companies.js?v=sec0815a"></script>
 
 </body>
 </html>

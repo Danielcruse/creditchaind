@@ -25,6 +25,44 @@ const (
 	ProposalKindPlain             ProposalKind = ""
 	ProposalKindParamChange       ProposalKind = "PARAM_CHANGE"
 	ProposalKindVersionActivation ProposalKind = "VERSION_ACTIVATION"
+	ProposalKindTokenCreation     ProposalKind = "TOKEN_CREATION"
+	// ProposalKindPrediction is a public Yes/No prediction about a
+	// price target (see PredictionTargetSymbol/PredictionTargetPrice
+	// below) that anyone can optionally back with RC - see
+	// core/prediction.go's PredictionPool and
+	// api/prediction_vote.go's applyPredictionVote/
+	// processPredictionResolution for the RC-bet mechanics layered on
+	// top of this ordinary proposal's existing Yes/No headcount vote.
+	ProposalKindPrediction ProposalKind = "PREDICTION"
+	// ProposalKindModeratorDispute lets any user reference a specific
+	// past moderator decision (a negotiation, P2P offer, or Trading Hub
+	// company-application ID that moderator was actually assigned to -
+	// see DisputeReferenceType/DisputeReferenceID below) and request a
+	// community vote on whether that moderator abused the role. A
+	// PASSED outcome applies a reputation penalty to
+	// DisputeModeratorAddress (see api/apply.go's finalizeProposal) -
+	// deliberately does NOT restitute funds to the user, which would
+	// need a funding-source/escrow decision this mechanism doesn't
+	// make; that's named explicit future work.
+	ProposalKindModeratorDispute ProposalKind = "MODERATOR_DISPUTE"
+	// ProposalKindNodeAdmission requests admission of a specific new
+	// node identity (NodeAdmissionPublicKey/NodeAdmissionNodeID below)
+	// to the peer gossip network - see core.NodeAdmissionStore, the
+	// ONLY structural way a new node can ever be admitted post-genesis.
+	// Deliberately a PERMANENT grant, not time-limited: nothing else in
+	// this governance system expires, and expiry would require a
+	// re-vote cadence and a mid-session-lapse story with no real gain
+	// toward the actual goal (removing any single party's unilateral
+	// admission power). Revoking an already-admitted bad actor is a
+	// separate, deliberately deferred problem (see
+	// ProposalKindModeratorDispute's own reference-and-vote shape for
+	// the intended future pattern). Voted on with
+	// api/governance_weight.go's votingWeightForNodeAdmission (an
+	// accumulated-conviction score, NOT the general votingWeight
+	// formula) at a doubled quorum (api/apply.go's
+	// NodeAdmissionProposalQuorum) - see that function's own doc
+	// comment for why a plain reputation/stake vote isn't used here.
+	ProposalKindNodeAdmission ProposalKind = "NODE_ADMISSION"
 )
 
 // DefaultProposalQuorum/ProposalVotingWindowSeconds are judgment
@@ -56,15 +94,27 @@ type Proposal struct {
 	Deadline int64
 	Status   ProposalStatus
 
-	// Kind/ParamKey/ParamValue/TargetVersion are only meaningful for
-	// their respective non-plain Kind - see
-	// api/governance_params.go and core/config.go's
-	// ActivatedProtocolVersion for what a PASSED outcome of each kind
-	// actually does.
+	// Kind/ParamKey/ParamValue/TargetVersion/Token* are only meaningful
+	// for their respective non-plain Kind - see
+	// api/governance_params.go, core/config.go's
+	// ActivatedProtocolVersion, and api/token_creation_governance.go
+	// for what a PASSED outcome of each kind actually does.
 	Kind          ProposalKind
 	ParamKey      string
 	ParamValue    uint64
 	TargetVersion string
+
+	// TokenSymbol/TokenName/TokenInitialSupply/TokenStandard/
+	// TokenPegReference are only meaningful for Kind ==
+	// ProposalKindTokenCreation - the same fields
+	// core.CustomToken/TokenRegistry.Register already takes directly
+	// for the (now-retired) self-service path, carried here instead so
+	// registration only actually happens once this proposal PASSES.
+	TokenSymbol        string
+	TokenName          string
+	TokenInitialSupply uint64
+	TokenStandard      string
+	TokenPegReference  string
 
 	// SystemGenerated marks a proposal the network itself created
 	// (see api/apply.go's processAutoProposal) rather than a real
@@ -74,6 +124,58 @@ type Proposal struct {
 	// system-generated proposal never carries real protocol-changing
 	// power, that stays exclusively user-initiated).
 	SystemGenerated bool
+
+	// PromotedUntil is a unix timestamp set by TxProposalPromote
+	// (api/rc_promote.go) - a wallet burns RC to keep this proposal
+	// sorted near the top of governance.html's Voting Ballots list
+	// until this time. Zero means never promoted. Re-promoting extends
+	// (max, not additive) rather than stacking.
+	PromotedUntil int64
+
+	// PredictionTargetSymbol/PredictionTargetPrice are only meaningful
+	// for Kind == ProposalKindPrediction. TargetSymbol must be one of
+	// the two developer-accessible CCT-paired price-reference pools
+	// ("BTCTEST" or "ETHTEST" - see api/token.go's
+	// btcTestStore/cctBtcTestPool and ethTestStore/cctEthTestPool).
+	// TargetPrice is CCT-per-unit-of-symbol, scaled by the same
+	// priceScale (1,000,000) core/price_history.go and
+	// core/order_book.go already use, so it's directly comparable to a
+	// pool's live price with no unit conversion - see
+	// api/prediction_vote.go's processPredictionResolution.
+	PredictionTargetSymbol string
+	PredictionTargetPrice  uint64
+
+	// PredictionDurationSeconds is the actual voting-window length this
+	// specific prediction was created with (see
+	// api/prediction_vote.go's predictionDurationSeconds) - stored
+	// rather than only implied by Deadline, since a PREDICTION's
+	// Deadline isn't always CreatedBy + the fixed
+	// ProposalVotingWindowSeconds the way every other kind's is. Lets
+	// processPredictionResolution recover the real creation time
+	// (Deadline - PredictionDurationSeconds) to check the 14-day
+	// patience-bonus threshold.
+	PredictionDurationSeconds int64
+
+	// DisputeModeratorAddress/DisputeReferenceType/DisputeReferenceID
+	// are only meaningful for Kind == ProposalKindModeratorDispute.
+	// ReferenceType is one of "negotiation"/"offer"/"company" and
+	// ReferenceID is that record's own ID - see
+	// api/moderator_dispute_governance.go's
+	// moderatorDisputeReferenceValid for how this is checked against
+	// the real record before the proposal is even created.
+	DisputeModeratorAddress string
+	DisputeReferenceType    string
+	DisputeReferenceID      string
+
+	// NodeAdmissionPublicKey/NodeAdmissionNodeID are only meaningful
+	// for Kind == ProposalKindNodeAdmission. PublicKey is hex-encoded,
+	// same format as handshakeMsg.PublicKey (api/peer.go) - this is
+	// what core.NodeAdmissionStore is actually keyed by once granted.
+	// No separate "requesting wallet" field is needed - CreatedBy
+	// already serves that role, exactly as applyTokenCreationFromProposal
+	// already reuses it for ProposalKindTokenCreation.
+	NodeAdmissionPublicKey string
+	NodeAdmissionNodeID    string
 }
 
 func (p *Proposal) VoteYes(

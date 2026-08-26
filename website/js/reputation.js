@@ -27,6 +27,7 @@ async function refresh() {
             <div class="explorer-row"><span>Successful Lending (10%)</span><span>${miningPower.successfulLendingFactor}</span></div>
             <div class="explorer-row"><span>Account Age (5%)</span><span>${miningPower.accountAgeFactor}</span></div>
             <div class="explorer-row" style="opacity:0.6;"><span>Network Contributions</span><span>${miningPower.networkContributionsStatus}</span></div>
+            <div class="explorer-row"><span>RC Infusion Boost</span><span>+${miningPower.rcInfusionBoost}</span></div>
         `;
 
         const nextTierEl = document.getElementById("reptNextTier");
@@ -57,6 +58,87 @@ async function refresh() {
     }
 }
 
+async function loadRcLeaderboard() {
+    const el = document.getElementById("rcLeaderboardList");
+    try {
+        const rows = await apiGet("/rc/leaderboard");
+        if (!rows || rows.length === 0) {
+            el.innerHTML = "No RC holders yet.";
+            return;
+        }
+        el.innerHTML = rows
+            .map((r, i) => {
+                const badge = r.isExecutive ? ' <span style="opacity:0.8;">[Executive]</span>' : "";
+                const mine = wallet && r.address === wallet.address ? " (you)" : "";
+                return `<div class="explorer-row"><span>#${i + 1} ${r.address}${mine}${badge}</span><span>${r.rcBalance} RC</span></div>`;
+            })
+            .join("");
+    } catch (e) {
+        console.error(e);
+        el.innerHTML = "Failed to load leaderboard.";
+    }
+}
+
+async function loadRecentInfusions() {
+    const el = document.getElementById("recentInfusionsList");
+    try {
+        const rows = await apiGet("/rc/infusions/recent");
+        if (!rows || rows.length === 0) {
+            el.innerHTML = "No infusions yet.";
+            return;
+        }
+        el.innerHTML = rows
+            .slice()
+            .reverse()
+            .map((r) => `<div class="explorer-row"><span>${r.Address}: "${r.TrustReason || "(no reason given)"}"</span><span>${r.RCAmount} RC</span></div>`)
+            .join("");
+    } catch (e) {
+        console.error(e);
+        el.innerHTML = "Failed to load recent infusions.";
+    }
+}
+
+async function refreshInfuseRcBalance() {
+    if (!wallet) return;
+    try {
+        const rept = await apiGet(`/rept/balance?address=${wallet.address}`);
+        document.getElementById("infuseRcBalance").innerText = rept.balance;
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function infuseRc() {
+    if (!wallet) return;
+    const statusEl = document.getElementById("infuseRcStatus");
+    const amount = parseInt(document.getElementById("infuseRcAmount").value, 10);
+    const reason = document.getElementById("infuseRcReason").value.trim();
+
+    if (!amount || amount <= 0) {
+        statusEl.innerText = "Enter a positive RC amount.";
+        return;
+    }
+
+    statusEl.innerText = "Submitting...";
+    try {
+        const res = await apiPostSigned("/rc/infuse", { rcAmount: amount, trustReason: reason });
+        statusEl.innerText = `Pending - tx ${res.txId}. Takes effect next block.`;
+        document.getElementById("infuseRcAmount").value = "";
+        document.getElementById("infuseRcReason").value = "";
+        setTimeout(() => {
+            refreshInfuseRcBalance();
+            loadRecentInfusions();
+        }, 9000);
+    } catch (e) {
+        statusEl.innerText = `Failed: ${e.message || e}`;
+    }
+}
+
 refresh();
+loadRcLeaderboard();
+loadRecentInfusions();
+refreshInfuseRcBalance();
 
 setInterval(refresh, 10000);
+setInterval(loadRcLeaderboard, 15000);
+setInterval(loadRecentInfusions, 15000);

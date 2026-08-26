@@ -12,7 +12,8 @@ var collateralStore =
 
 // HandleCollateral reports how much an address currently has locked
 // as collateral, broken out by symbol (CCT = staked CCT, OETH = oETH
-// receipt balance) rather than one undifferentiated number.
+// receipt balance, STETH_CCC1 = real vault-locked stETH) rather than
+// one undifferentiated number.
 func HandleCollateral(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -23,8 +24,9 @@ func HandleCollateral(
 
 	json.NewEncoder(w).Encode(
 		map[string]uint64{
-			"lockedCCT":  collateralStore.LockedOf(address, "CCT"),
-			"lockedOETH": collateralStore.LockedOf(address, "OETH"),
+			"lockedCCT":        collateralStore.LockedOf(address, "CCT"),
+			"lockedOETH":       collateralStore.LockedOf(address, "OETH"),
+			"lockedSTETH_CCC1": collateralStore.LockedOf(address, "STETH_CCC1"),
 		},
 	)
 }

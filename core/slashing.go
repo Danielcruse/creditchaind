@@ -40,9 +40,19 @@ const (
 )
 
 // ApplyMissedBlock penalizes a validator selected to produce a block
-// who failed to do so.
-func ApplyMissedBlock(v *Validator) SlashingRecord {
-	DecreaseReputation(v, ReputationPenaltyMissedBlock)
+// who failed to do so. dimensioned is the caller's own
+// TrustDimensionsCutoverUnixSeconds check (api/apply.go) - see
+// CreditEngine's identical dimensioned-bool convention in
+// credit_engine.go for why core takes the already-decided bool rather
+// than importing api's cutover schedule itself. Routed to Contribution
+// Trust when dimensioned - validator uptime/behavior is an ecosystem
+// contribution, the same dimension steady block production feeds.
+func ApplyMissedBlock(v *Validator, dimensioned bool) SlashingRecord {
+	if dimensioned {
+		DecreaseWalletTrust(&v.Wallet, DimensionContribution, ReputationPenaltyMissedBlock)
+	} else {
+		DecreaseReputation(v, ReputationPenaltyMissedBlock)
+	}
 	v.SlashCount += SlashStrikesMissedBlock
 
 	return SlashingRecord{
@@ -54,9 +64,14 @@ func ApplyMissedBlock(v *Validator) SlashingRecord {
 
 // ApplyDoubleSign penalizes a validator caught signing conflicting
 // blocks - the most severe offense in the protocol, since it attacks
-// consensus itself rather than just being unreliable.
-func ApplyDoubleSign(v *Validator) SlashingRecord {
-	DecreaseReputation(v, ReputationPenaltyDoubleSign)
+// consensus itself rather than just being unreliable. dimensioned - see
+// ApplyMissedBlock above.
+func ApplyDoubleSign(v *Validator, dimensioned bool) SlashingRecord {
+	if dimensioned {
+		DecreaseWalletTrust(&v.Wallet, DimensionContribution, ReputationPenaltyDoubleSign)
+	} else {
+		DecreaseReputation(v, ReputationPenaltyDoubleSign)
+	}
 	v.SlashCount += SlashStrikesDoubleSign
 
 	return SlashingRecord{

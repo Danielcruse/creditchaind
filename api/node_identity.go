@@ -32,6 +32,14 @@ func loadNodeIdentity() {
 			priv, errPriv := hex.DecodeString(stored.PrivateKey)
 			if errPub == nil && errPriv == nil {
 				nodeIdentity = core.NodeIdentity{PublicKey: pub, PrivateKey: priv}
+				// Tightens permissions on every load, not just at
+				// creation - a node upgraded from before this fix
+				// (audit finding M-02) already has an identity.json
+				// written 0644 (world/group-readable) sitting on disk;
+				// this brings an existing file into compliance on the
+				// very next restart without requiring a manual chmod
+				// step. No-op (and harmless) if it's already 0600.
+				_ = os.Chmod(path, 0600)
 				return
 			}
 		}
@@ -45,7 +53,12 @@ func loadNodeIdentity() {
 	}
 
 	out, _ := json.MarshalIndent(stored, "", "  ")
-	_ = os.WriteFile(path, out, 0644)
+	// 0600 (owner read/write only), not 0644 - this file holds the raw
+	// Ed25519 PRIVATE key (audit finding M-02). 0644 left it readable
+	// by every local account on the host; a low-privilege local
+	// compromise, a shared backup, or a support bundle would leak the
+	// node's full signing identity, not just its public key.
+	_ = os.WriteFile(path, out, 0600)
 }
 
 // selfSignedEnvelope builds a SignedEnvelope authenticated by THIS

@@ -1,0 +1,733 @@
+<title>Economic Constants Review</title>
+<style>
+:root{
+  --paper:#EDEFEA;
+  --surface:#FFFFFF;
+  --surface-2:#F5F6F2;
+  --ink:#1B2320;
+  --ink-muted:#5C6660;
+  --ink-faint:#8B948D;
+  --rule:#D3D8CF;
+  --rule-strong:#B7BDB2;
+  --accent:#B85C1E;
+  --accent-strong:#964813;
+  --accent-tint:#F3E2D3;
+  --good:#3F7A5A;
+  --good-tint:#E1EEE6;
+  --decision:#A47417;
+  --decision-tint:#F3E9CF;
+  --superseded:#8A5A46;
+  --superseded-tint:#EFE2DC;
+  --font-display:'Newsreader',Georgia,'Times New Roman',serif;
+  --font-body:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,'SFMono-Regular',Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#141815;
+    --surface:#1C211D;
+    --surface-2:#20261F;
+    --ink:#E9E7DE;
+    --ink-muted:#9CA79E;
+    --ink-faint:#6E786F;
+    --rule:#2E362F;
+    --rule-strong:#3A443B;
+    --accent:#E2833F;
+    --accent-strong:#F0A05E;
+    --accent-tint:#3A2A1A;
+    --good:#6FB98D;
+    --good-tint:#1E2E24;
+    --decision:#D9AC4C;
+    --decision-tint:#332A14;
+    --superseded:#C08A72;
+    --superseded-tint:#2E211B;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#141815;
+  --surface:#1C211D;
+  --surface-2:#20261F;
+  --ink:#E9E7DE;
+  --ink-muted:#9CA79E;
+  --ink-faint:#6E786F;
+  --rule:#2E362F;
+  --rule-strong:#3A443B;
+  --accent:#E2833F;
+  --accent-strong:#F0A05E;
+  --accent-tint:#3A2A1A;
+  --good:#6FB98D;
+  --good-tint:#1E2E24;
+  --decision:#D9AC4C;
+  --decision-tint:#332A14;
+  --superseded:#C08A72;
+  --superseded-tint:#2E211B;
+}
+
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--font-body);
+  font-size:16px;
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--accent-tint);color:var(--accent-strong);}
+
+a{color:var(--accent-strong);}
+:root[data-theme="dark"] a, @media (prefers-color-scheme:dark){ a{color:var(--accent-strong);} }
+
+.shell{
+  display:grid;
+  grid-template-columns:260px minmax(0,780px);
+  gap:64px;
+  max-width:1180px;
+  margin:0 auto;
+  padding:56px 32px 120px;
+  justify-content:center;
+}
+
+/* ---- nav ---- */
+nav.toc{
+  position:sticky;
+  top:40px;
+  align-self:start;
+  font-family:var(--font-mono);
+  font-size:12.5px;
+}
+nav.toc .kicker{
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color:var(--ink-faint);
+  margin-bottom:14px;
+  font-size:11px;
+}
+nav.toc ol{
+  list-style:none;
+  margin:0;
+  padding:0;
+  border-left:1px solid var(--rule);
+}
+nav.toc li{margin:0;}
+nav.toc a{
+  display:block;
+  padding:6px 0 6px 14px;
+  color:var(--ink-muted);
+  text-decoration:none;
+  border-left:1px solid transparent;
+  margin-left:-1px;
+  transition:color .15s ease, border-color .15s ease;
+}
+nav.toc a:hover{color:var(--ink);border-left-color:var(--rule-strong);}
+nav.toc .num{color:var(--ink-faint);margin-right:8px;}
+
+/* ---- header ---- */
+header.doc{margin-bottom:56px;}
+.eyebrow{
+  font-family:var(--font-mono);
+  font-size:12px;
+  letter-spacing:.09em;
+  text-transform:uppercase;
+  color:var(--accent-strong);
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom:18px;
+}
+.eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);}
+h1{
+  font-family:var(--font-display);
+  font-weight:600;
+  font-size:44px;
+  line-height:1.08;
+  letter-spacing:-.01em;
+  margin:0 0 18px;
+  text-wrap:balance;
+}
+.dek{
+  font-size:18px;
+  color:var(--ink-muted);
+  max-width:60ch;
+  margin:0 0 28px;
+}
+.meta-row{
+  display:flex;
+  gap:24px;
+  flex-wrap:wrap;
+  font-family:var(--font-mono);
+  font-size:12.5px;
+  color:var(--ink-faint);
+  border-top:1px solid var(--rule);
+  padding-top:16px;
+}
+.meta-row strong{color:var(--ink-muted);font-weight:500;}
+.status-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:3px 10px;
+  border-radius:100px;
+  background:var(--decision-tint);
+  color:var(--decision);
+  font-family:var(--font-mono);
+  font-size:11.5px;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+
+/* ---- how to read ---- */
+.howto{
+  background:var(--surface);
+  border:1px solid var(--rule);
+  border-left:3px solid var(--accent);
+  border-radius:2px;
+  padding:20px 24px;
+  margin:0 0 56px;
+  font-size:14.5px;
+  color:var(--ink-muted);
+}
+.howto strong{color:var(--ink);}
+.howto p{margin:0 0 10px;}
+.howto p:last-child{margin-bottom:0;}
+
+/* ---- sections ---- */
+section{margin-bottom:64px;scroll-margin-top:32px;}
+section h2{
+  font-family:var(--font-display);
+  font-size:26px;
+  font-weight:600;
+  margin:0 0 6px;
+  display:flex;
+  align-items:baseline;
+  gap:12px;
+}
+section h2 .sec-num{
+  font-family:var(--font-mono);
+  font-size:14px;
+  color:var(--ink-faint);
+  font-weight:400;
+}
+section > .intro{
+  color:var(--ink-muted);
+  max-width:68ch;
+  margin:0 0 22px;
+  font-size:15px;
+}
+section > .intro code{font-size:.92em;}
+
+code, .mono{
+  font-family:var(--font-mono);
+  font-size:.9em;
+  background:var(--surface-2);
+  padding:1px 5px;
+  border-radius:3px;
+  color:var(--ink);
+}
+
+/* ---- tables ---- */
+.tbl-wrap{
+  overflow-x:auto;
+  border:1px solid var(--rule);
+  border-radius:3px;
+  background:var(--surface);
+}
+table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:14px;
+  min-width:560px;
+}
+thead th{
+  text-align:left;
+  font-family:var(--font-mono);
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  color:var(--ink-faint);
+  font-weight:500;
+  padding:12px 16px;
+  border-bottom:1px solid var(--rule-strong);
+  white-space:nowrap;
+}
+tbody td{
+  padding:13px 16px;
+  border-bottom:1px solid var(--rule);
+  vertical-align:top;
+  color:var(--ink-muted);
+}
+tbody tr:last-child td{border-bottom:none;}
+td.const{
+  font-family:var(--font-mono);
+  font-size:13px;
+  color:var(--ink);
+  white-space:nowrap;
+}
+td.val{
+  font-family:var(--font-mono);
+  font-variant-numeric:tabular-nums;
+  color:var(--ink);
+  white-space:nowrap;
+  font-size:13.5px;
+}
+td.file{
+  font-family:var(--font-mono);
+  font-size:12px;
+  color:var(--ink-faint);
+  white-space:nowrap;
+}
+
+/* ---- decision callouts ---- */
+.decision{
+  background:var(--decision-tint);
+  border:1px solid color-mix(in srgb, var(--decision) 35%, transparent);
+  border-radius:3px;
+  padding:16px 20px;
+  margin:16px 0;
+}
+.decision .tag{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  font-family:var(--font-mono);
+  font-size:10.5px;
+  letter-spacing:.07em;
+  text-transform:uppercase;
+  color:var(--decision);
+  font-weight:600;
+  margin-bottom:8px;
+}
+.decision p{margin:0;color:var(--ink);font-size:14.5px;}
+.decision p + p{margin-top:8px;}
+
+.locked{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  font-family:var(--font-mono);
+  font-size:11px;
+  letter-spacing:.04em;
+  color:var(--good);
+  background:var(--good-tint);
+  padding:2px 8px;
+  border-radius:100px;
+}
+.superseded-note{
+  background:var(--superseded-tint);
+  border:1px solid color-mix(in srgb, var(--superseded) 35%, transparent);
+  border-radius:3px;
+  padding:14px 18px;
+  font-size:13.5px;
+  color:var(--ink-muted);
+  margin:16px 0;
+}
+.superseded-note strong{color:var(--superseded);}
+
+/* ---- worked example ---- */
+.worked{
+  background:var(--surface);
+  border:1px solid var(--rule);
+  border-radius:3px;
+  padding:22px 24px;
+  margin:20px 0;
+}
+.worked .label{
+  font-family:var(--font-mono);
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  color:var(--ink-faint);
+  margin-bottom:14px;
+}
+.flow{
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:0;
+  font-family:var(--font-mono);
+  font-size:14px;
+}
+.flow .step{
+  padding:10px 16px;
+  background:var(--surface-2);
+  border-radius:3px;
+  white-space:nowrap;
+}
+.flow .step .amt{font-size:16px;font-variant-numeric:tabular-nums;color:var(--ink);font-weight:600;}
+.flow .step .lbl{display:block;font-size:10.5px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.05em;margin-top:2px;}
+.flow .arrow{color:var(--ink-faint);padding:0 10px;font-size:15px;}
+.flow .step.burn .amt{color:var(--superseded);}
+.flow .step.reward .amt{color:var(--accent-strong);}
+
+/* ---- summary section ---- */
+.summary-list{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+.summary-item{
+  display:grid;
+  grid-template-columns:22px 1fr;
+  gap:12px;
+  padding:16px 18px;
+  background:var(--surface);
+  border:1px solid var(--rule);
+  border-radius:3px;
+}
+.summary-item .idx{
+  font-family:var(--font-mono);
+  font-size:12px;
+  color:var(--ink-faint);
+  padding-top:2px;
+}
+.summary-item .body strong{
+  display:block;
+  font-size:14.5px;
+  color:var(--ink);
+  margin-bottom:3px;
+}
+.summary-item .body span{
+  font-size:13.5px;
+  color:var(--ink-muted);
+}
+.summary-item.new{border-left:3px solid var(--accent);}
+.summary-item.onfile{border-left:3px solid var(--decision);}
+
+footer{
+  border-top:1px solid var(--rule);
+  padding-top:28px;
+  margin-top:24px;
+  font-size:13.5px;
+  color:var(--ink-faint);
+}
+footer p{margin:0 0 8px;max-width:68ch;}
+
+@media (max-width:860px){
+  .shell{grid-template-columns:1fr;padding:32px 20px 80px;}
+  nav.toc{position:static;border-bottom:1px solid var(--rule);padding-bottom:20px;margin-bottom:8px;}
+  h1{font-size:32px;}
+}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<div class="shell">
+
+<nav class="toc">
+  <div class="kicker">Contents</div>
+  <ol>
+    <li><a href="#supply"><span class="num">01</span>Supply &amp; genesis</a></li>
+    <li><a href="#reward"><span class="num">02</span>Block reward</a></li>
+    <li><a href="#fees"><span class="num">03</span>Platform fee split</a></li>
+    <li><a href="#transfer"><span class="num">04</span>Transfer fee</a></li>
+    <li><a href="#posr"><span class="num">05</span>PoSR weights</a></li>
+    <li><a href="#staking"><span class="num">06</span>Validator staking</a></li>
+    <li><a href="#slashing"><span class="num">07</span>Slashing</a></li>
+    <li><a href="#unbonding"><span class="num">08</span>Unbonding &amp; dormancy</a></li>
+    <li><a href="#governance"><span class="num">09</span>Governance</a></li>
+    <li><a href="#borrowing"><span class="num">10</span>Borrowing power</a></li>
+    <li><a href="#hub"><span class="num">11</span>Hub &amp; moderator fees</a></li>
+    <li><a href="#summary"><span class="num">12</span>Needs your decision</a></li>
+  </ol>
+</nav>
+
+<main>
+  <header class="doc">
+    <div class="eyebrow"><span class="dot"></span>Owner &amp; engineering review</div>
+    <h1>Economic Constants Review</h1>
+    <p class="dek">Every tunable number currently governing CreditChain's token economics — supply, block rewards, fees, staking, slashing, and governance — as actually deployed on node1 and mainnet today, not a proposal.</p>
+    <div class="meta-row">
+      <span><strong>As of</strong> 2026-08-25</span>
+      <span><strong>Sources</strong> live source tree, re-verified this pass</span>
+      <span class="status-pill">Awaiting engineering sign-off</span>
+    </div>
+  </header>
+
+  <div class="howto">
+    <p><strong>What this is.</strong> A current-state ledger of every economic constant in the codebase, pulled fresh from source — not from memory of earlier sessions. Where a number already has a standing recommendation on file, it's cited and linked rather than re-argued here.</p>
+    <p><strong>What to do with it.</strong> Sections marked <span class="decision"><span class="tag">Needs decision</span></span> inline, and consolidated in §12, are the ones that need you and your engineers to actually decide something. Everything else is either already locked/approved, or informational context for judging the numbers that aren't.</p>
+    <p>Full comparable-network research (Cosmos, Polkadot, Ethereum, Solana) behind the staking/fee recommendations lives in <code>audit/economic_constants_recommendations.md</code> — this note summarizes and updates it, doesn't replace it.</p>
+  </div>
+
+  <section id="supply">
+    <h2><span class="sec-num">01</span>Supply &amp; genesis</h2>
+    <p class="intro">The hard ceiling on total CCT that will ever exist, and the one-time allocation minted at launch.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Constant</th><th>File</th><th>Value</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td class="const">MaxTotalCCTSupplyWhole</td><td class="file">api/tokenomics.go</td><td class="val">10,000,000,000 CCT</td><td>Lifetime cap, enforced at every mint site via <code>mintCCTCapped</code>.</td></tr>
+          <tr><td class="const">Genesis pool total</td><td class="file">api/tokenomics.go</td><td class="val">1,000,000,000 CCT</td><td>One-time, admin-triggered, idempotent. ~9B headroom left for block-reward minting.</td></tr>
+          <tr><td class="const">&nbsp;&nbsp;↳ Validator Reward Pool</td><td class="file"></td><td class="val">400,000,000 (40%)</td><td></td></tr>
+          <tr><td class="const">&nbsp;&nbsp;↳ Foundation Treasury</td><td class="file"></td><td class="val">250,000,000 (25%)</td><td></td></tr>
+          <tr><td class="const">&nbsp;&nbsp;↳ Ecosystem Development</td><td class="file"></td><td class="val">150,000,000 (15%)</td><td></td></tr>
+          <tr><td class="const">&nbsp;&nbsp;↳ Governance Treasury</td><td class="file"></td><td class="val">100,000,000 (10%)</td><td></td></tr>
+          <tr><td class="const">&nbsp;&nbsp;↳ Community Incentives</td><td class="file"></td><td class="val">100,000,000 (10%)</td><td>Amounts locked per owner approval, 2026-07.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="reward">
+    <h2><span class="sec-num">02</span>Block reward — new mechanism</h2>
+    <p class="intro">Replaced entirely on 2026-08-25, per explicit instruction: the reward is no longer a flat or decaying schedule. It's now 90% of whatever real CCT was burned from marketplace fees since the last block.</p>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Constant</th><th>File</th><th>Value</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td class="const">Reward formula</td><td class="file">api/apply.go</td><td class="val">90% × CCTBurnedPendingReward</td><td><code>pendingBurnBasedBlockReward()</code>, paid and reset every block.</td></tr>
+          <tr><td class="const">Accumulator</td><td class="file">core/treasury.go</td><td class="val">CCTBurnedPendingReward</td><td>Fed only by the CCT-denominated half of the platform fee's 50% burn share.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="worked">
+      <div class="label">Worked example — a 10,000 CCT trade</div>
+      <div class="flow">
+        <div class="step"><span class="amt">10,000 CCT</span><span class="lbl">Trade amount</span></div>
+        <span class="arrow">→</span>
+        <div class="step"><span class="amt">30 CCT</span><span class="lbl">Platform fee (0.3%)</span></div>
+        <span class="arrow">→</span>
+        <div class="step burn"><span class="amt">15 CCT</span><span class="lbl">Burned (50% of fee)</span></div>
+        <span class="arrow">→</span>
+        <div class="step reward"><span class="amt">13.5 CCT</span><span class="lbl">Minted as reward (90%)</span></div>
+      </div>
+    </div>
+    <p class="intro" style="margin-top:-6px">Net effect per fee-burn cycle: total supply falls by 10% of the burned amount, and the validator (split pro‑rata with delegators, exactly as before) receives the other 90% as newly minted CCT. A block with zero CCT-denominated fee activity since the last one now correctly pays zero reward — the old schedule always paid something regardless of real usage.</p>
+
+    <div class="decision">
+      <div class="tag">Needs decision — no volume floor</div>
+      <p>With no CCT trading volume, the block reward is exactly zero — the only validator income left is swept CCT transfer fees (0.3 CCT/send). Is a zero base reward acceptable during low-activity periods, or should there be a minimum floor?</p>
+    </div>
+    <div class="superseded-note"><strong>Resolved (2026-08-25):</strong> ETH_CCC1/BTC_CCC1/USDC_CCC1 burns now feed the reward too. Each is <em>valued</em> in CCT terms — via a new admin-settable <code>CctUsdCents</code> governance param, chained through the existing <code>EthUsdCentsPerEth</code>/<code>BtcUsdCentsPerBtc</code> rates (USDC_CCC1 pegged 1:1) — and that valuation is added to the same <code>CCTBurnedPendingReward</code> accumulator real CCT burns feed. Nothing is actually minted, burned, or moved across token ledgers to do this — each symbol's own burn still happens in its own currency exactly as before; this only changes how it's <em>counted</em> toward the reward. Deliberately does <strong>not</strong> read <code>api/price_oracle.go</code>'s live, node-local price cache — that's independently polled per node and would fork the chain if used in block-apply logic. REPT still doesn't feed the reward (no defined USD/CCT rate exists for it anywhere). All three rates are 0 (no effect) until an admin sets them via the existing governance-param mechanism.</div>
+    <div class="decision">
+      <div class="tag">Needs decision — no smoothing or cap</div>
+      <p>The reward is paid raw, per block, with no smoothing or ceiling. A single large CCT trade produces one outsized single-block reward rather than an averaged rate. Worth deciding whether to smooth across a rolling window, or leave it exactly proportional to real-time activity.</p>
+    </div>
+    <div class="decision">
+      <div class="tag">Needs decision — self-dealing check</div>
+      <p>Worth a dedicated engineering look at wash-trading incentives: a validator trading CCT against themself pays the full 0.3% fee and can recover at most ~20% (validator pool share) + ~13.5% (90% of the burn, if they produced the block) ≈ 33.5% of that fee back — a net loss under the current splits, so no obvious profit today, but flagging for explicit sign-off rather than assuming it's safe.</p>
+    </div>
+
+    <div class="superseded-note"><strong>Removed from the codebase:</strong> the flat/decaying schedule this replaced (Year 1–5: 10 → 8 → 6 → 5 → 3 CCT/block, held flat thereafter) and its <code>ProduceBlockReward</code>/<code>blockRewardSchedule</code>/<code>blockRewardForTimestamp</code> constants no longer exist. Full before/after is documented in <code>audit/economic_constants_recommendations.md</code> §3 and <code>audit/KNOWN_GAPS.md</code>.</div>
+  </section>
+
+  <section id="fees">
+    <h2><span class="sec-num">03</span>Marketplace platform fee split</h2>
+    <p class="intro">Charged on every completed P2P trade, split five ways.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Constant</th><th>File</th><th>Value</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td class="const">PlatformFeeBps</td><td class="file">core/platform_fee.go</td><td class="val">30 bps (0.3%)</td><td>Applied to trade amount.</td></tr>
+          <tr><td class="const">&nbsp;&nbsp;↳ Burned</td><td class="file"></td><td class="val">50%</td><td>Real <code>Burn</code>, permanent supply reduction. Only the CCT share feeds §02's reward.</td></tr>
+          <tr><td class="const">&nbsp;&nbsp;↳ Validator pool</td><td class="file"></td><td class="val">20%</td><td>Per-symbol pool, swept to the block producer.</td></tr>
+          <tr><td class="const">&nbsp;&nbsp;↳ Foundation Treasury</td><td class="file"></td><td class="val">10%</td><td>Admin share.</td></tr>
+          <tr><td class="const">&nbsp;&nbsp;↳ Outernet operator</td><td class="file"></td><td class="val">10%</td><td></td></tr>
+          <tr><td class="const">&nbsp;&nbsp;↳ Moderator</td><td class="file"></td><td class="val">10%</td><td>Direct if a resolving moderator is named, pooled otherwise.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="transfer">
+    <h2><span class="sec-num">04</span>CCT transfer fee</h2>
+    <p class="intro">Flat fee on a plain CCT send, separate from the marketplace fee above.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Constant</th><th>File</th><th>Value</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td class="const">DefaultCCTTransferFeeSmallestUnit</td><td class="file">api/apply.go</td><td class="val">0.3 CCT</td><td>The real fee actually charged. Governance-adjustable.</td></tr>
+          <tr><td class="const">CCTTransferFee</td><td class="file">api/apply.go</td><td class="val">1 (legacy)</td><td>UX pre-flight reservation only, not the real charge — kept as a separate governance key to avoid reinterpreting an already-seeded value.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="intro">Swept 100% to the block-producing validator — a real value transfer, not a mint, and not split with delegators (compensation for including the transaction, not a staking yield).</p>
+    <div class="decision">
+      <div class="tag">Needs decision — real-world target</div>
+      <p>0.3 CCT per send is only meaningful once there's a target CCT price: is this meant to cost a user ~$0.003 or ~$3? (existing item, not new to this pass — see <code>economic_constants_recommendations.md</code>.)</p>
+    </div>
+  </section>
+
+  <section id="posr">
+    <h2><span class="sec-num">05</span>PoSR validator selection weights</h2>
+    <p class="intro">What determines which validator produces the next block. <span class="locked">Approved 2026-07 · locked</span></p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Component</th><th>File</th><th>Weight</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td class="const">Stake</td><td class="file">core/consensus.go</td><td class="val">25%</td><td>Normalized against <code>StakeCap = 100,000</code> CCT.</td></tr>
+          <tr><td class="const">Reputation</td><td class="file">core/consensus.go</td><td class="val">55%</td><td>Reputation-dominant by design — "not Proof of Richest."</td></tr>
+          <tr><td class="const">Uptime</td><td class="file">core/consensus.go</td><td class="val">20%</td><td>Defaults to 1.0 before a validator has produced/missed a block.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="intro">MinValidatorReputationGate = 20 (eligibility floor); every new wallet starts at Reputation 50 of a MaxReputation of 100 — see §06 for why this matters for Sybil cost.</p>
+  </section>
+
+  <section id="staking">
+    <h2><span class="sec-num">06</span>Validator staking &amp; registration economics</h2>
+    <p class="intro">The capital and fee cost of standing up a new validator.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Constant</th><th>File</th><th>Value</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td class="const">MinValidatorStake</td><td class="file">core/consensus.go</td><td class="val">1,000 CCT</td><td>1% of StakeCap → only 0.25% of max selection weight.</td></tr>
+          <tr><td class="const">ValidatorRegisterFeeCCT</td><td class="file">api/validators.go</td><td class="val">50 CCT</td><td>One-time anti-spam fee, on top of stake.</td></tr>
+          <tr><td class="const">MinValidatorReputation</td><td class="file">api/validators.go</td><td class="val">50</td><td>Matches a fresh wallet's default — immediately eligible.</td></tr>
+          <tr><td class="const">Registration scaling</td><td class="file">api/validators.go</td><td class="val">flat / 10 / +10%</td><td>Flat for the first 10 validators, then +10% (fee &amp; stake) per additional block of 10.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="decision">
+      <div class="tag">Needs decision — on file, unactioned</div>
+      <p>A brand-new, minimum-stake validator reaches ~48% of maximum selection weight (0.25% stake + up to 27.5% reputation + 20% uptime) for ~1,050 CCT and zero track record. Standing recommendation: raise <code>MinValidatorStake</code> to 10,000 CCT (10% of StakeCap) and <code>ValidatorRegisterFeeCCT</code> to 500 CCT to match. Full Sybil-cost derivation in <code>economic_constants_recommendations.md</code> §2.</p>
+    </div>
+    <div class="decision">
+      <div class="tag">Needs decision — on file, unactioned</div>
+      <p>The 10-validators / +10% registration-scaling curve is a reasonable shape but an arbitrary pair without a target active validator-set size (curated ~180–1,000 vs. permissionless 1,000+). Needs owner input on which model CreditChain is aiming for.</p>
+    </div>
+  </section>
+
+  <section id="slashing">
+    <h2><span class="sec-num">07</span>Slashing</h2>
+    <p class="intro">Penalties for missed blocks and double-signing. <span class="locked">Locked 2026-07</span></p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Constant</th><th>File</th><th>Value</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td class="const">MissedBlockStakeSlashBps</td><td class="file">core/slashing.go</td><td class="val">50 bps (0.50%)</td><td></td></tr>
+          <tr><td class="const">DoubleSignStakeSlashBps</td><td class="file">core/slashing.go</td><td class="val">1000 bps (10.00%)</td><td>20× a missed block — attacks consensus itself.</td></tr>
+          <tr><td class="const">PermanentBanSlashCountThreshold</td><td class="file">core/slashing.go</td><td class="val">6 strikes</td><td>≈2 double-signs, or 1 double-sign + 3 missed blocks.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="intro">Slashed stake is burned, never redistributed to the reporting node — deliberate, to avoid incentivizing false reports for profit.</p>
+  </section>
+
+  <section id="unbonding">
+    <h2><span class="sec-num">08</span>Unbonding &amp; dormancy</h2>
+    <p class="intro">Both currently sit at demo-scale placeholder values, not their intended real ones.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Constant</th><th>File</th><th>Current</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td class="const">UnbondingPeriodSeconds</td><td class="file">core/staking_logic.go</td><td class="val">60s (demo)</td><td>Shared by validator self-stake and delegator undelegation — only self-stake is ever slashed.</td></tr>
+          <tr><td class="const">DormancyPeriodSeconds</td><td class="file">core/dormancy.go</td><td class="val">300s (demo)</td><td>Code's own comment already states the real intended value.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="decision">
+      <div class="tag">Needs decision — on file, unactioned</div>
+      <p><code>UnbondingPeriodSeconds</code> → recommended 1,814,400s (21 days), matching Cosmos/Polkadot's validator-bond precedent. <code>DormancyPeriodSeconds</code> → 1,577,880,000s (50 years) — not a new derivation, just implementing what the code comment already says. Also flagged: splitting the shared unbonding constant into separate validator/delegator values, since only one of the two is ever slashable.</p>
+    </div>
+  </section>
+
+  <section id="governance">
+    <h2><span class="sec-num">09</span>Governance economics</h2>
+    <p class="intro">Proposal thresholds and voting-weight formulas, including the new node-admission Sybil-resistance layer.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Constant</th><th>File</th><th>Value</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td class="const">DefaultProposalQuorum</td><td class="file">core/governance.go</td><td class="val">500</td><td>Weighted-vote units.</td></tr>
+          <tr><td class="const">ProposalVotingWindowSeconds</td><td class="file">core/governance.go</td><td class="val">7 days</td><td></td></tr>
+          <tr><td class="const">Executive proposal window</td><td class="file">api/executive_proposal.go</td><td class="val">3 days</td><td></td></tr>
+          <tr><td class="const">Voting weight split</td><td class="file">api/governance_weight.go</td><td class="val">60% reputation / 40% stake</td><td>Mirrors PoSR's own reputation-dominant philosophy.</td></tr>
+          <tr><td class="const">NodeAdmissionProposalQuorum</td><td class="file">api/governance.go</td><td class="val">1,000 (2×)</td><td>Doubled bar — network-membership admission is higher-stakes than an ordinary param change.</td></tr>
+          <tr><td class="const">NodeAdmissionMinConviction</td><td class="file">api/governance_weight.go</td><td class="val">10</td><td>No floor-of-1 vote here — a wallet below this contributes zero weight, closing a throwaway-wallet dilution hole.</td></tr>
+          <tr><td class="const">Conviction growth / decay</td><td class="file">api/governance_conviction.go</td><td class="val">+1 / −3 per epoch</td><td>Builds slowly toward current trust, unwinds 3× faster if trust drops.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="borrowing">
+    <h2><span class="sec-num">10</span>Borrowing Power Score weights</h2>
+    <p class="intro">Marketplace-adjacent, not a validator/staking parameter, but still a tuned economic formula.</p>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Factor</th><th>Weight</th></tr></thead>
+        <tbody>
+          <tr><td class="const">Reputation</td><td class="val">40%</td></tr>
+          <tr><td class="const">Repayment history</td><td class="val">25%</td></tr>
+          <tr><td class="const">Staked CCT</td><td class="val">15%</td></tr>
+          <tr><td class="const">Collateral</td><td class="val">10%</td></tr>
+          <tr><td class="const">Governance participation</td><td class="val">10%</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="hub">
+    <h2><span class="sec-num">11</span>Hub &amp; moderator fees</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Constant</th><th>File</th><th>Value</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td class="const">HubApplyFeeCCT</td><td class="file">api/companies.go</td><td class="val">25 CCT</td><td></td></tr>
+          <tr><td class="const">ModeratorRegisterFeeCCT</td><td class="file">api/moderators.go</td><td class="val">10 CCT</td><td></td></tr>
+          <tr><td class="const">Moderator pool sweep interval</td><td class="file">api/apply.go</td><td class="val">14 days</td><td>Weighted by reputation × uptime across active moderators.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="summary">
+    <h2><span class="sec-num">12</span>Needs your decision — consolidated</h2>
+    <p class="intro">Everything above marked <span class="decision" style="display:inline-block;padding:2px 8px"><span class="tag" style="margin:0">Needs decision</span></span>, in one place.</p>
+    <div class="summary-list">
+      <div class="summary-item new">
+        <div class="idx">01</div>
+        <div class="body"><strong>Block reward — zero-volume floor</strong><span>New this pass. Should there be a minimum reward when CCT fee-burn activity is zero, or is zero the intended behavior?</span></div>
+      </div>
+      <div class="summary-item onfile" style="border-left-color:var(--good)">
+        <div class="idx">02</div>
+        <div class="body"><strong>Block reward — non-CCT fee burns now feed it too</strong><span>Resolved 2026-08-25. ETH_CCC1/BTC_CCC1/USDC_CCC1 burns are valued in CCT via a new admin-set <code>CctUsdCents</code> rate and counted alongside real CCT burns — no cross-ledger minting involved. REPT still excluded (no defined rate). Deployed to node1 and mainnet.</span></div>
+      </div>
+      <div class="summary-item new">
+        <div class="idx">03</div>
+        <div class="body"><strong>Block reward — no per-block smoothing or cap</strong><span>New this pass. A single large trade produces one outsized single-block reward. Smooth it or leave it as-is?</span></div>
+      </div>
+      <div class="summary-item new">
+        <div class="idx">04</div>
+        <div class="body"><strong>Block reward — self-dealing / wash-trade review</strong><span>New this pass. Current math shows a net loss for the validator, but worth an explicit engineering sign-off rather than an assumption.</span></div>
+      </div>
+      <div class="summary-item onfile">
+        <div class="idx">05</div>
+        <div class="body"><strong>MinValidatorStake → 10,000 CCT</strong><span>On file, unactioned. Closes the ~48%-weight-for-1,050-CCT Sybil gap. See §06.</span></div>
+      </div>
+      <div class="summary-item onfile">
+        <div class="idx">06</div>
+        <div class="body"><strong>ValidatorRegisterFeeCCT → 500 CCT</strong><span>On file, unactioned. Kept proportional (~5%) to the MinValidatorStake recommendation above.</span></div>
+      </div>
+      <div class="summary-item onfile">
+        <div class="idx">07</div>
+        <div class="body"><strong>Registration scaling curve tuning</strong><span>On file, unactioned. Needs a target active validator-set size to pick real numbers.</span></div>
+      </div>
+      <div class="summary-item onfile">
+        <div class="idx">08</div>
+        <div class="body"><strong>UnbondingPeriodSeconds → 21 days</strong><span>On file, unactioned. Currently 60s (demo value).</span></div>
+      </div>
+      <div class="summary-item onfile">
+        <div class="idx">09</div>
+        <div class="body"><strong>DormancyPeriodSeconds → 50 years</strong><span>On file, unactioned. Code's own comment already specifies this value; currently 300s (demo).</span></div>
+      </div>
+      <div class="summary-item onfile">
+        <div class="idx">10</div>
+        <div class="body"><strong>MaxTestStakePerAccount — remove or replace</strong><span>On file, unactioned. Its own justification ("no real value at stake yet") no longer applies at mainnet. A real cap, if wanted, is a compliance decision.</span></div>
+      </div>
+      <div class="summary-item onfile">
+        <div class="idx">11</div>
+        <div class="body"><strong>CCT transfer fee real-world target</strong><span>On file, unactioned. 0.3 CCT needs a target token price to mean anything in USD terms.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>Deeper comparable-network research (Cosmos, Polkadot, Ethereum, Solana precedents) and full derivations for items 05–11 above live in <code>audit/economic_constants_recommendations.md</code>. Broader disclosed gaps and their status are tracked in <code>audit/KNOWN_GAPS.md</code>.</p>
+    <p>This is a living review note, not a final spec — reply with which items you want acted on and I'll implement, test, and deploy them the same way the block-reward change above was handled.</p>
+  </footer>
+</main>
+</div>

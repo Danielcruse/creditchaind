@@ -71,7 +71,11 @@ async function refreshLendBalance() {
     try {
         const symbol = document.getElementById("offerSymbol").value;
         const balance = await fetchTokenBalance(lendWallet, symbol);
-        document.getElementById("lendBalance").innerText = `${balance.balance} ${symbol}`;
+        // CCT's balance is an 18-decimal smallest-unit string now (this
+        // symbol dropdown includes CCT); every other symbol reaching
+        // this generic path is still a plain whole-unit number.
+        const displayBalance = symbol === "CCT" ? cctFromSmallest(balance.balance) : balance.balance;
+        document.getElementById("lendBalance").innerText = `${displayBalance} ${symbol}`;
     } catch (e) {
         console.error(e);
     }

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/creditchain/creditchaind/core"
 )
@@ -49,12 +50,12 @@ func HandleCreateLoanRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "amount must be positive", http.StatusBadRequest)
 		return
 	}
-	if req.CollateralSymbol != "CCT" && req.CollateralSymbol != "OETH" {
-		http.Error(w, "collateralSymbol must be CCT or OETH", http.StatusBadRequest)
+	if req.CollateralSymbol != "CCT" && req.CollateralSymbol != "OETH" && req.CollateralSymbol != "STETH_CCC1" {
+		http.Error(w, "collateralSymbol must be CCT, OETH, or STETH_CCC1", http.StatusBadRequest)
 		return
 	}
-	if req.CollateralAmount < req.Amount {
-		http.Error(w, "collateralAmount must be at least the borrow amount", http.StatusBadRequest)
+	if !meetsMinimumCollateralRatio(req.CollateralSymbol, req.CollateralAmount, req.Amount, time.Now().Unix()) {
+		http.Error(w, "collateralAmount must be at least the borrow amount (in real USD/YEN-e terms for STETH_CCC1 - is a live ETH/USD rate set?)", http.StatusBadRequest)
 		return
 	}
 	if req.MaxInterestPercent == 0 {
@@ -70,12 +71,12 @@ func HandleCreateLoanRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if collateralStore.LockedOf(address, req.CollateralSymbol) < req.CollateralAmount {
-		http.Error(w, "insufficient locked collateral - lock staked CCT or oETH covering at least this amount first", http.StatusBadRequest)
+		http.Error(w, "insufficient locked collateral - lock staked CCT, oETH, or STETH_CCC1 covering at least this amount first", http.StatusBadRequest)
 		return
 	}
 
 	wallet := walletStore.Get(address)
-	if limit := core.BorrowLimit(wallet.Reputation); req.Amount > limit {
+	if limit := core.BorrowLimit(core.TrustDimensionValue(wallet, core.DimensionRepayment)); req.Amount > limit {
 		http.Error(w, "borrow limit exceeded", http.StatusBadRequest)
 		return
 	}

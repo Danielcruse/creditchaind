@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Buy CCT - OUTERNET</title>
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+<link rel="stylesheet" href="css/style.css?v=fixaug5c">
+<link rel="stylesheet" href="css/outernet.css?v=fixaug5d">
+<style>
+    .buy-review-row{ display:flex; justify-content:space-between; padding:6px 0; }
+    .buy-note{
+        background:rgba(2,132,199,0.10); border:1px solid #0284c7;
+        border-radius:8px; padding:10px; font-size:13px; margin:12px 0;
+    }
+    .buy-warning{
+        background:rgba(255,176,32,0.12); border:1px solid #ffb020;
+        border-radius:8px; padding:10px; font-size:13px; margin:12px 0;
+    }
+    input.buy-field, select.buy-field, textarea.buy-field{
+        width:100%; box-sizing:border-box; font-size:14px;
+        padding:10px; border-radius:8px; border:1px solid rgba(0,0,0,0.15);
+        margin-bottom:10px;
+    }
+
+    /* --- amount entry: display + unit toggle + keypad --- */
+    .amount-display-row{ display:flex; align-items:center; justify-content:center; gap:8px; margin:6px 0 4px; }
+    .amount-display{ font-size:36px; font-weight:700; text-align:center; word-break:break-all; }
+    .amount-unit-toggle{
+        display:flex; flex-direction:column; align-items:center; justify-content:center;
+        min-width:56px; padding:4px 8px; cursor:pointer; user-select:none;
+        border:1px solid rgba(0,0,0,0.15); border-radius:8px;
+        background:#0284c7; color:#fff; font-size:12px; font-weight:600; text-align:center; line-height:1.2;
+    }
+    .amount-unit-toggle:active{ background:#026a9e; }
+    .amount-unit-toggle .swap-arrow{ font-size:14px; opacity:0.85; }
+    .amount-preview{ text-align:center; font-size:12px; opacity:0.65; min-height:1.2em; margin-bottom:10px; }
+    .keypad{ display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin:10px 0 14px; }
+    .keypad button{
+        padding:16px 0; font-size:20px; border-radius:10px; border:1px solid rgba(0,0,0,0.12);
+        background:rgba(0,0,0,0.04); cursor:pointer;
+    }
+    .keypad button:active{ background:rgba(0,0,0,0.09); }
+    .keypad button.keypad-clear{ font-size:16px; }
+
+    /* --- payment method selection --- */
+    .method-list{ display:flex; flex-direction:column; gap:10px; }
+    .method-option{
+        display:flex; align-items:center; gap:12px; padding:14px; border-radius:10px;
+        border:1px solid rgba(0,0,0,0.12); background:#fff; cursor:pointer; text-align:left;
+        font-size:15px; width:100%;
+    }
+    .method-option:hover{ background:rgba(2,132,199,0.06); border-color:#0284c7; }
+    .method-option-icon{ font-size:20px; width:28px; text-align:center; }
+
+    .bank-account-row{ display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(0,0,0,0.06); font-size:14px; }
+    .bank-account-row:last-child{ border-bottom:none; }
+</style>
+</head>
+<body class="outernet-light">
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
+
+<div class="main" style="max-width:520px;margin:0 auto;padding:24px 16px;">
+
+<p><a href="assets" style="color:#0284c7;">&larr; Assets</a></p>
+
+<h1>Buy CCT</h1>
+
+<div class="card" id="saleInfoCard">
+    <p style="margin:0;">
+        Price: <strong id="salePrice">Loading...</strong>
+        <br>
+        Remaining allocation: <span id="saleRemaining">Loading...</span>
+        <br>
+        <span id="salePausedNotice" style="display:none;color:#dc2626;">The public sale is currently paused - purchase requests cannot be submitted right now.</span>
+    </p>
+</div>
+
+<!-- ============ STEP 1: amount ============ -->
+<div class="card" id="stepAmount">
+    <p style="opacity:0.7;font-size:13px;margin-top:0;">How much CCT do you want to buy?</p>
+
+    <div class="amount-display-row">
+        <div class="amount-display" id="amountDisplay">0</div>
+        <div class="amount-unit-toggle" id="amountUnitToggle" onclick="toggleAmountUnit()" title="Switch between CCT and USD">
+            <span class="swap-arrow">&#8645;</span>
+            <span id="amountUnitToggleLabel">CCT</span>
+        </div>
+    </div>
+    <p class="amount-preview" id="amountPreview"></p>
+
+    <div class="keypad">
+        <button onclick="keypadPress('1')">1</button>
+        <button onclick="keypadPress('2')">2</button>
+        <button onclick="keypadPress('3')">3</button>
+        <button onclick="keypadPress('4')">4</button>
+        <button onclick="keypadPress('5')">5</button>
+        <button onclick="keypadPress('6')">6</button>
+        <button onclick="keypadPress('7')">7</button>
+        <button onclick="keypadPress('8')">8</button>
+        <button onclick="keypadPress('9')">9</button>
+        <button onclick="keypadPress('.')">.</button>
+        <button onclick="keypadPress('0')">0</button>
+        <button class="keypad-clear" onclick="keypadPress('back')">&#9003;</button>
+    </div>
+
+    <button onclick="continueFromAmount()" style="width:100%;">Continue</button>
+    <p id="amountStatus" style="opacity:0.75;font-size:13px;"></p>
+</div>
+
+<!-- ============ STEP 2: payment method ============ -->
+<div class="card" id="stepMethod" style="display:none;">
+    <p style="opacity:0.7;font-size:13px;margin-top:0;">How do you want to pay?</p>
+    <div class="method-list">
+        <button class="method-option" onclick="selectMethod('BANK_TRANSFER')"><span class="method-option-icon">&#127974;</span> Bank Transfer</button>
+        <button class="method-option" onclick="selectMethod('CARD')"><span class="method-option-icon">&#128179;</span> Bank Card</button>
+        <button class="method-option" onclick="selectMethod('ONLINE_WALLET')"><span class="method-option-icon">&#128092;</span> Online Wallet</button>
+        <button class="method-option" onclick="selectMethod('APPLE_PAY')"><span class="method-option-icon">&#63743;</span> Apple Pay</button>
+        <button class="method-option" onclick="selectMethod('GOOGLE_PAY')"><span class="method-option-icon">&#9724;</span> Google Pay</button>
+    </div>
+    <br>
+    <button onclick="backToAmount()">&larr; Back</button>
+</div>
+
+<!-- ============ STEP 3a-i: bank transfer contact form ============ -->
+<div class="card" id="stepBankForm" style="display:none;">
+    <p style="opacity:0.7;font-size:13px;margin-top:0;">A few details so we can match your transfer to this request.</p>
+    <input class="buy-field" type="text" id="bankName" placeholder="Full name (must match the account you'll pay from)">
+    <input class="buy-field" type="email" id="bankEmail" placeholder="Email">
+    <input class="buy-field" type="text" id="bankContact" placeholder="Phone / other contact (optional)">
+    <label for="bankCurrency" style="font-size:12px;opacity:0.7;">Currency</label>
+    <select class="buy-field" id="bankCurrency">
+        <option value="">Loading currencies...</option>
+    </select>
+    <button onclick="submitBankTransferForm()" style="width:100%;">Continue</button>
+    <p id="bankFormStatus" style="opacity:0.75;font-size:13px;"></p>
+    <br>
+    <button onclick="backToMethod()">&larr; Back</button>
+</div>
+
+<!-- ============ STEP 3a-ii: preset bank account ============ -->
+<div class="card" id="stepBankAccount" style="display:none;">
+    <h3 style="margin-top:0;">Pay Using These Details</h3>
+    <div id="bankAccountDetails"></div>
+    <div class="buy-warning" id="bankAccountWarning"></div>
+    <button onclick="confirmIHavePaid()" style="width:100%;">I Have Paid</button>
+    <p id="bankAccountStatus" style="opacity:0.75;font-size:13px;"></p>
+</div>
+
+<!-- ============ STEP 3a-iii: wait after bank transfer paid ============ -->
+<div class="card" id="stepWaitBank" style="display:none;">
+    <h3 style="margin-top:0;">Thanks - We're Checking</h3>
+    <p>
+        Please allow <strong>30 minutes to 1 hour</strong> for an admin to confirm your payment. Once confirmed,
+        your CCT will be transferred to your wallet automatically - no further action needed from you. You can
+        check on this request later in your <a href="asset?symbol=CCT">CCT asset history</a>.
+    </p>
+    <button onclick="location.href='assets'">Back to Assets</button>
+</div>
+
+<!-- ============ STEP 3b-i: other methods contact form ============ -->
+<div class="card" id="stepOtherForm" style="display:none;">
+    <p style="opacity:0.7;font-size:13px;margin-top:0;" id="otherFormExplainer"></p>
+    <input class="buy-field" type="email" id="otherEmail" placeholder="Email">
+    <textarea class="buy-field" id="otherContact" rows="3" placeholder="Preferred contact method / any notes for our team"></textarea>
+    <button onclick="submitOtherForm()" style="width:100%;">Submit</button>
+    <p id="otherFormStatus" style="opacity:0.75;font-size:13px;"></p>
+    <br>
+    <button onclick="backToMethod()">&larr; Back</button>
+</div>
+
+<!-- ============ STEP 3b-ii: wait after other method submit ============ -->
+<div class="card" id="stepWaitOther" style="display:none;">
+    <h3 style="margin-top:0;">Thanks - We'll Be In Touch</h3>
+    <p>
+        Watch your email for instructions from our team on how to complete payment for this method. Once you've
+        paid and an admin verifies it, your CCT will be transferred to your wallet automatically. You can check
+        on this request later in your <a href="asset?symbol=CCT">CCT asset history</a>.
+    </p>
+    <button onclick="location.href='assets'">Back to Assets</button>
+</div>
+
+</div>
+
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script src="js/buy-cct.js?v=fixaug5p"></script>
+
+</body>
+</html>

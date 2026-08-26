@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport"
-          content="width=device-width, initial-scale=1.0">
+          content="width=device-width, initial-scale=1.0, maximum-scale=1">
 
     <title>CreditChain FAQ</title>
 
-    <link rel="stylesheet" href="css/theme.css">
+    <link rel="stylesheet" href="css/theme.css?v=fixaug5c">
     <link rel="stylesheet"
-          href="css/style.css">
+          href="css/style.css?v=fixaug5c">
 </head>
 <body>
 
@@ -21,19 +21,19 @@
 
         <ul>
             <li>
-                <a href="index.html">
+                <a href="/">
                     Home
                 </a>
             </li>
 
             <li>
-                <a href="whitepaper.html">
+                <a href="whitepaper" id="faqNavWhitepaperLink">
                     Whitepaper
                 </a>
             </li>
 
             <li>
-                <a href="login.html">
+                <a href="login">
                     Launch OUTERNET
                 </a>
             </li>
@@ -45,23 +45,23 @@
 
 <h1>Frequently Asked Questions</h1>
 
-<p style="opacity:0.8;">
+<p style="opacity:0.8;" id="faqIntro">
 Quick answers to the questions testers ask most. For the full protocol
-architecture, see the <a href="whitepaper.html">whitepaper</a>.
+architecture, see the <a href="whitepaper" id="faqIntroWhitepaperLink">whitepaper</a>.
 </p>
 
 <h3>What is CreditChain?</h3>
-<p>
+<p id="faqWhatIsCC">
 A live testnet blockchain combining Proof of Stake with an on-chain
 reputation score, so borrowing power depends on more than just how
 much you can lock up as collateral.
 </p>
 
 <h3>Is any of this real money?</h3>
-<p>
+<p id="faqRealMoney">
 No. CCT, ETHTEST, USDCTEST, and REPT are testnet participation tokens
 only. None of them are backed by, or convertible into, real currency
-or assets. See the disclaimer on the <a href="whitepaper.html">whitepaper</a>
+or assets. See the disclaimer on the <a href="whitepaper" id="faqRealMoneyWhitepaperLink">whitepaper</a>
 for details.
 </p>
 
@@ -90,14 +90,17 @@ design reasoning, and the whitepaper for the technical architecture.
 
 <h3>Has this been audited?</h3>
 <p>
-Not yet. No independent security audit has been performed. That review,
-plus separate legal/regulatory review, is planned before anything here
-could move toward representing real value.
+An internal preliminary review has been completed, but no independent
+professional security audit has been performed yet. That engagement,
+plus separate legal/regulatory review, is planned as a follow-up step
+before anything here could move toward representing real value. See
+<a href="security">Security Disclosures</a> for the current, full list
+of known open gaps.
 </p>
 
 <hr>
 
-<div class="card" onclick="location.href='faq-founder-notes.html'" style="cursor:pointer;">
+<div class="card" onclick="location.href='faq-founder-notes'" style="cursor:pointer;">
     <h2>Founder Design Notes v1.0</h2>
     <p>
         A deeper Q&amp;A on the reasoning behind CreditChain's design -
@@ -116,7 +119,25 @@ could move toward representing real value.
     </p>
 </footer>
 
-<script src="js/api.js"></script>
+<script src="js/network-config.js?v=netfix0823"></script>
+<script src="js/api.js?v=sec0815a"></script>
+<script>
+(function () {
+    if (window.CC_NETWORK !== "mainnet") return;
+    document.getElementById("faqWhatIsCC").innerText =
+        "A live blockchain combining Proof of Stake with an on-chain reputation score, so borrowing power depends on more than just how much you can lock up as collateral.";
+    document.getElementById("faqRealMoney").innerHTML =
+        "CCT is CreditChain's native token, with real bridged BTC/ETH balances backing deposits made through the app. This network has not yet completed a professional security audit - see the disclaimer on the whitepaper and the <a href=\"security\">Security Disclosures</a> page for details.";
+
+    // whitepaper.html is written around testnet usage tips - route to
+    // the Developers Manual's Roadmap/Mainnet Mechanics section instead.
+    const target = "developers#mainnet-mechanics";
+    ["faqNavWhitepaperLink", "faqIntroWhitepaperLink", "faqRealMoneyWhitepaperLink"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.href = target;
+    });
+})();
+</script>
 
 </body>
 </html>

@@ -3,12 +3,32 @@ package api
 import (
 	"encoding/hex"
 	"encoding/json"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/creditchain/creditchaind/core"
 )
+
+// cctW converts a whole-CCT test amount into the smallest-unit decimal
+// string cctStore actually stores (see core/cct_amount.go) - shared
+// across every test file in this package so CCT seeding/assertions
+// read the same way a plain whole-number test always has, without
+// each call site hand-rolling the conversion.
+func cctW(whole uint64) string {
+	return core.FormatCctSmallest(core.CctWholeToSmallest(whole))
+}
+
+// cctWPlusFee adds the real CCT transfer fee (a sub-1-CCT smallest-unit
+// amount, see api/apply.go's DefaultCCTTransferFeeSmallestUnit) on top
+// of a whole-CCT amount - cctW alone can't express a fractional
+// component, so tests that need "enough to cover amount + fee exactly"
+// go through this instead of hand-rolling the big.Int math per call site.
+func cctWPlusFee(whole uint64) string {
+	total := new(big.Int).Add(core.CctWholeToSmallest(whole), big.NewInt(int64(DefaultCCTTransferFeeSmallestUnit)))
+	return core.FormatCctSmallest(total)
+}
 
 // resetApplyTestState gives each test a clean slate for every
 // package-level store applyTxOnce/ApplyTransaction touch for a plain
@@ -17,6 +37,7 @@ import (
 func resetApplyTestState() {
 	walletStore = core.NewWalletStore()
 	tokenStore = core.NewTokenStore()
+	cctStore = core.NewCctStore()
 	treasuryStore = core.NewTreasuryStore()
 	loanStore = core.NewLoanStore()
 	loanOfferStore = core.NewLoanOfferStore()
@@ -49,11 +70,57 @@ func resetApplyTestState() {
 	slashDedup.mu.Unlock()
 	resetMissedBlockReportersForTest()
 	resetReputationMiningSweepForTest()
+	resetLegacyStakeMigrationSweepForTest()
 	adminMultisigStore = core.NewAdminMultisigStore()
 	yeneClaimStore = core.NewYeneClaimStore()
+	bridgeValidatorStore = core.NewBridgeValidatorStore()
+	vaultLockAttestationStore = core.NewVaultLockAttestationStore()
+	vaultReleaseApprovalStore = core.NewVaultReleaseApprovalStore()
+	ethCcc1Store = core.NewDecimalTokenStore(18)
+	usdcCcc1Store = core.NewDecimalTokenStore(6)
+	stethCcc1Store = core.NewDecimalTokenStore(18)
+	btcCcc1Store = core.NewTokenStore()
+	// ethCcc1TransferAdapter/usdcCcc1TransferAdapter/stethCcc1TransferAdapter
+	// (api/token.go) each capture a *pointer* to the store above at
+	// package-init time - the reassignments just above swap
+	// ethCcc1Store/usdcCcc1Store/stethCcc1Store to brand new instances,
+	// but without rebuilding these adapters too, they'd keep wrapping
+	// the ORIGINAL, now-orphaned pre-reset stores. Any code path that
+	// resolves ETH_CCC1/USDC_CCC1/STETH_CCC1 through resolveTokenStore
+	// (the wholeUnitStore interface, not the raw *core.DecimalTokenStore
+	// directly) would then silently read/write stale state after a
+	// reset - caught the hard way via applyBlockReward's
+	// marketplace-fee-pool sweep test, which was the first test in this
+	// suite to exercise that path post-reset. Also matters for
+	// collateralEscrowAddress("STETH_CCC1") specifically - it's a fixed,
+	// shared synthetic address, so without this reset, a leftover
+	// balance from an earlier STETH_CCC1 collateral test would silently
+	// pollute every later one's escrow-balance assertions.
+	ethCcc1TransferAdapter = ccc1DecimalWholeUnitAdapter{store: ethCcc1Store}
+	usdcCcc1TransferAdapter = ccc1DecimalWholeUnitAdapter{store: usdcCcc1Store}
+	stethCcc1TransferAdapter = ccc1DecimalWholeUnitAdapter{store: stethCcc1Store}
 	bridgeWithdrawReserved.mu.Lock()
 	bridgeWithdrawReserved.wei = make(map[string]uint64)
 	bridgeWithdrawReserved.mu.Unlock()
+	// core.ActiveProtocolManifest is package-level mutable state (audit
+	// findings C-06/C-09) - reset to its zero value (Set: false) so a
+	// test that commits a manifest can never leak it into an unrelated
+	// later test's admin/bridge-validator-threshold assertions.
+	core.ActiveProtocolManifest = core.ProtocolManifest{}
+}
+
+// registerCurrentNodeAsAuthorizedValidator registers a fresh validator
+// whose AuthorizedNodePublicKey matches this test's own nodeIdentity
+// (reset fresh by resetApplyTestState just above) - required since
+// audit finding C-01's fix: node-authored reports (bridge deposits,
+// vault release completion, slash reports, tx-hash records) are only
+// accepted from a signer isAuthorizedNodeIdentity recognizes, and a
+// bare resetApplyTestState leaves validatorStore empty. Call this
+// after resetApplyTestState whenever a test submits one of those
+// report types via selfSignedEnvelope/reporterAddress.
+func registerCurrentNodeAsAuthorizedValidator(t *testing.T) {
+	t.Helper()
+	validatorStore.Register("test-authorized-validator-"+reporterAddress(), "test-node", hex.EncodeToString(nodeIdentity.PublicKey))
 }
 
 // buildSignedTransferTx builds a genuinely-signed TxExchange
@@ -101,18 +168,19 @@ func TestApplyTxOnce_ValidTransferMovesBalance(t *testing.T) {
 
 	const to = "recipient-address"
 	tx, from := buildSignedTransferTx(t, to, 100, 1000)
-	// CCT sends also carry CCTTransferFee on top of the amount (see
-	// api/apply.go's applyTransfer) - minted here alongside the
-	// transfer amount so the sender can cover both.
-	tokenStore.Mint(from, 100+CCTTransferFee)
+	// CCT sends also carry a real fee on top of the amount (see
+	// api/apply.go's applyTransfer/DefaultCCTTransferFeeSmallestUnit) -
+	// minted here alongside the transfer amount so the sender can cover
+	// both exactly.
+	cctStore.Mint(from, cctWPlusFee(100))
 
 	applyTxOnce(tx)
 
-	if got := tokenStore.BalanceOf(from); got != 0 {
-		t.Fatalf("expected sender balance 0 after transfer (amount + fee both spent), got %d", got)
+	if got := cctStore.BalanceOf(from); got != "0" {
+		t.Fatalf("expected sender balance 0 after transfer (amount + fee both spent), got %s", got)
 	}
-	if got := tokenStore.BalanceOf(to); got != 100 {
-		t.Fatalf("expected recipient balance 100, got %d", got)
+	if got := cctStore.BalanceOf(to); got != cctW(100) {
+		t.Fatalf("expected recipient balance 100, got %s", got)
 	}
 }
 
@@ -121,18 +189,19 @@ func TestApplyTxOnce_DuplicateIDAppliedOnce(t *testing.T) {
 
 	const to = "recipient-address"
 	tx, from := buildSignedTransferTx(t, to, 100, 1000)
-	tokenStore.Mint(from, 200)
+	cctStore.Mint(from, cctW(200))
 
 	applyTxOnce(tx)
 	applyTxOnce(tx) // same tx.ID, replayed - must be a no-op the second time
 
-	if got := tokenStore.BalanceOf(to); got != 100 {
-		t.Fatalf("expected recipient balance 100 (transfer applied exactly once), got %d", got)
+	if got := cctStore.BalanceOf(to); got != cctW(100) {
+		t.Fatalf("expected recipient balance 100 (transfer applied exactly once), got %s", got)
 	}
-	// 200 - 100 (amount) - CCTTransferFee (charged once, not twice by
-	// the replay).
-	if got := tokenStore.BalanceOf(from); got != 200-100-CCTTransferFee {
-		t.Fatalf("expected sender to have %d left (amount + fee debited exactly once), got %d", 200-100-CCTTransferFee, got)
+	// 200 - 100 (amount) - the real fee (charged once, not twice by the
+	// replay).
+	want := new(big.Int).Sub(core.CctWholeToSmallest(200-100), big.NewInt(int64(DefaultCCTTransferFeeSmallestUnit)))
+	if got := cctStore.BalanceOf(from); got != core.FormatCctSmallest(want) {
+		t.Fatalf("expected sender to have %s left (amount + fee debited exactly once), got %s", core.FormatCctSmallest(want), got)
 	}
 }
 
@@ -141,7 +210,7 @@ func TestApplyTxOnce_TamperedSignatureRejected(t *testing.T) {
 
 	const to = "recipient-address"
 	tx, from := buildSignedTransferTx(t, to, 100, 1000)
-	tokenStore.Mint(from, 100)
+	cctStore.Mint(from, cctW(100))
 
 	// Flip the signature to something that won't verify - simulates a
 	// corrupted or forged transaction reaching a node.
@@ -149,11 +218,11 @@ func TestApplyTxOnce_TamperedSignatureRejected(t *testing.T) {
 
 	applyTxOnce(tx)
 
-	if got := tokenStore.BalanceOf(from); got != 100 {
-		t.Fatalf("expected balance untouched after a bad signature, got %d (sender should still have 100)", got)
+	if got := cctStore.BalanceOf(from); got != cctW(100) {
+		t.Fatalf("expected balance untouched after a bad signature, got %s (sender should still have 100)", got)
 	}
-	if got := tokenStore.BalanceOf(to); got != 0 {
-		t.Fatalf("expected recipient to receive nothing from a rejected transaction, got %d", got)
+	if got := cctStore.BalanceOf(to); got != "0" {
+		t.Fatalf("expected recipient to receive nothing from a rejected transaction, got %s", got)
 	}
 }
 
@@ -168,15 +237,15 @@ func TestApplyTxOnce_AmountMismatchBetweenSignedAndClaimedRejected(t *testing.T)
 	// altered after signing.
 	tx, from := buildSignedTransferTx(t, to, 100, 1000)
 	tx.Amount = 999
-	tokenStore.Mint(from, 999)
+	cctStore.Mint(from, cctW(999))
 
 	applyTxOnce(tx)
 
-	if got := tokenStore.BalanceOf(to); got != 0 {
-		t.Fatalf("expected the amount-mismatched transaction to be rejected entirely, recipient got %d", got)
+	if got := cctStore.BalanceOf(to); got != "0" {
+		t.Fatalf("expected the amount-mismatched transaction to be rejected entirely, recipient got %s", got)
 	}
-	if got := tokenStore.BalanceOf(from); got != 999 {
-		t.Fatalf("expected sender's balance untouched, got %d", got)
+	if got := cctStore.BalanceOf(from); got != cctW(999) {
+		t.Fatalf("expected sender's balance untouched, got %s", got)
 	}
 }
 
@@ -188,15 +257,15 @@ func TestApplyTxOnce_RecipientMismatchBetweenSignedAndClaimedRejected(t *testing
 	// must be rejected, not silently redirected.
 	tx, from := buildSignedTransferTx(t, "recipient-address", 100, 1000)
 	tx.To = "attacker-address"
-	tokenStore.Mint(from, 100)
+	cctStore.Mint(from, cctW(100))
 
 	applyTxOnce(tx)
 
-	if got := tokenStore.BalanceOf("attacker-address"); got != 0 {
-		t.Fatalf("expected a redirected recipient to receive nothing, got %d", got)
+	if got := cctStore.BalanceOf("attacker-address"); got != "0" {
+		t.Fatalf("expected a redirected recipient to receive nothing, got %s", got)
 	}
-	if got := tokenStore.BalanceOf(from); got != 100 {
-		t.Fatalf("expected sender's balance untouched, got %d", got)
+	if got := cctStore.BalanceOf(from); got != cctW(100) {
+		t.Fatalf("expected sender's balance untouched, got %s", got)
 	}
 }
 
@@ -256,7 +325,7 @@ func TestApplyHDWalletMigrate_ValidMigrationMovesAssetsAndFreezesOldAddress(t *t
 	newAddress := core.GenerateAddress(newPub)
 	newPubHex := hex.EncodeToString(newPub)
 
-	tokenStore.Mint(oldAddress, 100)
+	cctStore.Mint(oldAddress, cctW(100))
 	reptStore.Mint(oldAddress, 5)
 	stakingStore.Stakes[oldAddress] = map[string]uint64{"CCT": 30}
 	walletStore.Get(oldAddress).Reputation = 77
@@ -274,8 +343,8 @@ func TestApplyHDWalletMigrate_ValidMigrationMovesAssetsAndFreezesOldAddress(t *t
 	tx := buildSignedHDMigrateTx(t, oldPub, oldPriv, newAddress, newPubHex, 1000)
 	applyTxOnce(tx)
 
-	if got := tokenStore.BalanceOf(newAddress); got != 100 {
-		t.Fatalf("expected 100 CCT moved to new address, got %d", got)
+	if got := cctStore.BalanceOf(newAddress); got != cctW(100) {
+		t.Fatalf("expected 100 CCT moved to new address, got %s", got)
 	}
 	if got := reptStore.BalanceOf(newAddress); got != 5 {
 		t.Fatalf("expected 5 REPT moved to new address, got %d", got)
@@ -316,9 +385,9 @@ func TestApplyHDWalletMigrate_ValidMigrationMovesAssetsAndFreezesOldAddress(t *t
 	followUp, _ := buildSignedTransferTx(t, "someone-else", 1, 2000)
 	followUp.From = oldAddress
 	followUp.AuthAddress = oldAddress
-	tokenStore.Mint(oldAddress, 1+CCTTransferFee)
+	cctStore.Mint(oldAddress, cctW(1+CCTTransferFee))
 	applyTxOnce(followUp)
-	if got := tokenStore.BalanceOf("someone-else"); got != 0 {
+	if got := cctStore.BalanceOf("someone-else"); got != "0" {
 		t.Fatalf("expected a transaction from the frozen old address to be rejected, but it applied")
 	}
 }
@@ -338,18 +407,18 @@ func TestApplyHDWalletMigrate_WrongKeySignatureRejected(t *testing.T) {
 	newAddress := core.GenerateAddress(newPub)
 	newPubHex := hex.EncodeToString(newPub)
 
-	tokenStore.Mint(oldAddress, 100)
+	cctStore.Mint(oldAddress, cctW(100))
 
 	// Signed with the wrong private key but claiming to be oldAddress -
 	// buildSignedHDMigrateTx's own signature won't match oldPub.
 	tx := buildSignedHDMigrateTx(t, oldPub, wrongPriv, newAddress, newPubHex, 1000)
 	applyTxOnce(tx)
 
-	if got := tokenStore.BalanceOf(newAddress); got != 0 {
-		t.Fatalf("expected nothing to move on a bad signature, got %d CCT at new address", got)
+	if got := cctStore.BalanceOf(newAddress); got != "0" {
+		t.Fatalf("expected nothing to move on a bad signature, got %s CCT at new address", got)
 	}
-	if got := tokenStore.BalanceOf(oldAddress); got != 100 {
-		t.Fatalf("expected old address balance untouched, got %d", got)
+	if got := cctStore.BalanceOf(oldAddress); got != cctW(100) {
+		t.Fatalf("expected old address balance untouched, got %s", got)
 	}
 	if recoveryStore.IsMigrated(oldAddress) {
 		t.Fatalf("expected old address NOT marked migrated after a rejected transaction")
@@ -376,12 +445,12 @@ func TestApplyHDWalletMigrate_DoubleMigrationRejected(t *testing.T) {
 	secondNewAddress := core.GenerateAddress(secondNewPub)
 	secondNewPubHex := hex.EncodeToString(secondNewPub)
 
-	tokenStore.Mint(oldAddress, 100)
+	cctStore.Mint(oldAddress, cctW(100))
 
 	firstTx := buildSignedHDMigrateTx(t, oldPub, oldPriv, firstNewAddress, firstNewPubHex, 1000)
 	applyTxOnce(firstTx)
-	if got := tokenStore.BalanceOf(firstNewAddress); got != 100 {
-		t.Fatalf("expected first migration to succeed and move 100 CCT, got %d", got)
+	if got := cctStore.BalanceOf(firstNewAddress); got != cctW(100) {
+		t.Fatalf("expected first migration to succeed and move 100 CCT, got %s", got)
 	}
 
 	// applyTxOnce's own guard (recoveryStore.IsMigrated(tx.AuthAddress))
@@ -390,8 +459,8 @@ func TestApplyHDWalletMigrate_DoubleMigrationRejected(t *testing.T) {
 	// confirms that end-to-end.
 	secondTx := buildSignedHDMigrateTx(t, oldPub, oldPriv, secondNewAddress, secondNewPubHex, 2000)
 	applyTxOnce(secondTx)
-	if got := tokenStore.BalanceOf(secondNewAddress); got != 0 {
-		t.Fatalf("expected second migration from an already-migrated address to be rejected, got %d CCT moved", got)
+	if got := cctStore.BalanceOf(secondNewAddress); got != "0" {
+		t.Fatalf("expected second migration from an already-migrated address to be rejected, got %s CCT moved", got)
 	}
 }
 
@@ -403,7 +472,7 @@ func TestApplyBlock_DuplicateBlockAppliedOnce(t *testing.T) {
 
 	const to = "recipient-address"
 	tx, from := buildSignedTransferTx(t, to, 50, 2000)
-	tokenStore.Mint(from, 50+CCTTransferFee)
+	cctStore.Mint(from, cctW(50+CCTTransferFee))
 
 	block := core.Block{
 		Index:        1,
@@ -415,8 +484,8 @@ func TestApplyBlock_DuplicateBlockAppliedOnce(t *testing.T) {
 	ApplyBlock(block)
 	ApplyBlock(block) // same Hash, replayed - must be a no-op the second time
 
-	if got := tokenStore.BalanceOf(to); got != 50 {
-		t.Fatalf("expected recipient balance 50 (block applied exactly once), got %d", got)
+	if got := cctStore.BalanceOf(to); got != cctW(50) {
+		t.Fatalf("expected recipient balance 50 (block applied exactly once), got %s", got)
 	}
 }
 
@@ -581,7 +650,7 @@ func buildDisputedP2POffer(t *testing.T, id, seller, buyer, moderator string, am
 		ModeratorAddress: moderator,
 	}
 	p2pOfferStore.Offers[id] = offer
-	tokenStore.Mint(p2pOfferEscrowAddress(id), amount)
+	cctStore.Mint(p2pOfferEscrowAddress(id), cctW(amount))
 	return offer
 }
 
@@ -615,8 +684,8 @@ func TestApplyP2PModeratorResolve_ReleaseToBuyerPenalizesSeller(t *testing.T) {
 	}
 	applyP2PModeratorResolve(tx)
 
-	if got := tokenStore.BalanceOf(buyer); got != amount {
-		t.Fatalf("expected buyer to receive %d CCT escrow, got %d", amount, got)
+	if got := cctStore.BalanceOf(buyer); got != cctW(amount) {
+		t.Fatalf("expected buyer to receive %d CCT escrow, got %s", amount, got)
 	}
 	if got := walletStore.Get(seller).Reputation; got != 50-uint64(ReputationDeltaP2PFraud) {
 		t.Fatalf("expected seller reputation decreased by %d (from 50), got %d", ReputationDeltaP2PFraud, got)
@@ -631,18 +700,25 @@ func TestApplyP2PModeratorResolve_ReleaseToBuyerPenalizesSeller(t *testing.T) {
 	}
 }
 
-// TestApplyP2PModeratorResolve_RefundSellerPenalizesBuyer is the
-// mirror case - release=false (the buyer's payment claim was false)
-// refunds the seller and penalizes the buyer instead.
-func TestApplyP2PModeratorResolve_RefundSellerPenalizesBuyer(t *testing.T) {
+// TestApplyP2PModeratorResolve_RefundOpensFaultChoiceInsteadOfImmediatePenalty
+// is the mirror case - release=false (the buyer's payment claim was
+// false) refunds the seller immediately, but - since a refund collects
+// no trade fee to pay the moderator from - no longer penalizes the
+// buyer's reputation immediately either. Instead it opens a
+// core.DisputeFaultChoice giving the buyer 72 hours to pay the
+// moderator's would-be fee or accept the penalty; see
+// api/dispute_fault_choice_test.go for the pay/decline/timeout paths
+// this choice can resolve through.
+func TestApplyP2PModeratorResolve_RefundOpensFaultChoiceInsteadOfImmediatePenalty(t *testing.T) {
 	resetApplyTestState()
 	p2pOfferStore = core.NewP2POfferStore()
 	reputationEventStore = core.NewReputationEventStore()
+	disputeFaultChoiceStore = core.NewDisputeFaultChoiceStore()
 
 	const seller = "modresolve-test-seller-2"
 	const buyer = "modresolve-test-buyer-2"
 	const moderator = "modresolve-test-moderator-2"
-	const amount = 25
+	const amount = 100_000 // large enough that the fee choice's amount is meaningfully nonzero
 
 	walletStore.Get(seller).Reputation = 50
 	walletStore.Get(buyer).Reputation = 50
@@ -658,19 +734,35 @@ func TestApplyP2PModeratorResolve_RefundSellerPenalizesBuyer(t *testing.T) {
 	}
 	applyP2PModeratorResolve(tx)
 
-	if got := tokenStore.BalanceOf(seller); got != amount {
-		t.Fatalf("expected seller to be refunded %d CCT escrow, got %d", amount, got)
+	if got := cctStore.BalanceOf(seller); got != cctW(amount) {
+		t.Fatalf("expected seller to be refunded %d CCT escrow, got %s", amount, got)
 	}
-	if got := walletStore.Get(buyer).Reputation; got != 50-uint64(ReputationDeltaP2PFraud) {
-		t.Fatalf("expected buyer reputation decreased by %d (from 50), got %d", ReputationDeltaP2PFraud, got)
+	if got := walletStore.Get(buyer).Reputation; got != 50 {
+		t.Fatalf("expected buyer reputation UNTOUCHED immediately after a refund resolution (no fee to pay the moderator from yet), got %d", got)
 	}
 	if got := walletStore.Get(seller).Reputation; got != 50 {
 		t.Fatalf("expected seller reputation untouched at 50, got %d", got)
 	}
+	if _, ok := reputationEventStore.Get(tx.ID); ok {
+		t.Fatal("expected no reputation event recorded yet - the choice hasn't been resolved")
+	}
 
-	event, ok := reputationEventStore.Get(tx.ID)
-	if !ok || event.Target != buyer || event.Delta != -int64(ReputationDeltaP2PFraud) {
-		t.Fatalf("expected a recorded reputation event targeting buyer with delta -%d, got %+v (ok=%v)", ReputationDeltaP2PFraud, event, ok)
+	choice, ok := disputeFaultChoiceStore.Get("test-offer-refund")
+	if !ok {
+		t.Fatal("expected a pending DisputeFaultChoice to have been created")
+	}
+	if choice.AtFaultAddress != buyer || choice.ResolvingModerator != moderator || choice.Symbol != "CCT" {
+		t.Fatalf("expected the choice to target buyer, resolved by moderator, in CCT, got %+v", choice)
+	}
+	if choice.Status != core.DisputeFaultChoicePending {
+		t.Fatalf("expected status PENDING, got %s", choice.Status)
+	}
+	wantFee := core.PlatformFeeAmount(amount) * 10 / 100
+	if choice.FeeAmount != wantFee {
+		t.Fatalf("expected fee amount %d (10%% of the would-be platform fee), got %d", wantFee, choice.FeeAmount)
+	}
+	if choice.Deadline != tx.Timestamp+core.DisputeFaultChoiceWindowSeconds {
+		t.Fatalf("expected a 72-hour deadline from tx.Timestamp, got %d (created at %d)", choice.Deadline, tx.Timestamp)
 	}
 }
 
@@ -681,7 +773,7 @@ func TestApplyTreasuryPurchaseConfirm(t *testing.T) {
 	const buyer = "buyer-address"
 
 	treasuryStore.SetFoundationAddress(treasuryAddr)
-	tokenStore.Mint(treasuryAddr, 1000)
+	cctStore.Mint(treasuryAddr, cctW(1000))
 
 	treasuryStore.CreatePurchase(&core.PurchaseRequest{
 		ID:           "purchase-1",
@@ -699,11 +791,11 @@ func TestApplyTreasuryPurchaseConfirm(t *testing.T) {
 	}
 	applyTreasuryPurchaseConfirm(tx)
 
-	if got := tokenStore.BalanceOf(buyer); got != 100 {
-		t.Fatalf("expected buyer balance 100, got %d", got)
+	if got := cctStore.BalanceOf(buyer); got != cctW(100) {
+		t.Fatalf("expected buyer balance 100, got %s", got)
 	}
-	if got := tokenStore.BalanceOf(treasuryAddr); got != 900 {
-		t.Fatalf("expected treasury balance 900 after paying out 100, got %d", got)
+	if got := cctStore.BalanceOf(treasuryAddr); got != cctW(900) {
+		t.Fatalf("expected treasury balance 900 after paying out 100, got %s", got)
 	}
 
 	purchase, ok := treasuryStore.GetPurchase("purchase-1")
@@ -800,12 +892,12 @@ func TestApplyBorrow_DefaultsToYenE(t *testing.T) {
 func TestCollateralValueInYen_KnownReserves(t *testing.T) {
 	resetApplyTestState()
 
-	cctEthTestPool.CCTReserve = 2_000_000
+	cctEthTestPool.CCTReserve = core.FormatCctSmallest(core.CctWholeToSmallest(2_000_000))
 	cctEthTestPool.TokenReserve = 1_000_000
-	cctUsdcTestPool.CCTReserve = 1_000_000
+	cctUsdcTestPool.CCTReserve = core.FormatCctSmallest(core.CctWholeToSmallest(1_000_000))
 	cctUsdcTestPool.TokenReserve = 1_000_000
 
-	value, ok := collateralValueInYen("OETH", 1000)
+	value, ok := collateralValueInYen("OETH", 1000, 1000)
 	if !ok {
 		t.Fatalf("expected a live price with seeded reserves")
 	}
@@ -822,7 +914,7 @@ func TestCollateralValueInYen_KnownReserves(t *testing.T) {
 		t.Fatalf("expected collateralValueInYen to match the same two-hop quote (%d), got %d", wantValue, value)
 	}
 
-	if _, ok := collateralValueInYen("CCT", 1000); ok {
+	if _, ok := collateralValueInYen("CCT", 1000, 1000); ok {
 		t.Fatalf("expected CCT collateral to never report a live price (CCT is the pricing numeraire)")
 	}
 
@@ -830,7 +922,7 @@ func TestCollateralValueInYen_KnownReserves(t *testing.T) {
 	// deliberately stays in Phase A) must also report ok=false, not a
 	// fabricated zero/infinite value.
 	cctEthTestPool = core.NewLiquidityPool("ETHTEST")
-	if _, ok := collateralValueInYen("OETH", 1000); ok {
+	if _, ok := collateralValueInYen("OETH", 1000, 1000); ok {
 		t.Fatalf("expected no live price against an unseeded (zero-reserve) pool")
 	}
 }
@@ -847,9 +939,9 @@ func TestLiquidateLoan_FullCoverageRefundsExcess(t *testing.T) {
 	const borrower = "liquidate-full-borrower"
 	const lender = "liquidate-full-lender"
 
-	cctEthTestPool.CCTReserve = 2_000_000
+	cctEthTestPool.CCTReserve = core.FormatCctSmallest(core.CctWholeToSmallest(2_000_000))
 	cctEthTestPool.TokenReserve = 1_000_000
-	cctUsdcTestPool.CCTReserve = 1_000_000
+	cctUsdcTestPool.CCTReserve = core.FormatCctSmallest(core.CctWholeToSmallest(1_000_000))
 	cctUsdcTestPool.TokenReserve = 1_000_000
 
 	loan := &core.Loan{
@@ -864,7 +956,7 @@ func TestLiquidateLoan_FullCoverageRefundsExcess(t *testing.T) {
 	}
 	loanStore.Loans[loan.ID] = loan
 
-	collateralValue, ok := collateralValueInYen("OETH", 1000)
+	collateralValue, ok := collateralValueInYen("OETH", 1000, 1000)
 	if !ok || collateralValue < 100 {
 		t.Fatalf("test setup invalid: expected a live price >= the 100 owed, got %d (ok=%v)", collateralValue, ok)
 	}
@@ -902,9 +994,9 @@ func TestLiquidateLoan_InsufficientCollateralComputesShortfall(t *testing.T) {
 	const borrower = "liquidate-short-borrower"
 	const lender = "liquidate-short-lender"
 
-	cctEthTestPool.CCTReserve = 2_000_000
+	cctEthTestPool.CCTReserve = core.FormatCctSmallest(core.CctWholeToSmallest(2_000_000))
 	cctEthTestPool.TokenReserve = 1_000_000
-	cctUsdcTestPool.CCTReserve = 1_000_000
+	cctUsdcTestPool.CCTReserve = core.FormatCctSmallest(core.CctWholeToSmallest(1_000_000))
 	cctUsdcTestPool.TokenReserve = 1_000_000
 
 	loan := &core.Loan{
@@ -919,7 +1011,7 @@ func TestLiquidateLoan_InsufficientCollateralComputesShortfall(t *testing.T) {
 	}
 	loanStore.Loans[loan.ID] = loan
 
-	collateralValue, ok := collateralValueInYen("OETH", 10)
+	collateralValue, ok := collateralValueInYen("OETH", 10, 1000)
 	if !ok || collateralValue >= 100000 {
 		t.Fatalf("test setup invalid: expected a live price well under the 100000 owed, got %d (ok=%v)", collateralValue, ok)
 	}
