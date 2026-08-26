@@ -1,0 +1,7 @@
+[Unit]
+Description=CreditChain encrypted off-server backup
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/creditchain-backup.env
+ExecStart=/opt/creditchain/ops/backup_state.sh

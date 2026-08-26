@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
 
 	"github.com/creditchain/creditchaind/core"
 )
@@ -15,44 +14,37 @@ func HandleBorrow(
 	enableCors(&w)
 
 	type Request struct {
-		Address string
-		Amount  uint64
+		Amount uint64
 	}
 
 	var req Request
 
-	err := json.NewDecoder(
-		r.Body,
-	).Decode(
-		&req,
-	)
-
+	auth, address, err := requireSignedRequest(r, &req)
 	if err != nil {
+		writeUnauthorized(w, err)
+		return
+	}
+
+	if req.Amount == 0 {
+		http.Error(w, "amount must be positive", http.StatusBadRequest)
+		return
+	}
+
+	if !hasEnoughCollateral(address, req.Amount) {
 		http.Error(
 			w,
-			err.Error(),
+			"insufficient locked collateral - lock staked CCT or oETH covering at least this amount first",
 			http.StatusBadRequest,
 		)
 		return
 	}
 
-	collateral := collateralStore.Locked[req.Address]
-
-	if collateral == 0 {
-		http.Error(
-			w,
-			"no collateral",
-			http.StatusBadRequest,
-		)
-		return
-	}
-
-	profile := creditStore.Get(
-		req.Address,
+	wallet := walletStore.Get(
+		address,
 	)
 
 	limit := core.BorrowLimit(
-		profile.Score,
+		wallet.Reputation,
 	)
 
 	if req.Amount > limit {
@@ -64,45 +56,34 @@ func HandleBorrow(
 		return
 	}
 
+	// The interest rate is locked in now, at the reputation (and
+	// collateral price) the borrower has at submission time, rather
+	// than recomputed when the block confirms - otherwise a
+	// reputation or price change between submission and confirmation
+	// would silently change the terms of a loan the borrower already
+	// agreed to.
 	interest := core.InterestRate(
-		profile.Score,
+		wallet.Reputation,
 	)
 
-	id :=
-		"loan-" +
-			strconv.Itoa(
-				len(
-					loanStore.Loans,
-				)+1,
-			)
+	// oETH collateral is a 1:1 receipt for staked ETHTEST, so its
+	// market value - and this loan's real risk - moves with the
+	// ETHTEST/CCT pool's own price. CCT collateral gets no adjustment:
+	// CCT is the numeraire everything else prices IN, so there's no
+	// separate "CCT price" to react to. See
+	// core.PriceAdjustedInterestRate's doc comment.
+	if collateralSymbol, ok := peekCollateralSymbolForLoan(address, req.Amount); ok && collateralSymbol == "OETH" {
+		interest = core.PriceAdjustedInterestRate(interest, priceHistoryStore.Get("ETHTEST"))
+	}
 
-	loanStore.CreateLoan(
-		id,
-		req.Address,
-		req.Amount,
-		interest,
-	)
+	data, _ := json.Marshal(borrowData{Interest: interest})
 
-	creditHistory.Add(
-		req.Address,
-		core.CreditEvent{
-			Type:   "BORROW",
-			Amount: req.Amount,
-		},
-	)
-
-	core.RecordLoanTaken(
-		profile,
-	)
-
-	tokenStore.Mint(
-		req.Address,
-		req.Amount,
-	)
+	tx := recordTx(auth, "", address, req.Amount, core.TxBorrow, string(data))
 
 	json.NewEncoder(w).Encode(
 		map[string]string{
-			"loanID": id,
+			"status": "pending",
+			"txId":   tx.ID,
 		},
 	)
 }

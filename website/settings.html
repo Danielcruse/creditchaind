@@ -2,15 +2,18 @@
 <html>
 <head>
     <title>Settings</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+<script src="js/device-lock.js"></script>
 
 <h1>Settings</h1>
 
 <div class="card">
 
-    <button onclick="logout()">
+    <button onclick="settingsLogout()">
         Logout
     </button>
 
@@ -22,6 +25,94 @@
 
 </div>
 
+<br>
+
+<div class="card">
+
+    <h2>Recovery Email</h2>
+
+    <p style="opacity:0.75;font-size:13px;">
+        Testnet placeholder - links a verified email to this wallet so it can later be
+        <strong>migrated</strong> (not literally recovered - see
+        <a href="login.html" style="color:var(--cc-accent-gold, #c9a227);">Login</a> for what that means) if you lose
+        this browser. Combined with your wallet's creation year as a security question.
+        A real deployment would email the code below instead of showing it here.
+    </p>
+
+    <p id="recoveryEmailStatus"></p>
+
+    <input type="email" id="settingsRecoveryEmail" placeholder="Email">
+    <br><br>
+    <button onclick="requestSettingsEmailCode()">1. Request Code</button>
+    <p id="settingsCodeDisplay"></p>
+    <br>
+    <input type="text" id="settingsEmailCode" placeholder="Code shown above">
+    <br><br>
+    <button onclick="confirmSettingsEmail()">2. Confirm Email</button>
+    <p id="settingsEmailStatus"></p>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Display Currency</h2>
+
+    <p style="opacity:0.75;font-size:13px;">
+        Choose which real-world currency your crypto balances are converted into (shown alongside the native
+        amount) on your Assets pages. This is a display preference only, saved in this browser - it never
+        changes any actual balance or on-chain rate.
+    </p>
+
+    <select id="displayCurrencySelect"></select>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <details>
+        <summary style="cursor:pointer;font-weight:bold;">How your ETH/BTC balance works</summary>
+        <p style="opacity:0.75;font-size:13px;margin-top:10px;">
+            The ETH and BTC balances shown on your Assets page are backed 1:1 by real bridged funds -
+            deposits to your real Ethereum/Bitcoin testnet address auto-credit here, and the balance moves
+            instantly and for free within CreditChain (no fee, no delay) just like any other token here.
+        </p>
+        <p style="opacity:0.75;font-size:13px;">
+            When you send and choose "ERC network" (for ETH) or "BTC network" (for BTC) instead of "CCT
+            network," that's the one moment a real bridge action happens: CreditChain sends real ETH or BTC
+            to the address you specify on the real network, and a small bridge fee applies to cover that.
+            Choosing "CCT network" instead just moves the balance to another CreditChain wallet, free of
+            that fee, same as sending any other token here.
+        </p>
+    </details>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Rate CreditChain</h2>
+
+    <p style="opacity:0.75;font-size:13px;" id="ratingExistingNote"></p>
+
+    <div id="ratingStarPicker" style="font-size:28px;letter-spacing:4px;cursor:pointer;">
+        <span data-star="1">&#9734;</span><span data-star="2">&#9734;</span><span data-star="3">&#9734;</span><span data-star="4">&#9734;</span><span data-star="5">&#9734;</span>
+    </div>
+
+    <textarea id="ratingComment" placeholder="Optional comment" maxlength="280" rows="2" style="width:100%;box-sizing:border-box;margin-top:10px;"></textarea>
+    <br><br>
+    <button onclick="submitRating()">Submit Rating</button>
+    <p id="ratingStatus"></p>
+
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/currency.js"></script>
+<script src="js/ai-assistant.js"></script>
 <script src="js/settings.js"></script>
 
 </body>

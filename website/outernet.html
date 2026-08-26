@@ -10,6 +10,7 @@ content="width=device-width, initial-scale=1">
 
 <link
 rel="stylesheet"
+<link rel="stylesheet" href="css/theme.css">
 href="css/style.css">
 
 <link
@@ -18,30 +19,30 @@ href="css/outernet.css">
 
 <script>
 
-if (
-    localStorage.getItem(
-        "loggedIn"
-    ) !== "true"
-) {
-    window.location.href =
-        "login.html";
-}
-
+// The real access control for every page in this app is
+// requireWallet() (see js/api.js and outernet.js below) - whoever
+// holds the wallet keypair in this browser's localStorage IS the
+// account, there's no separate server-side session. logout() here
+// just forgets that local wallet.
 function logout() {
-
-    localStorage.removeItem(
-        "loggedIn"
-    );
-
-    location.href =
-        "login.html";
+    if (confirm("Forget this browser's wallet? This does not delete anything on-chain - your address, balances and loans remain on the node.")) {
+        clearWallet();
+        location.href = "login.html";
+    }
 }
 
 </script>
 
 </head>
 
-<body>
+<body class="outernet-light">
+<script src="js/device-lock.js"></script>
+
+<div class="mobile-topbar">
+    <button type="button" id="drawerToggleBtn" class="hamburger-btn" aria-label="Open menu">&#9776;</button>
+    <span class="mobile-topbar-brand">&#127760; OUTERNET</span>
+</div>
+<div id="mobileDrawerBackdrop" class="drawer-backdrop"></div>
 
 <div class="sidebar">
 
@@ -63,6 +64,29 @@ function logout() {
     </button>
 
     <button
+    class="sidebar-item-hide-mobile"
+    onclick="location.href='wallet.html'">
+        Wallet
+    </button>
+
+    <button
+    onclick="location.href='assets.html'">
+        Assets
+    </button>
+
+    <button
+    class="sidebar-item-hide-mobile"
+    onclick="location.href='profile.html'">
+        Profile
+    </button>
+
+    <button
+    class="sidebar-item-hide-mobile"
+    onclick="location.href='network.html'">
+        Network
+    </button>
+
+    <button
     onclick="location.href='governance.html'">
         Governance
     </button>
@@ -73,41 +97,76 @@ function logout() {
     </button>
 
     <button
-    onclick="location.href='loans.html'">
-        Borrow & Lend
+    onclick="location.href='defi.html'">
+        DeFi Corner
     </button>
 
     <button
-    onclick="location.href='transactions.html'">
+    onclick="location.href='borrow.html'">
+        Borrow
+    </button>
+
+    <button
+    onclick="location.href='lend.html'">
+        Lend
+    </button>
+
+    <button
+    onclick="location.href='explorer.html'">
         Transactions
     </button>
 
     <button
-    onclick="location.href='validator.html'">
-        Validator Dashboard
+    onclick="location.href='tokens.html'">
+        Token Creation
     </button>
 
-    <button>
+    <button disabled title="Coming soon" style="opacity: 0.5; cursor: default;">
         Smart Contracts
     </button>
 
-    <button>
-        Marketplace
+    <button
+    onclick="location.href='p2p.html'">
+        Marketplace (P2P)
     </button>
 
-    <button>
+    <button
+    onclick="location.href='identity.html'">
         Identity
     </button>
 
-    <button>
+    <button
+    onclick="location.href='companies.html'">
+        Trading Hub
+    </button>
+
+    <!-- Earning services (Moderation, Validator Dashboard) are for
+         wallets that have actually registered as a moderator/validator -
+         collapsed by default so casual users don't stumble into them
+         from the main nav; still one click away for anyone who
+         actually wants them. -->
+    <details class="sidebar-collapsible">
+        <summary>Earning Services</summary>
+        <button
+        onclick="location.href='moderation.html'">
+            Moderation
+        </button>
+        <button
+        onclick="location.href='validator.html'">
+            Validator Dashboard
+        </button>
+    </details>
+
+    <button disabled title="Coming soon" style="opacity: 0.5; cursor: default;">
         Cross-Chain Bridge
     </button>
 
-    <button>
+    <button onclick="document.getElementById('ccAiToggle').click()">
         AI Assistant
     </button>
 
-    <button>
+    <button
+    onclick="location.href='settings.html'">
         Settings
     </button>
 
@@ -120,189 +179,84 @@ function logout() {
 
 <div class="main">
 
-    <section class="hero-card">
+    <div class="mobile-page" data-tab="home">
 
-        <h1>
-            Welcome,
-            <span id="username">
-                User
+    <!-- Wallet hero: balance, address, quick actions - the first
+         thing a self-custody wallet app shows you, front and center,
+         instead of burying it inside a generic grid card among
+         technical/admin stats. -->
+    <section class="wallet-hero dash-panel" data-title="Wallet">
+
+        <div class="wallet-hero-top">
+            <div>
+                <p class="wallet-greeting">
+                    Welcome back, <span id="username">User</span>
+                </p>
+                <p class="network-live">
+                    ● Network Live
+                </p>
+            </div>
+
+            <span class="wallet-address-chip">
+                <button
+                onclick="showReceiveAddress()"
+                title="Show QR code for your address"
+                style="background:none;border:none;color:inherit;font:inherit;cursor:pointer;padding:0;">
+                    <span id="wallet">-</span>
+                    <span class="wallet-address-chip-icon">&#9642;&#9642;&#9642;</span>
+                </button>
+                <button type="button" class="copy-icon" id="walletCopyIcon" title="Copy address" onclick="event.stopPropagation();copyToClipboard(formatAddress(wallet.address),'walletCopyIcon')">&#128203;</button>
             </span>
-        </h1>
+        </div>
 
-        <p class="network-live">
-            ● Network Live
-        </p>
+        <div class="wallet-balance-block">
+            <div class="wallet-balance-label">Total Balance</div>
+            <div class="wallet-balance-amount" id="balance">TODO</div>
+            <p class="wallet-custody-note">
+                Self-custody - only this device holds your wallet's private key. CreditChain never sees it.
+                <a href="wallet.html" style="color:#0284c7;">View Full Wallet &rarr;</a>
+            </p>
+        </div>
+
+        <div class="quick-actions">
+            <button onclick="location.href='send.html'">
+                <span class="qa-icon">&#8593;</span>
+                Send
+            </button>
+            <button onclick="showReceiveAddress()">
+                <span class="qa-icon">&#8595;</span>
+                Receive
+            </button>
+            <button onclick="location.href='staking.html'">
+                <span class="qa-icon">%</span>
+                Stake
+            </button>
+            <button onclick="claimFaucet()">
+                <span class="qa-icon">&#128167;</span>
+                Faucet
+            </button>
+        </div>
+        <p id="faucetStatus"></p>
 
     </section>
 
-    <div class="grid">
+    <div class="card dash-panel" data-title="Assets">
 
-        <div class="card">
+        <h2 style="margin:0 0 8px 0;">Assets</h2>
 
-            <h2>
-                User Profile
-            </h2>
-
-            <p>
-                Wallet:
-                <span id="wallet">
-                    -
-                </span>
-            </p>
-
-            <p>
-                Node ID:
-                <span id="nodeId">
-                    TODO
-                </span>
-            </p>
-
-            <p>
-                Reputation:
-                <span id="reputation">
-                    50
-                </span>
-            </p>
-
-            <p>
-                Voting Power:
-                <span id="voting">
-                    100
-                </span>
-            </p>
-
-            <p>
-                Credit Score:
-                <span id="credit">
-                    TODO
-                </span>
-            </p>
-
-            <p>
-                Validator:
-                <span id="validator">
-                    TODO
-                </span>
-            </p>
-
-            <p>
-                Account Level:
-                <span id="level">
-                    Genesis
-                </span>
-            </p>
-
-        </div>
-
-        <div class="card">
-
-            <h2>
-                Network Overview
-            </h2>
-
-            <p>
-                Network:
-                CreditChain Testnet
-            </p>
-
-            <p>
-                Block Height:
-                <span id="height">
-                    Loading...
-                </span>
-            </p>
-
-            <p>
-                Latest Hash:
-                <span id="hash">
-                    Loading...
-                </span>
-            </p>
-
-            <p>
-                Peer Count:
-                <span id="peers">
-                    TODO
-                </span>
-            </p>
-
-            <p>
-                Active Validators:
-                <span id="validators">
-                    Loading...
-                </span>
-            </p>
-
-            <p>
-                TPS:
-                <span id="tps">
-                    TODO
-                </span>
-            </p>
-
-            <p>
-                Gas Price:
-                <span id="gas">
-                    TODO
-                </span>
-            </p>
-
-            <p>
-                Total Supply:
-                <span id="supply">
-                    TODO
-                </span>
-            </p>
-
-            <p>
-                Circulating Supply:
-                <span id="circulating">
-                    TODO
-                </span>
-            </p>
-
-        </div>
-
-        <div class="card">
-
-            <h2>
-                Wallet
-            </h2>
-
-            <p>
-                Balance:
-                <span id="balance">
-                    TODO
-                </span>
-            </p>
-
-            <button>
-                Send
-            </button>
-
-            <button>
-                Receive
-            </button>
-
-            <button>
-                Stake
-            </button>
-
-            <button>
-                Unstake
-            </button>
-
-            <button>
-                Rewards
-            </button>
-
+        <div id="assetsList">
+            <p class="explorer-empty">Loading...</p>
         </div>
 
     </div>
 
+    </div>
+
+    <div class="mobile-page" data-tab="tx">
+
     <div class="grid">
 
-        <div class="card">
+        <div class="card dash-panel" data-title="Blocks">
 
             <h2>
                 Recent Blocks
@@ -312,25 +266,181 @@ function logout() {
 Loading...
             </pre>
 
+            <button onclick="location.href='explorer.html'">
+                View Full Explorer
+            </button>
+
         </div>
 
-        <div class="card">
+        <div class="card dash-panel" data-title="Transactions">
 
             <h2>
                 Recent Transactions
             </h2>
 
-            <pre id="transactions">
-Loading...
-            </pre>
+            <div id="transactions" style="font-family:monospace;font-size:13px;">
+                Loading...
+            </div>
+
+            <button onclick="location.href='explorer.html'">
+                View Full Explorer
+            </button>
 
         </div>
 
     </div>
 
+    </div>
+
+    <div class="mobile-page" data-tab="engage">
+
+    <div class="card">
+        <h2>Engage</h2>
+        <p style="opacity:0.75;font-size:13px;">Borrow, lend, and trade with other CreditChain users.</p>
+    </div>
+
+    <div class="card">
+
+        <h2>Collateral</h2>
+
+        <p style="opacity:0.8; font-size:13px;">
+            Collateral is locked from your STAKED CCT or your oETH balance (the receipt you got for
+            staking ETHTEST) - never your liquid/spendable CCT. Borrowed funds are paid out in YEN-e
+            (older loans drawn before this default changed still pay out/repay in USDCTEST).
+        </p>
+
+        <p>
+            Staked CCT (lockable as collateral):
+            <span id="stakedCct">0</span>
+        </p>
+
+        <p>
+            oETH - staked-ETHTEST receipt (lockable as collateral):
+            <span id="oethBalance">0</span>
+        </p>
+
+        <p>
+            Locked Collateral - CCT:
+            <span id="lockedCollateralCct">0</span>
+            &nbsp;|&nbsp; oETH:
+            <span id="lockedCollateralOeth">0</span>
+        </p>
+
+        <div class="engage-form-row">
+            <select id="lockSymbol">
+                <option value="CCT">Staked CCT</option>
+                <option value="OETH">oETH</option>
+            </select>
+            <input type="number" id="lockAmount" placeholder="Amount">
+        </div>
+
+        <button onclick="lockCollateral()">Lock Collateral</button>
+
+    </div>
+
+    <div class="card">
+
+        <h2>Borrow</h2>
+
+        <p>
+            YEN-e Balance (borrowed funds):
+            <span id="yeneBalance">0</span>
+        </p>
+
+        <p style="opacity:0.7;font-size:12px;">
+            USDCTEST Balance (legacy - only relevant if you have an older
+            USDCTEST-denominated loan):
+            <span id="usdcTestBalance">0</span>
+        </p>
+
+        <input type="number" id="borrowAmount" placeholder="Amount">
+        <br><br>
+        <button onclick="borrow()">Borrow</button>
+        <p id="pendingStatus"></p>
+
+        <details class="sidebar-collapsible">
+            <summary>Your Loans</summary>
+            <div id="loanList">No Loans</div>
+        </details>
+
+    </div>
+
+    <div class="card">
+
+        <h2>Lend</h2>
+
+        <div id="lendKycNotice" style="display:none;">
+            <div id="kycStatusLine" class="explorer-empty">Checking your access...</div>
+            <div id="kycForm" style="display:none;margin-top:14px;">
+                <div class="kyc-field">
+                    <label for="kycFullName">Full name</label>
+                    <input type="text" id="kycFullName" maxlength="200" placeholder="Full name">
+                </div>
+                <div class="kyc-field">
+                    <label for="kycDob">Date of birth</label>
+                    <input type="date" id="kycDob">
+                </div>
+                <div class="kyc-field">
+                    <label for="kycCountry">Country</label>
+                    <input type="text" id="kycCountry" maxlength="100" placeholder="Country">
+                </div>
+                <div class="kyc-field">
+                    <label>
+                        <input type="checkbox" id="kycAgree">
+                        I confirm this information is accurate and agree to the lending marketplace terms.
+                    </label>
+                </div>
+                <button onclick="submitKYC()">Submit</button>
+                <p id="kycSubmitStatus"></p>
+            </div>
+        </div>
+
+        <div id="lendPostForm" style="display:none;">
+            <p>Balance in selected token: <span id="lendBalance">0</span></p>
+            <div class="engage-form-row">
+                <select id="offerSymbol">
+                    <option value="CCT">CCT</option>
+                    <option value="ETHTEST">ETHTEST</option>
+                    <option value="USDCTEST" selected>USDCTEST</option>
+                    <option value="REPT">REPT</option>
+                </select>
+                <input type="number" id="offerRate" placeholder="Rate % (e.g. 5)" min="0">
+                <input type="number" id="offerAmount" placeholder="Capital to lend" min="0">
+                <input type="number" id="offerDurationDays" placeholder="Repay within (days)" min="0">
+                <button onclick="createLoanOffer()">Post Offer</button>
+            </div>
+            <p id="lendStatus"></p>
+        </div>
+
+        <details class="sidebar-collapsible">
+            <summary>Your Offers</summary>
+            <div id="myOfferList" class="explorer-empty">No offers yet.</div>
+        </details>
+
+    </div>
+
+    <div class="card">
+        <h2>Loan Marketplace</h2>
+        <div id="marketplaceList" class="explorer-empty">Loading...</div>
+    </div>
+
+    <details class="sidebar-collapsible">
+        <summary>Your Negotiations</summary>
+        <div id="negotiationList" class="explorer-empty">No negotiations yet.</div>
+    </details>
+
+    <div class="card">
+        <a href="p2p.html" style="color:#0284c7;">Open full Marketplace &rarr;</a>
+        <p style="opacity:0.7;font-size:12px;margin-top:6px;">Trading Hubs, currency swaps, and P2P settlement chat live there.</p>
+    </div>
+
+    </div>
+
+    <div class="mobile-page" data-tab="activity">
+
     <div class="grid">
 
-        <div class="card">
+        <div class="card dash-panel" data-title="Notifications">
 
             <h2>
                 Notifications
@@ -344,7 +454,7 @@ Loading...
 
         </div>
 
-        <div class="card">
+        <div class="card dash-panel" data-title="Activity">
 
             <h2>
                 Network Activity
@@ -360,9 +470,191 @@ Loading...
 
     </div>
 
+    </div>
+
+    <div class="mobile-page" data-tab="settings">
+
+    <div class="card">
+        <h2>Account</h2>
+        <button onclick="resetWallet()">Reset Wallet</button>
+    </div>
+
+    <div class="card">
+
+        <h2>Recovery Email</h2>
+
+        <p style="opacity:0.75;font-size:13px;">
+            Testnet placeholder - links a verified email to this wallet so it can later be migrated
+            (see <a href="login.html" style="color:var(--cc-accent-gold, #c9a227);">Login</a>) if you lose this browser.
+        </p>
+
+        <p id="recoveryEmailStatus"></p>
+
+        <input type="email" id="settingsRecoveryEmail" placeholder="Email">
+        <br><br>
+        <button onclick="requestSettingsEmailCode()">1. Request Code</button>
+        <p id="settingsCodeDisplay"></p>
+        <br>
+        <input type="text" id="settingsEmailCode" placeholder="Code shown above">
+        <br><br>
+        <button onclick="confirmSettingsEmail()">2. Confirm Email</button>
+        <p id="settingsEmailStatus"></p>
+
+    </div>
+
+    <div class="card">
+        <p style="opacity:0.75;font-size:13px;">
+            Register a new testnet token here. Requires staked test ETH plus a
+            <span id="tkFeeAmount">5</span> ETHTEST creation fee.
+        </p>
+
+        <div id="tokensLoggedOut" style="display:none;">
+            <p class="explorer-empty">Log in with a wallet to register a token.</p>
+        </div>
+
+        <div id="tokensNotStaked" style="display:none;">
+            <p class="explorer-empty">
+                You need some test ETH staked before you can register a token -
+                <a href="staking.html" style="color:var(--cc-accent-gold, #c9a227);">stake some here</a> first.
+            </p>
+        </div>
+
+        <div id="tokensNotEnoughFee" style="display:none;">
+            <p class="explorer-empty">
+                You need at least <span id="tkFeeAmount2">5</span> ETHTEST in your ETHTEST address to
+                cover the token creation fee - claim some from the faucet above first.
+            </p>
+        </div>
+
+        <div id="tokensLoggedIn">
+            <h3>Register a Token (unlisted currency)</h3>
+            <div class="engage-form-row">
+                <input id="tkSymbol" placeholder="Symbol (e.g. MYTKN)" maxlength="10">
+                <input id="tkName" placeholder="Name (e.g. My Token)" maxlength="64">
+                <input id="tkSupply" type="number" placeholder="Initial supply" min="1">
+                <button id="tkRegisterBtn">Register</button>
+            </div>
+            <p id="tkRegisterStatus"></p>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Registered Tokens</h2>
+        <div id="tkTokenList" class="explorer-empty">Loading...</div>
+    </div>
+
+    <div class="card">
+        <h2>More</h2>
+        <p><a href="profile.html" style="color:#0284c7;">Profile &amp; Reputation &rarr;</a></p>
+        <p style="opacity:0.7;font-size:12px;">Your credit tier, reputation score, and history.</p>
+        <p><a href="network.html" style="color:#0284c7;">Network Status &rarr;</a></p>
+        <p style="opacity:0.7;font-size:12px;">Peers, block height, and node health.</p>
+    </div>
+
+    </div>
+
+    <nav class="mobile-tabbar" id="mobileTabbar">
+        <button type="button" class="tabbar-btn" data-tab="home"><span class="tabbar-icon">&#127968;</span><span class="tabbar-label">Home</span></button>
+        <button type="button" class="tabbar-btn" data-tab="tx"><span class="tabbar-icon">&#129534;</span><span class="tabbar-label">Transactions</span></button>
+        <button type="button" class="tabbar-btn" data-tab="engage"><span class="tabbar-icon">&#129309;</span><span class="tabbar-label">Engage</span></button>
+        <button type="button" class="tabbar-btn" data-tab="activity"><span class="tabbar-icon">&#128276;</span><span class="tabbar-label">Activity</span></button>
+        <button type="button" class="tabbar-btn" data-tab="settings"><span class="tabbar-icon">&#9881;&#65039;</span><span class="tabbar-label">Settings</span></button>
+    </nav>
+
 </div>
 
+<div class="modal-overlay" id="chatModalOverlay">
+    <div class="modal-box">
+        <h3 style="margin-top:0;">Negotiation</h3>
+        <p id="chatSummary" style="opacity:0.75;font-size:13px;"></p>
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="engage-form-row">
+            <input type="text" id="chatText" placeholder="Type a message..." maxlength="2000">
+            <button onclick="sendChatMessage()">Send</button>
+        </div>
+        <div class="engage-form-row">
+            <button id="chatConfirmBtn" onclick="confirmChatNegotiation()" style="display:none;">Agree &amp; Fund</button>
+            <button onclick="cancelChatNegotiation()">Cancel Negotiation</button>
+            <button onclick="closeChatModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<div
+id="qrModalOverlay"
+style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;z-index:10000;">
+    <div style="background:#ffffff;color:#111827;border-radius:16px;padding:25px;max-width:90vw;text-align:center;">
+        <h3 style="margin-top:0;">Your Receive Address</h3>
+        <canvas id="qrCanvas" style="max-width:80vw;height:auto;border-radius:8px;"></canvas>
+        <p id="qrAddressText" style="word-break:break-all;font-family:monospace;font-size:13px;margin:15px 0;"></p>
+        <p style="color:#6b7280;font-size:12px;">Copied to clipboard if supported. Anyone can send you test tokens by scanning this or entering the address on the Send page.</p>
+        <button onclick="closeQrModal()">Close</button>
+    </div>
+</div>
+
+<div
+id="txDetailOverlay"
+style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);align-items:center;justify-content:center;z-index:10000;">
+    <div style="background:#ffffff;color:#111827;border-radius:16px;padding:25px;max-width:90vw;width:400px;text-align:left;">
+        <h3 style="margin-top:0;">Transaction Details</h3>
+        <div id="txDetailBody"></div>
+        <button onclick="closeTxDetail()">Close</button>
+    </div>
+</div>
+
+<div
+id="hdMigrateOverlay"
+style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);align-items:center;justify-content:center;z-index:10001;">
+    <div style="background:var(--cc-bg-2, #082616);color:#fff;border-radius:16px;padding:25px;max-width:600px;width:92vw;max-height:85vh;overflow-y:auto;">
+        <div id="hdMigrateIntro">
+            <h2 style="margin-top:0;color:#ffd166;">Wallet Upgrade Available</h2>
+            <p>
+                CreditChain now supports a single 12-word recovery phrase covering CreditChain,
+                Ethereum, and Bitcoin (testnet) accounts. Your current wallet predates this and
+                uses the old scheme.
+            </p>
+            <p>
+                Migrating creates a brand-new address, moves your CCT/REPT/staked balance,
+                reputation, and any open loans to it, and permanently freezes this old address.
+                <strong>This cannot be undone.</strong> You'll need your current wallet (already
+                loaded in this browser) to authorize it - nothing else is required.
+            </p>
+            <p id="hdMigrateStatus" style="opacity:0.8;font-size:13px;"></p>
+            <button id="hdMigrateStartBtn" onclick="startHDMigration()">Migrate Now</button>
+            <button onclick="dismissHDMigratePrompt()">Remind Me Later</button>
+        </div>
+        <div id="hdMigrateResult" style="display:none;">
+            <h2 style="margin-top:0;color:#ffd166;">Save Your New Recovery Phrase</h2>
+            <p>
+                This is the <strong>only time</strong> this phrase will ever be shown. It's the
+                master key for your new CreditChain, Ethereum, and Bitcoin accounts.
+            </p>
+            <div id="hdMigratePhraseText" style="font-family:monospace;font-size:13px;background:rgba(255,255,255,0.05);border-radius:10px;padding:15px;line-height:1.8;word-spacing:6px;"></div>
+            <br>
+            <label style="display:flex;gap:8px;align-items:flex-start;">
+                <input type="checkbox" id="hdMigratePhraseAck" style="margin-top:4px;">
+                <span>I've saved this recovery phrase somewhere safe.</span>
+            </label>
+            <br>
+            <button id="hdMigrateContinueBtn" disabled onclick="location.reload()">Continue to OUTERNET</button>
+        </div>
+    </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
+<script src="js/qrcode.js"></script>
 <script src="js/outernet.js"></script>
+<script src="js/assets.js"></script>
+<script src="js/borrow.js"></script>
+<script src="js/lend.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/tokens.js"></script>
+<script src="js/vendor/bip39-wordlist.js"></script>
+<script src="js/vendor/hd-crypto.js"></script>
+<script src="js/hdwallet.js"></script>
+<script src="js/hd_migrate.js"></script>
+<script src="js/mobile-nav.js"></script>
 
 </body>
 </html>

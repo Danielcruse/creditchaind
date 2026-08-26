@@ -1,116 +1,64 @@
-let wallet =
-    JSON.parse(
-        localStorage.getItem(
-            "wallet"
-        )
-    );
+const wallet = requireWallet();
 
-if (!wallet) {
+function showReceiveAddress() {
+    if (!wallet) return;
 
-    wallet = {
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(formatAddress(wallet.address)).catch(() => {});
+    }
 
-        address:
-            "CCT-DEMO",
-
-        reputation:
-            50,
-
-        votingPower:
-            50,
-
-        creditScore:
-            50,
-
-        eth:
-            0,
-
-        oeth:
-            0,
-
-        cct:
-            0,
-
-        rewards:
-            0,
-
-        transactions:
-            []
-    };
-
-    localStorage.setItem(
-        "wallet",
-        JSON.stringify(
-            wallet
-        )
+    alert(
+        "Your address (copied to clipboard if supported):\n\n" +
+        formatAddress(wallet.address) +
+        "\n\nAnyone can send you test CCT by entering this address on the Send page."
     );
 }
 
-function loadWallet() {
+async function loadWallet() {
+    if (!wallet) return;
 
-    document.getElementById(
-        "walletAddress"
-    ).innerText =
-        wallet.address;
+    document.getElementById("walletAddress").innerText = formatAddress(wallet.address);
 
-    document.getElementById(
-        "reputation"
-    ).innerText =
-        wallet.reputation;
+    try {
+        const [w, tokenBalance, usdcTestBalance] = await Promise.all([
+            apiGet(`/wallet?address=${wallet.address}`),
+            apiGet(`/token/balance?address=${wallet.address}`),
+            apiGet(`/usdctest/balance?address=${wallet.address}`),
+        ]);
 
-    document.getElementById(
-        "votingPower"
-    ).innerText =
-        wallet.votingPower;
+        document.getElementById("reputation").innerText = w.reputation;
+        document.getElementById("votingPower").innerText = w.votingPower;
+        document.getElementById("creditScore").innerText = w.reputation;
+        document.getElementById("ethBalance").innerText = w.stakedETH;
+        document.getElementById("oethBalance").innerText = w.oethBalance;
+        document.getElementById("cctBalance").innerText = tokenBalance.balance;
+        document.getElementById("usdcTestBalance").innerText = usdcTestBalance.balance;
+        document.getElementById("rewardBalance").innerText = w.rewards;
+    } catch (e) {
+        console.error(e);
+    }
 
-    document.getElementById(
-        "creditScore"
-    ).innerText =
-        wallet.creditScore;
+    try {
+        const history = await apiGet(`/credit/history?address=${wallet.address}`);
+        const txDiv = document.getElementById("transactions");
+        txDiv.innerHTML = "";
 
-    document.getElementById(
-        "ethBalance"
-    ).innerText =
-        wallet.eth;
+        if (!history || history.length === 0) {
+            txDiv.innerHTML = "No Transactions";
+            return;
+        }
 
-    document.getElementById(
-        "oethBalance"
-    ).innerText =
-        wallet.oeth;
-
-    document.getElementById(
-        "cctBalance"
-    ).innerText =
-        wallet.cct;
-
-    document.getElementById(
-        "rewardBalance"
-    ).innerText =
-        wallet.rewards;
-
-    let txDiv =
-        document.getElementById(
-            "transactions"
-        );
-
-    txDiv.innerHTML = "";
-
-    wallet.transactions
-        .slice()
-        .reverse()
-        .forEach(tx => {
-
-            txDiv.innerHTML +=
-                `
-                <p>
-                ${tx}
-                </p>
-                `;
-        });
+        history
+            .slice()
+            .reverse()
+            .forEach((event) => {
+                txDiv.innerHTML += `<p>${event.Type}: ${event.Amount} CCT</p>`;
+            });
+    } catch (e) {
+        console.error(e);
+    }
 }
 
 loadWallet();
 
-setInterval(
-    loadWallet,
-    10000
-);
+setInterval(loadWallet, 10000);

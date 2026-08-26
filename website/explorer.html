@@ -2,34 +2,316 @@
 <html>
 <head>
     <title>Blockchain Explorer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
     <link rel="stylesheet" href="css/style.css">
+    <style>
+        /* Explorer-specific theme: predominantly black, like a real
+           block explorer (Etherscan/Blockchain.com), rather than this
+           site's usual blue-gradient background - a deliberate local
+           override, not a site-wide style.css change. */
+        body{
+            background:#000000;
+        }
+        .explorer-page{
+            max-width:1100px;
+            margin:0 auto;
+            padding:0 16px 40px;
+        }
+        .card{
+            background:#0a0a0a;
+            border:1px solid rgba(255,255,255,0.08);
+            box-shadow:none;
+        }
+        .card:hover{
+            transform:none;
+            box-shadow:none;
+        }
+        .explorer-stats{
+            display:grid;
+            grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));
+            gap:14px;
+            margin:20px 0;
+        }
+        .explorer-stat{
+            background:#0a0a0a;
+            border:1px solid rgba(255,255,255,0.08);
+            border-radius:12px;
+            padding:16px;
+        }
+        .explorer-stat-label{
+            font-size:11px;
+            text-transform:uppercase;
+            letter-spacing:0.5px;
+            opacity:0.55;
+            margin-bottom:6px;
+        }
+        .explorer-stat-value{
+            font-size:20px;
+            font-weight:700;
+            font-family:monospace;
+        }
+        .explorer-search{
+            display:flex;
+            gap:10px;
+            margin-bottom:15px;
+            flex-wrap:wrap;
+        }
+        .explorer-search input{
+            flex:1;
+            min-width:200px;
+            padding:10px 14px;
+            border-radius:10px;
+            border:1px solid rgba(255,255,255,0.15);
+            background:rgba(255,255,255,0.05);
+            color:white;
+            box-sizing:border-box;
+        }
+        .explorer-table{
+            width:100%;
+            border-collapse:collapse;
+            font-size:13px;
+        }
+        .explorer-table th{
+            text-align:left;
+            font-size:11px;
+            text-transform:uppercase;
+            letter-spacing:0.5px;
+            opacity:0.55;
+            font-weight:600;
+            padding:8px 10px;
+            border-bottom:1px solid rgba(255,255,255,0.12);
+        }
+        .explorer-table td{
+            padding:10px;
+            border-bottom:1px solid rgba(255,255,255,0.06);
+            font-family:monospace;
+            vertical-align:top;
+        }
+        .explorer-table tr:last-child td{
+            border-bottom:none;
+        }
+        .explorer-table tr:hover td{
+            background:rgba(255,255,255,0.03);
+        }
+        .explorer-hash{
+            opacity:0.75;
+        }
+        .explorer-pill{
+            display:inline-block;
+            font-size:10px;
+            text-transform:uppercase;
+            letter-spacing:0.5px;
+            padding:2px 8px;
+            border-radius:8px;
+            border:1px solid rgba(255,255,255,0.2);
+        }
+        .explorer-pill.confirmed{
+            color:#00ff95;
+            border-color:#00ff95;
+        }
+        .explorer-pill.pending{
+            color:#ffb020;
+            border-color:#ffb020;
+        }
+        .explorer-pager{
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            margin-top:10px;
+            font-size:13px;
+            gap:10px;
+            flex-wrap:wrap;
+        }
+        .explorer-pager button:disabled{
+            opacity:0.4;
+            cursor:not-allowed;
+        }
+        .explorer-empty{
+            opacity:0.6;
+            padding:10px 0;
+        }
+
+        /* Block-shape chain view - each block renders as a connected
+           cube instead of a table row, echoing how a real blockchain's
+           blocks link to one another. Horizontally scrollable so the
+           full page of blocks stays reachable on any viewport without
+           the cubes needing to shrink past legibility. */
+        .block-chain{
+            display:flex;
+            align-items:stretch;
+            gap:0;
+            overflow-x:auto;
+            padding:6px 2px 14px;
+        }
+        .block-cube{
+            flex:0 0 auto;
+            width:132px;
+            background:linear-gradient(160deg,#111 0%,#0a0a0a 100%);
+            border:1px solid rgba(0,255,149,0.35);
+            border-radius:10px;
+            padding:12px 10px;
+            margin-right:22px;
+            position:relative;
+        }
+        .block-cube::after{
+            content:"";
+            position:absolute;
+            top:50%;
+            right:-22px;
+            width:22px;
+            height:2px;
+            background:repeating-linear-gradient(90deg,rgba(0,255,149,0.5) 0 4px,transparent 4px 8px);
+            transform:translateY(-1px);
+        }
+        .block-cube:last-child{
+            margin-right:0;
+        }
+        .block-cube:last-child::after{
+            display:none;
+        }
+        .block-cube-index{
+            font-family:monospace;
+            font-size:15px;
+            font-weight:700;
+            color:#00ff95;
+            margin-bottom:6px;
+        }
+        .block-cube-row{
+            font-size:11px;
+            opacity:0.7;
+            margin-bottom:4px;
+            font-family:monospace;
+            overflow:hidden;
+            text-overflow:ellipsis;
+            white-space:nowrap;
+        }
+        .block-cube-txns{
+            display:inline-block;
+            margin-top:4px;
+            font-size:10px;
+            text-transform:uppercase;
+            letter-spacing:0.5px;
+            padding:2px 7px;
+            border-radius:8px;
+            border:1px solid rgba(255,255,255,0.25);
+            opacity:0.85;
+        }
+        .block-cube:hover{
+            border-color:#00ff95;
+            cursor:pointer;
+        }
+
+        @media (max-width: 700px){
+            .explorer-table thead{
+                display:none;
+            }
+            .explorer-table, .explorer-table tbody, .explorer-table tr, .explorer-table td{
+                display:block;
+                width:100%;
+            }
+            .explorer-table tr{
+                border-bottom:1px solid rgba(255,255,255,0.12);
+                padding:10px 0;
+            }
+            .explorer-table td{
+                border-bottom:none;
+                padding:4px 0;
+            }
+            .explorer-table td::before{
+                content:attr(data-label);
+                display:block;
+                font-size:10px;
+                text-transform:uppercase;
+                letter-spacing:0.5px;
+                opacity:0.5;
+                margin-bottom:2px;
+            }
+        }
+    </style>
 </head>
 <body>
+<script src="js/device-lock.js"></script>
+
+<div class="explorer-page">
 
 <h1>OUTERNET Explorer</h1>
 
-<div class="card">
+<p style="margin-top:-10px;">
+    <a href="tokens.html">Token Creation</a> &nbsp;|&nbsp;
+    <a href="reputation.html#math">How Reputation Is Calculated</a>
+</p>
 
+<div class="explorer-stats">
+    <div class="explorer-stat">
+        <div class="explorer-stat-label">Block Height</div>
+        <div class="explorer-stat-value" id="statBlockHeight">-</div>
+    </div>
+    <div class="explorer-stat">
+        <div class="explorer-stat-label">Latest Block</div>
+        <div class="explorer-stat-value" id="statLatestBlockTime" style="font-size:14px;">-</div>
+    </div>
+    <div class="explorer-stat">
+        <div class="explorer-stat-label">Pending Tx</div>
+        <div class="explorer-stat-value" id="statPendingTx">-</div>
+    </div>
+    <div class="explorer-stat">
+        <div class="explorer-stat-label">Network</div>
+        <div class="explorer-stat-value network-live" style="font-size:14px;">● LIVE</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="explorer-search">
+        <input id="explorerSearchInput" type="text" placeholder="Search by block #, block hash, tx id, or address">
+        <button id="explorerSearchBtn">Search</button>
+        <button id="explorerSearchClearBtn" style="display:none;">Clear</button>
+    </div>
+    <div id="explorerSearchResult"></div>
+</div>
+
+<div class="card">
     <h2>Recent Blocks</h2>
-
-    <div id="blocks">
-        No blocks yet.
+    <p style="opacity:0.6;font-size:12px;margin-top:-8px;">
+        The chain holds every block ever produced (currently up to the live block height) - browse it a page at a time with Newer/Older below.
+    </p>
+    <div class="block-chain" id="blocks">
+        <div class="explorer-empty">Loading...</div>
     </div>
-
+    <div class="explorer-pager">
+        <button id="blocksPrev">&larr; Newer</button>
+        <span id="blocksRange"></span>
+        <button id="blocksNext">Older &rarr;</button>
+    </div>
 </div>
-
-<br>
 
 <div class="card">
-
     <h2>Recent Transactions</h2>
-
-    <div id="transactions">
-        No transactions.
+    <table class="explorer-table">
+        <thead>
+            <tr>
+                <th>Status</th>
+                <th>Tx</th>
+                <th>From &rarr; To</th>
+                <th>Amount</th>
+                <th>Time</th>
+            </tr>
+        </thead>
+        <tbody id="transactions">
+            <tr><td colspan="5" class="explorer-empty">Loading...</td></tr>
+        </tbody>
+    </table>
+    <div class="explorer-pager">
+        <button id="txPrev">&larr; Newer</button>
+        <span id="txRange"></span>
+        <button id="txNext">Older &rarr;</button>
     </div>
+</div>
 
 </div>
 
+<script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
 <script src="js/explorer.js"></script>
 
 </body>

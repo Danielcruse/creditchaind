@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Confirm Validator Application</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<script src="js/device-lock.js"></script>
+
+<h1>Confirm Your Validator Application</h1>
+
+<div class="card">
+    <p style="opacity:0.75;font-size:13px;">
+        This is the link from your validator application email. Confirming here proves you still control this
+        wallet - the next step is completing real node registration (delegating block production to a node you
+        actually run) and locking your stake, from the Validator page.
+    </p>
+
+    <input id="confirmToken" placeholder="Confirmation token" style="width:100%;box-sizing:border-box;">
+    <br><br>
+    <button onclick="confirmApplication()">Confirm</button>
+    <p id="confirmStatus"></p>
+
+    <p style="margin-top:20px;">
+        <a href="validator.html">Continue to Validator page &rarr;</a>
+    </p>
+</div>
+
+<script src="js/api.js"></script>
+<script>
+
+const params = new URLSearchParams(window.location.search);
+const tokenFromLink = params.get("token");
+if (tokenFromLink) {
+    document.getElementById("confirmToken").value = tokenFromLink;
+}
+
+async function confirmApplication() {
+    const wallet = requireWallet();
+    if (!wallet) return;
+
+    const token = document.getElementById("confirmToken").value.trim();
+    const statusEl = document.getElementById("confirmStatus");
+    if (!token) {
+        statusEl.innerText = "Enter the token from your email.";
+        return;
+    }
+
+    try {
+        const result = await apiPostSigned("/validator-application/confirm", { token });
+        statusEl.innerText = `Confirmed (tx ${result.txId}) - once the next block confirms it, you can complete node registration on the Validator page.`;
+    } catch (e) {
+        statusEl.innerText = "Could not confirm: " + e.message;
+    }
+}
+
+</script>
+
+</body>
+</html>

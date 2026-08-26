@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CreditChain Developers</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .dev-page{
+            max-width:820px;
+            margin:0 auto;
+            padding:0 16px 60px;
+        }
+        .dev-page h2{
+            margin-top:36px;
+        }
+        .dev-page pre{
+            background:rgba(0,0,0,0.35);
+            border:1px solid rgba(255,255,255,0.1);
+            border-radius:10px;
+            padding:14px;
+            overflow-x:auto;
+            font-size:12.5px;
+            line-height:1.5;
+        }
+        .dev-endpoint-group{
+            margin:14px 0;
+        }
+        .dev-endpoint-group h4{
+            margin-bottom:6px;
+        }
+        .dev-endpoint-row{
+            display:flex;
+            gap:10px;
+            font-size:13px;
+            padding:4px 0;
+            border-bottom:1px solid rgba(255,255,255,0.06);
+        }
+        .dev-endpoint-path{
+            font-family:monospace;
+            opacity:0.9;
+            min-width:230px;
+        }
+        .dev-endpoint-desc{
+            opacity:0.7;
+        }
+        .dev-try-result{
+            margin-top:10px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="dev-page">
+
+<p><a href="index.html" style="color:var(--cc-accent-gold, #c9a227);">&larr; CreditChain</a></p>
+
+<h1>Developers</h1>
+<p style="opacity:0.8;">
+    CreditChain's own website (OUTERNET) is just one client of a plain HTTP + JSON API - the same one you can build
+    against. No API key, no signup: reads are open, and writes are authorized by a signature from the wallet
+    keypair itself (see "Authenticating writes" below).
+</p>
+
+<div class="card">
+    <h2 style="margin-top:0;">Try it right now</h2>
+    <p style="opacity:0.8;font-size:14px;">This calls the live node this website is talking to - a real, unauthenticated GET request.</p>
+    <pre>GET <span id="devApiBase"></span>/network</pre>
+    <button onclick="tryLiveNetworkCall()">Run this request</button>
+    <pre class="dev-try-result" id="devTryResult">(response will appear here)</pre>
+</div>
+
+<h2>Base URL</h2>
+<p>
+    Every endpoint below is relative to the node's own base URL - same host as this website, port <code>8080</code>
+    (this website's static files are served separately, from a different port, purely for local development
+    convenience). In production that's <code>https://creditchain.site:8080</code> (or wherever the node you're
+    talking to is actually hosted, if you're running your own - see "Run your own node/testnet" below).
+</p>
+
+<h2>Reading data (no auth needed)</h2>
+<p>Every <code>GET</code> endpoint is a plain, unauthenticated public read - wallet balances, the block explorer, governance proposals, hub rates, everything. Example:</p>
+<pre>curl "<span class="dev-base-inline"></span>/wallet?address=YOUR_ADDRESS_HEX"</pre>
+
+<h2>Authenticating writes</h2>
+<p style="opacity:0.85;">
+    Every mutating (<code>POST</code>) endpoint requires a signed envelope proving you actually hold the wallet's
+    private key - the same <code>Ed25519</code> signing the browser wallet itself uses via
+    <code>crypto.subtle</code> (Web Crypto), no third-party crypto library needed. An address is just
+    <code>SHA256(publicKey)[:20]</code>, so the server never needs to pre-register your key - each signed request
+    proves itself.
+</p>
+<pre>{
+  "address": "&lt;your 40-hex-char address&gt;",
+  "publicKey": "&lt;hex-encoded Ed25519 public key&gt;",
+  "timestamp": 1234567890,
+  "payload": { /* endpoint-specific fields */ },
+  "signature": "&lt;hex - Ed25519 signature over address|publicKey|timestamp|compact-JSON(payload)&gt;"
+}</pre>
+<p style="opacity:0.7;font-size:13px;">
+    Timestamps outside a &plusmn;60s window are rejected (replay protection), and an exact signature can't be
+    replayed twice. See <code>website/js/api.js</code>'s <code>apiPostSigned</code> in this project's own source for
+    a complete, working reference implementation you can port to any language with Ed25519 support.
+</p>
+
+<h2>Endpoint reference</h2>
+<p style="opacity:0.7;font-size:13px;">Grouped by area - GET unless marked (POST, signed). This isn't every field of every request/response; read the linked source file for exact shapes.</p>
+
+<div id="devEndpointGroups"></div>
+
+<h2>Run your own node - or your own entire testnet</h2>
+<p style="opacity:0.85;">
+    <strong>Yes</strong> - a node is a separate, ordinary process (<code>creditchaind</code>) with its own
+    <code>DATA_DIR</code>. Run one with no <code>PEERS</code> set and you have your own fully isolated private
+    testnet from block zero, completely separate from the public CreditChain network - useful for local development
+    or a private staging environment. Run several nodes pointed at each other (<code>PEERS</code> + a shared
+    <code>NETWORK_SECRET</code> you choose yourself) and you have your own private multi-node network. This network
+    is currently <strong>permissioned</strong> (not open/permissionless) - joining someone else's live network
+    (including the public CreditChain one) requires that operator to hand you their <code>NETWORK_SECRET</code> and
+    add your node to their <code>PEERS</code> list; there's no self-serve join flow yet.
+</p>
+<pre>git clone https://github.com/Danielcruse/creditchaind.git
+cd creditchaind
+go build -o creditchaind .
+
+DATA_DIR=./data PORT=8080 ./creditchaind
+# no PEERS set - this is now its own standalone chain, genesis block already produced</pre>
+<p style="opacity:0.7;font-size:13px;">
+    Full environment variable reference, Docker Compose setup, and how to verify two nodes have actually converged:
+    see <code>ops/NODE_OPERATOR.md</code> in the project source.
+</p>
+
+<h2>Disclosures</h2>
+<ul style="opacity:0.8;font-size:14px;">
+    <li>This is a testnet. CCT/ETHTEST/USDCTEST/REPT have no real monetary value.</li>
+    <li>Not yet professionally audited - see <a href="whitepaper.html" style="color:var(--cc-accent-gold, #c9a227);">the whitepaper</a> for the full disclosed-gaps list.</li>
+    <li>The public network is permissioned - see "Run your own node" above.</li>
+</ul>
+
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/developers.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeFi Corner - OUTERNET</title>
+<link rel="stylesheet" href="css/theme.css">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/outernet.css">
+</head>
+<body class="outernet-light">
+<script src="js/device-lock.js"></script>
+
+<div class="main" style="max-width:640px;margin:0 auto;padding:24px 16px;">
+
+<p><a href="outernet.html" style="color:#0284c7;">&larr; OUTERNET</a></p>
+
+<h1>DeFi Corner</h1>
+
+<div class="card" style="border:1px solid #ffb020;">
+<p style="margin:0;font-size:13px;">
+<strong>This is a different chain, and real value.</strong> Ethereum and
+Bitcoin are not part of CreditChain - they're completely separate
+blockchains. Unlike CCT/REPT/ETHTEST elsewhere on this site (testnet,
+no real value), the accounts on this page hold real (if testnet-scoped)
+ETH/BTC.
+</p>
+</div>
+
+<div class="card" id="hdAccountsCard">
+
+<h2>Your Self-Custodial ETH &amp; BTC</h2>
+
+<p style="opacity:0.75;font-size:13px;">
+Derived from the same recovery phrase as your CreditChain wallet -
+<strong>you hold these private keys, not CreditChain.</strong> These
+are the accounts your Wallet/Assets pages already show; this page
+doesn't duplicate them, it links to them.
+</p>
+
+<div id="hdAccountsPresent" style="display:none;">
+    <div class="explorer-row">
+        <span>Ethereum</span>
+        <a id="hdEthLink" href="asset.html?symbol=ETH" style="color:#0284c7;font-family:monospace;font-size:12px;">-</a>
+    </div>
+    <div class="explorer-row">
+        <span>Bitcoin (testnet)</span>
+        <a id="hdBtcLink" href="asset.html?symbol=BTC" style="color:#0284c7;font-family:monospace;font-size:12px;">-</a>
+    </div>
+    <p style="font-size:12px;opacity:0.7;margin-top:8px;">
+        Receive-only for now (Phase A) - open either link above for its address/QR code.
+        <button id="viewMyBtcBtn" style="margin-left:6px;">Look Up My BTC Balance Below &darr;</button>
+    </p>
+</div>
+
+<div id="hdAccountsMissing" style="display:none;">
+    <p style="opacity:0.75;font-size:13px;">
+        Your wallet hasn't migrated to the multi-chain recovery phrase yet, so it doesn't have a
+        self-custodial ETH/BTC account. <a href="outernet.html" style="color:#0284c7;">Go to OUTERNET</a>
+        and follow the "Wallet Upgrade Available" prompt to get one.
+    </p>
+</div>
+
+</div>
+
+<div class="card">
+
+<h2>Look Up Any Bitcoin Address (self-custody, read-only)</h2>
+
+<p style="opacity:0.75;font-size:13px;">
+CreditChain never asks for, generates, or stores a Bitcoin private
+key - nothing here can move your BTC. Paste any BTC address (yours,
+using the button above, or anyone else's - it's all public chain
+data) to view its balance and recent activity, the same way any block
+explorer would show it. You keep managing that wallet yourself,
+wherever it actually lives (your CreditChain-derived key, Trust
+Wallet, a hardware wallet, etc.).
+</p>
+
+<div class="explorer-search">
+<input id="btcAddressInput" type="text" placeholder="BTC address (e.g. bc1... or tb1...)">
+<button id="btcLookupBtn">View</button>
+</div>
+
+<div id="btcResult"></div>
+
+</div>
+
+<div class="card" style="border:2px solid #ff8a3d;">
+
+<h2>ETH Custodial Wallet <span style="opacity:0.6;font-size:13px;font-weight:normal;">(Sepolia testnet)</span></h2>
+
+<p style="margin:0;font-size:13px;">
+<strong>This is a separate, third ETH account - not the self-custodial one above.</strong>
+For this corner, CreditChain generates and holds the signing key on your behalf (custodial) -
+you don't import anything, and you never see a private key. The self-custodial account above can
+now send/receive real Sepolia ETH directly too - this corner still exists as a separate trust
+model (CreditChain holds the key here, you hold it there), not because one can do something the
+other can't. This only ever holds
+<strong>Sepolia testnet ETH (worthless, same as CCT/ETHTEST elsewhere on this site)</strong> -
+never real Ethereum mainnet value. See the audit docs (<code>audit/KNOWN_GAPS.md</code>) for exactly what
+custodial means here and what still needs a licensing review before this could ever point at real ETH.
+</p>
+
+<div id="ethCustodialNoAccount">
+<p style="opacity:0.75;font-size:13px;">You don't have a custodial ETH account yet.</p>
+<button onclick="createEthCustodialAccount()">Create Custodial Account</button>
+<p id="ethCustodialCreateStatus"></p>
+</div>
+
+<div id="ethCustodialAccount" style="display:none;">
+
+<p>
+Your custodial address:
+<br>
+<span id="ethCustodialAddress" class="explorer-hash" style="font-size:12px;"></span>
+</p>
+
+<div class="explorer-row">
+<span>Balance</span>
+<span id="ethCustodialBalance">Loading...</span>
+</div>
+<button onclick="loadEthCustodialBalance()">Refresh Balance</button>
+
+<h3>Withdraw</h3>
+<p style="opacity:0.7;font-size:12px;">
+Send this custodial account's Sepolia ETH to any external Sepolia address you control.
+</p>
+<div class="explorer-search">
+<input id="ethWithdrawTo" type="text" placeholder="Destination address (0x...)">
+<input id="ethWithdrawAmount" type="text" placeholder="Amount in ETH (e.g. 0.01)">
+</div>
+<button onclick="withdrawEthCustodial()">Withdraw</button>
+<p id="ethCustodialWithdrawStatus"></p>
+
+</div>
+
+</div>
+
+<p style="margin-top:20px;">
+<a href="assets.html">Assets</a> &nbsp;|&nbsp;
+<a href="wallet.html">Wallet</a> &nbsp;|&nbsp;
+<a href="outernet.html">Back to OUTERNET</a>
+</p>
+
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
+<script src="js/defi.js"></script>
+
+</body>
+</html>

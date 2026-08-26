@@ -3,11 +3,12 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/creditchain/creditchaind/core"
 )
 
 type FundLoanRequest struct {
-	ID     string `json:"id"`
-	Lender string `json:"lender"`
+	ID string `json:"id"`
 }
 
 func HandleFundLoan(
@@ -18,19 +19,9 @@ func HandleFundLoan(
 
 	var req FundLoanRequest
 
-	err :=
-		json.NewDecoder(
-			r.Body,
-		).Decode(
-			&req,
-		)
-
+	auth, lender, err := requireSignedRequest(r, &req)
 	if err != nil {
-		http.Error(
-			w,
-			"Invalid JSON",
-			http.StatusBadRequest,
-		)
+		writeUnauthorized(w, err)
 		return
 	}
 
@@ -48,25 +39,14 @@ func HandleFundLoan(
 		return
 	}
 
-	creditEngine.FundLoan(
-		loan,
-		req.Lender,
-	)
+	data, _ := json.Marshal(lendData{LoanID: loan.ID})
 
-	stats :=
-		lenderStore.Get(
-			req.Lender,
-		)
-
-	stats.LoansFunded++
-
-	stats.AmountLent +=
-		loan.Amount
-
-	stats.InterestEarned +=
-		loan.Interest
+	tx := recordTx(auth, lender, loan.Borrower, loan.Amount, core.TxLend, string(data))
 
 	json.NewEncoder(w).Encode(
-		loan,
+		map[string]any{
+			"status": "pending",
+			"txId":   tx.ID,
+		},
 	)
 }

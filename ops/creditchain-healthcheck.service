@@ -1,0 +1,8 @@
+[Unit]
+Description=CreditChain node health check (process/disk/height/fork detection)
+After=network.target creditchain.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/creditchain-healthcheck.env
+ExecStart=/opt/creditchain/ops/healthcheck.sh

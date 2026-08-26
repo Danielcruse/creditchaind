@@ -2,6 +2,8 @@
 <html>
 <head>
     <title>Create Account</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -31,10 +33,14 @@
 
     <br><br>
 
+    <select id="region"></select>
+
+    <br><br>
+
     <input
         type="text"
-        id="region"
-        placeholder="Region">
+        id="referredBy"
+        placeholder="Referral address (optional)">
 
     <br><br>
 
@@ -44,9 +50,55 @@
 
 </div>
 
+<div
+id="seedPhraseModal"
+style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);align-items:center;justify-content:center;z-index:10000;">
+    <div style="background:var(--cc-bg-2, #082616);border-radius:16px;padding:25px;max-width:600px;width:92vw;max-height:85vh;overflow-y:auto;">
+        <h2 style="margin-top:0;color:#ffd166;">⚠ Save Your Backup Phrase</h2>
+        <p>
+            This is the <strong>only time</strong> this backup phrase will ever be shown.
+            It's the only way to restore your wallet if you lose access to this browser
+            and haven't set up email recovery. Write it down and store it somewhere safe -
+            anyone who has it can control your wallet.
+        </p>
+        <p style="opacity:0.7;font-size:12px;">
+            This is a standard 12-word BIP-39 recovery phrase - it's the master key for your
+            CreditChain, Ethereum, and Bitcoin (testnet) accounts, all derived from this one
+            phrase. See <a href="settings.html" style="color:var(--cc-accent-gold, #c9a227);">Settings</a> later for the
+            email-based recovery option too.
+        </p>
+        <div id="seedPhraseText" style="font-family:monospace;font-size:13px;background:rgba(255,255,255,0.05);border-radius:10px;padding:15px;line-height:1.8;word-spacing:6px;"></div>
+        <br>
+        <label style="display:flex;gap:8px;align-items:flex-start;">
+            <input type="checkbox" id="seedPhraseAck" style="margin-top:4px;">
+            <span>I've saved this backup phrase somewhere safe.</span>
+        </label>
+        <br>
+        <button id="seedPhraseContinueBtn" disabled onclick="continueAfterSeedPhrase()">
+            Continue to OUTERNET
+        </button>
+    </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/vendor/bip39-wordlist.js"></script>
+<script src="js/vendor/hd-crypto.js"></script>
+<script src="js/hdwallet.js"></script>
+<script src="js/regions.js"></script>
 <script>
 
-function register() {
+populateRegionSelect(document.getElementById("region"));
+
+// Auto-fill the referral field from a shared link, e.g.
+// register.html?ref=<referrer's cc address> - referral "codes" are
+// just the referrer's own address (see core.Wallet.ReferredBy's doc
+// comment), no separate code-issuing system needed.
+const refParam = new URLSearchParams(window.location.search).get("ref");
+if (refParam) {
+    document.getElementById("referredBy").value = refParam;
+}
+
+async function register() {
 
     let username =
         document.getElementById(
@@ -99,30 +151,48 @@ function register() {
         region
     );
 
-    localStorage.setItem(
-        "wallet",
-        "0xTEST" +
-        Math.floor(
-            Math.random()*1000000
-        )
-    );
+    // Everything below happens client-side: the mnemonic and every
+    // derived private key are generated in this browser and never
+    // sent anywhere. The server only ever sees the CreditChain
+    // account's address + public key (see api/wallet_create.go).
+    const mnemonic = await HDWallet.generateMnemonic();
+    const accounts = await HDWallet.deriveAllAccounts(mnemonic, "");
 
-    localStorage.setItem(
-        "reputation",
-        "50"
-    );
+    const referredBy = document.getElementById("referredBy").value.trim();
 
-    localStorage.setItem(
-        "voting",
-        "100"
-    );
+    try {
+        await apiPost("/wallet/create", {
+            address: accounts.creditchain.address,
+            publicKey: accounts.creditchain.publicKey,
+            referredBy: referredBy,
+        });
+    } catch (e) {
+        alert("Could not reach CreditChain node: " + e.message);
+        return;
+    }
 
-    alert(
-        "Account created successfully!"
-    );
+    setWallet({
+        address: accounts.creditchain.address,
+        publicKey: accounts.creditchain.publicKey,
+        privateKey: accounts.creditchain.privateKey,
+        kind: "hd",
+    });
 
-    location.href =
-        "login.html";
+    localStorage.setItem("cc_hd_accounts", JSON.stringify({
+        eth: accounts.eth,
+        btc: accounts.btc,
+    }));
+
+    document.getElementById("seedPhraseText").innerText = mnemonic;
+    document.getElementById("seedPhraseModal").style.display = "flex";
+}
+
+document.getElementById("seedPhraseAck").addEventListener("change", (e) => {
+    document.getElementById("seedPhraseContinueBtn").disabled = !e.target.checked;
+});
+
+function continueAfterSeedPhrase() {
+    location.href = "outernet.html";
 }
 
 </script>

@@ -1,0 +1,47 @@
+/* theme.css - CreditChain's shared color palette, loaded FIRST on every
+   page (before style.css/outernet.css/pool-light.css). This is the
+   first centralized theme-token file in this codebase - every other
+   stylesheet hardcodes literal colors per-selector (confirmed by grep,
+   no other :root block exists anywhere) - so this file doesn't replace
+   those literals everywhere, it just gives the highest-visibility
+   selectors (backgrounds, primary buttons, card glow) one shared
+   source of truth going forward, and gives future work a place to
+   read the brand palette from instead of re-guessing hex values.
+
+   Palette direction: replacing the old cyan/blue "generic crypto" look
+   with a "vault/ledger" feel appropriate to a loan app - a dominant
+   money/emerald green (a wider application of the accent green
+   `#00ff95` this codebase already used sparingly for "live" states),
+   plus a muted gold/bronze accent for a touch of traditional banking
+   alongside the existing glassmorphism/gradient "ultra-modern" card
+   treatment (kept, just recolored). */
+
+:root{
+    /* Dark theme (style.css, outernet.css's dark-default block) -
+       deep forest-to-near-black gradient stops, replacing the old
+       blue-black (#050816 -> #0b1026 -> #101d42). */
+    --cc-bg-1: #04150d;
+    --cc-bg-2: #082616;
+    --cc-bg-3: #0c3a22;
+
+    /* Primary accent - money-green gradient, replacing the old cyan/
+       blue button gradient (#00d2ff -> #3a7bd5). */
+    --cc-accent-1: #0f9d58;
+    --cc-accent-2: #16c46f;
+
+    /* Secondary accent - muted gold/bronze, used sparingly for
+       badges/highlights/dividers - the "traditional banking" half of
+       "traditional and ultra-modern." */
+    --cc-accent-gold: #c9a227;
+    --cc-accent-gold-soft: #e0c674;
+
+    /* "Live"/positive indicator green - unchanged in hue from the
+       existing #00ff95 this codebase already used, now the dominant
+       accent rather than a minor one. */
+    --cc-live-green: #00ff95;
+
+    /* Card glow/shadow tint - green instead of the old cyan
+       (rgba(0,200,255,...) / rgba(0,255,255,...)). */
+    --cc-glow: rgba(16, 196, 111, 0.18);
+    --cc-glow-hover: rgba(24, 230, 140, 0.35);
+}

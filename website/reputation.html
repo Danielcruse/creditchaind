@@ -2,9 +2,12 @@
 <html>
 <head>
 <title>Reputation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+<script src="js/device-lock.js"></script>
 
 <h1>Reputation</h1>
 
@@ -12,7 +15,9 @@
 
 <h2>Your Score</h2>
 
-<h1>50</h1>
+<h1 id="score">-</h1>
+
+<p>Tier: <span id="tier">-</span></p>
 
 </div>
 
@@ -20,9 +25,7 @@
 
 <h2>History</h2>
 
-<p>+10 Loan Repaid</p>
-<p>+5 Verified Reference</p>
-<p>-0 Defaults</p>
+<div id="history">Loading...</div>
 
 </div>
 
@@ -30,13 +33,159 @@
 
 <h2>Voting Power</h2>
 
-<p>100</p>
+<p id="votingPower">-</p>
+
+</div>
+
+<div class="card">
+
+<h2>REPT (Reputation Token)</h2>
+
+<p>Balance: <span id="reptBalance">-</span> REPT</p>
+
+<p style="opacity:0.75;font-size:13px;">
+A one-time REPT reward mints automatically the first time your reputation
+climbs into a new Credit Tier - Silver, Gold, Diamond, then Genesis.
+Dropping and climbing back through a tier you've already reached doesn't
+re-mint it.
+</p>
+
+<p id="reptNextTier" style="opacity:0.75;font-size:13px;"></p>
+
+</div>
+
+<div class="card">
+
+<h2>Mining Power</h2>
+
+<p style="opacity:0.75;font-size:13px;">
+REPT is now also mined continuously, not just earned in one-time tier
+rewards above. Your Mining Power score determines how much REPT you
+earn each mining epoch - the higher your trust, repayment history,
+staking, governance participation, validator involvement, successful
+lending, and account age, the more you mine.
+</p>
+
+<h1 id="miningPowerScore">-</h1>
+
+<div id="miningPowerFactors">Loading...</div>
+
+</div>
+
+<div class="card" id="math">
+
+<details>
+<summary style="cursor:pointer;"><h2 style="display:inline;">How Reputation Is Calculated</h2></summary>
+
+<p style="opacity:0.75;font-size:13px;">
+Every wallet has a single trust score - Reputation - on a 1-100 scale.
+It never reaches zero: even at the floor, there is always a path back
+through honest participation. Pulled live from the same numbers the
+network enforces (nothing here is hand-typed or able to drift out of
+sync with the code).
+</p>
+
+<h3>Score Range</h3>
+
+<div class="explorer-row">
+<span>Floor</span>
+<span id="floor">-</span>
+</div>
+<div class="explorer-row">
+<span>Ceiling</span>
+<span id="ceiling">-</span>
+</div>
+
+<h3>Credit Tiers</h3>
+
+<p style="opacity:0.75;font-size:13px;">
+A tier is just a labelled range over Reputation - not a second score.
+Larger loans, lower interest, governance weight, and validator
+preference are all gated off whichever tier a wallet currently sits
+in.
+</p>
+
+<div id="tiers">Loading...</div>
+
+<h3>One-Time REPT Rewards</h3>
+
+<p style="opacity:0.75;font-size:13px;">
+The first time a wallet's reputation ever climbs into a new tier, it
+mints a one-time REPT reward. Dropping out of a tier and climbing back
+into it later does not re-mint the reward. Jumping several tiers in a
+single move pays the full cumulative total, not just the destination
+tier's. These one-time amounts are intentionally small now - continuous
+mining (below) is the dominant, ongoing way REPT is earned.
+</p>
+
+<div id="tierRewards">Loading...</div>
+
+<h3>Continuous Reputation Credit Mining</h3>
+
+<p style="opacity:0.75;font-size:13px;">
+On top of the one-time tier rewards above, every wallet in good
+standing continuously mines REPT ("Reputation Credits") in proportion
+to its Mining Power score - a weighted blend of Trust Score, Loan
+Repayment History, Staking Activity, Governance Participation,
+Validator Participation, Successful Lending, and Account Age. A
+Network Contributions factor is named in the design but has no real
+data behind it yet, so it's shown at 0% weight rather than faked.
+Mining happens automatically in the background roughly once a day -
+there's nothing to claim or activate.
+</p>
+
+<h3>Consensus Model: Proof of Stake with Reputation (PoSR)</h3>
+
+<p style="opacity:0.75;font-size:13px;">
+CreditChain isn't plain Proof of Stake - owning CCT alone is never
+enough to become a validator. Becoming and remaining a validator
+requires <strong>both</strong> a real CCT stake and a real Trust
+Score, and which validator produces each block is chosen by a
+weighted mix of stake, reputation, and uptime - not simply whoever
+staked the most. Security comes from three independent layers:
+Economic Security (CCT stake), Social Security (Trust Score), and
+Economic Productivity (continuous Reputation Credit mining, described
+above). An attacker has to defeat all three at once, not just
+outspend everyone else.
+</p>
+
+<p style="opacity:0.75;font-size:13px;">
+Validators who miss their turn, double-sign, or otherwise attack
+consensus are penalized on <strong>three</strong> fronts at once, not
+just one: a Trust Score penalty, a real seizure of a slice of their
+staked CCT (burned, never redistributed), and a strike toward a
+permanent ban - repeated serious violations remove a validator's
+privileges for good, with no way back. Because Mining Power is
+computed live from Trust Score and validator uptime, a slashed
+validator's Reputation Credit mining rate drops automatically too,
+with no separate mechanism needed.
+</p>
+
+<p style="opacity:0.75;font-size:13px;">
+Validator income is a block reward plus real transaction fees. The
+block reward follows a controlled-inflation schedule that declines
+over time, so validator income becomes increasingly dependent on
+transaction fees rather than new issuance - the same "increasing
+scarcity, sustained incentive" tradeoff real fixed-supply networks
+use. Total CCT supply is capped.
+</p>
+
+<h3>How Every Action Moves Reputation</h3>
+
+<div id="mechanisms">Loading...</div>
+
+</details>
 
 </div>
 
 <a href="outernet.html">
 Back to OUTERNET
 </a>
+
+<script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
+<script src="js/reputation.js"></script>
+<script src="js/reputation-math.js"></script>
 
 </body>
 </html>

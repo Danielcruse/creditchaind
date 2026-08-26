@@ -3,11 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-
-	"github.com/creditchain/creditchaind/core"
 )
-
-var peers = []core.Peer{}
 
 func HandlePeers(
 	w http.ResponseWriter,
@@ -16,6 +12,6 @@ func HandlePeers(
 	enableCors(&w)
 
 	json.NewEncoder(w).Encode(
-		peers,
+		peerStore.List(),
 	)
 }

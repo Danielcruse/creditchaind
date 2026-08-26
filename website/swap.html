@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Swap</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
+    <link rel="stylesheet" href="css/pool-light.css">
+</head>
+<body class="pool-light">
+<script src="js/device-lock.js"></script>
+
+<div class="pool-topbar">
+    <a class="pool-topbar-brand" href="pool.html">Pool</a>
+    <div class="pool-topbar-links">
+        <a href="liquidity.html">Liquidity Pool</a>
+        <a href="price-chart.html">Price Chart</a>
+        <a href="order-book.html">Order Book</a>
+        <a href="outernet.html">Back to OUTERNET</a>
+    </div>
+</div>
+
+<div class="pool-wrap">
+    <a class="pool-back-link" href="pool.html">&larr; Pool</a>
+
+    <p class="pool-muted">
+        Looking for ETHTEST or USDCTEST? Those trade against CCT on the
+        <a href="order-book.html">Order Book</a> now, with a real market price instead of a pool ratio.
+    </p>
+
+    <div id="swapLoggedOut" class="pool-card" style="display:none;">
+        <p class="pool-empty">Log in with a wallet to swap.</p>
+    </div>
+
+    <div id="swapLoggedIn">
+        <div class="pool-card">
+            <h2>Single Pool Swap</h2>
+            <p class="pool-muted">Swap directly against one pool's own reserves.</p>
+
+            <div class="pool-row">
+                <select id="swapPoolSymbol"></select>
+                <select id="swapDirection">
+                    <option value="cct_to_token">CCT -&gt; Token</option>
+                    <option value="token_to_cct">Token -&gt; CCT</option>
+                </select>
+            </div>
+            <div class="pool-row">
+                <input id="swapAmount" type="number" placeholder="Amount in" min="0">
+                <button class="pool-btn" id="swapBtn">Swap</button>
+            </div>
+            <p class="pool-status" id="swapStatus"></p>
+        </div>
+
+        <div class="pool-card">
+            <h2>Universal Swap</h2>
+            <p class="pool-muted">
+                Swap between any two tokens - ETHTEST, USDCTEST, CCT, or any registered token. A swap
+                between two non-CCT tokens routes as two hops (token &rarr; CCT &rarr; token).
+            </p>
+
+            <div class="pool-row">
+                <select id="swapFrom"></select>
+                <select id="swapTo"></select>
+            </div>
+            <div class="pool-row">
+                <input id="swapViaAmount" type="number" placeholder="Amount in" min="0">
+                <button class="pool-btn" id="swapViaBtn">Swap</button>
+            </div>
+            <p class="pool-muted" id="swapFromBalance"></p>
+            <p class="pool-status" id="swapViaStatus"></p>
+        </div>
+    </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
+<script src="js/swap.js"></script>
+
+</body>
+</html>

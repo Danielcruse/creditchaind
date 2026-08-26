@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin - Treasury</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .explorer-search{
+            display:flex;
+            gap:10px;
+            margin-bottom:15px;
+            flex-wrap:wrap;
+        }
+        .explorer-search input{
+            flex:1;
+            min-width:160px;
+            padding:10px 14px;
+            border-radius:10px;
+            border:1px solid rgba(255,255,255,0.15);
+            background:rgba(255,255,255,0.05);
+            color:white;
+            box-sizing:border-box;
+        }
+        .explorer-row{
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            gap:12px;
+            padding:10px 12px;
+            border-bottom:1px solid rgba(255,255,255,0.08);
+            font-family:monospace;
+            font-size:13px;
+            flex-wrap:wrap;
+        }
+        .explorer-row:last-child{
+            border-bottom:none;
+        }
+        .explorer-empty{
+            opacity:0.6;
+            padding:10px 0;
+        }
+    </style>
+</head>
+<body>
+<script src="js/device-lock.js"></script>
+
+<h1>Admin - Treasury</h1>
+
+<p style="opacity:0.75;font-size:13px;">
+    Admin actions are authorized by a real signature from the network's configured admin wallet - the same
+    Ed25519 signing every ordinary wallet action already uses, not a shared secret. Log in with the CreditChain
+    wallet that's been configured as the admin wallet (via <code>ADMIN_WALLET_ADDRESS</code>) and every action
+    below signs with that wallet's own key. This page carries no authority of its own - every check happens
+    server-side, independently, on every node.
+</p>
+
+<div class="card" id="walletCard">
+    <h2>Admin Wallet</h2>
+    <p>Logged in as: <span id="myWalletAddressDisplay" style="font-family:monospace;">-</span></p>
+    <p>Configured admin wallet: <span id="configuredAdminAddressDisplay" style="font-family:monospace;">-</span></p>
+    <p id="adminWalletMatchStatus"></p>
+</div>
+
+<br>
+
+<div class="card" id="multisigCard" style="display:none;">
+    <h2>Multisig Approvals</h2>
+    <p style="opacity:0.7;font-size:12px;">
+        This network requires <span id="multisigThresholdDisplay">-</span> of <span id="multisigSignerCountDisplay">-</span>
+        configured signers to approve an admin action before it takes effect - no single key, however it's stored,
+        can act alone. Configured signers: <span id="multisigSignersDisplay" style="font-family:monospace;font-size:11px;">-</span>
+    </p>
+    <div id="multisigProposalsList" class="explorer-empty">No pending proposals.</div>
+</div>
+
+<br>
+
+<div class="card" id="tokenCard">
+    <h2>Admin Token (legacy)</h2>
+    <p style="opacity:0.7;font-size:12px;">
+        Only used on networks where no admin wallet has been configured yet - has no effect once
+        <code>ADMIN_WALLET_ADDRESS</code> is set (see the Admin Wallet card above). Kept in memory only for this
+        tab, never localStorage/sessionStorage/cookies, lost on reload.
+    </p>
+    <div class="explorer-search">
+        <input type="password" id="adminTokenInput" placeholder="ADMIN_TOKEN">
+        <button onclick="setAdminToken()">Unlock</button>
+    </div>
+    <p id="adminTokenStatus"></p>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Foundation Treasury Address</h2>
+    <p>Current: <span id="treasuryAddressDisplay" style="font-family:monospace;">-</span></p>
+    <div class="explorer-search">
+        <input type="text" id="treasuryAddressInput" placeholder="New treasury address">
+        <button onclick="saveTreasuryAddress()">Save</button>
+    </div>
+    <p id="treasuryAddressStatus"></p>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Sale Price</h2>
+    <p>Current: <span id="salePriceDisplay">-</span> cents per CCT</p>
+    <div class="explorer-search">
+        <input type="number" id="salePriceInput" placeholder="Price in cents per CCT" min="0">
+        <button onclick="saveSalePrice()">Save</button>
+    </div>
+    <p id="salePriceStatus"></p>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Remaining Sale Allocation</h2>
+    <p><span id="remainingAllocationDisplay">-</span> CCT</p>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Public Sale</h2>
+    <p>Status: <span id="pausedDisplay">-</span></p>
+    <button onclick="togglePaused()" id="pauseToggleBtn">Toggle Pause/Resume</button>
+    <p id="pausedStatus"></p>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Pending Purchase Requests</h2>
+    <div id="purchaseList" class="explorer-empty">Unlock with the admin token to load.</div>
+</div>
+
+<br>
+
+<div class="card">
+    <h2>Announcements</h2>
+    <p style="opacity:0.75;font-size:13px;">
+        Posted announcements appear on the Governance page for every user.
+    </p>
+    <input type="text" id="announcementTitleInput" placeholder="Title" style="width:100%;box-sizing:border-box;margin-bottom:8px;">
+    <textarea id="announcementTextInput" placeholder="Announcement text" rows="3" style="width:100%;box-sizing:border-box;"></textarea>
+    <br><br>
+    <button onclick="postAnnouncement()">Post Announcement</button>
+    <p id="announcementPostStatus"></p>
+    <div id="announcementList" class="explorer-empty">Loading...</div>
+</div>
+
+<br>
+
+<div class="card" id="genesisPoolsCard">
+    <h2>Genesis Pools</h2>
+    <p style="opacity:0.75;font-size:13px;">
+        Withdraw from one of the 4 genesis pools with no controlling keypair of their own (Validator Reward,
+        Ecosystem Development, Governance Treasury, Community Incentives) - gated by the admin wallet's
+        signature, same as everything else on this page. Foundation Treasury is not one of these - it's managed
+        above, via its own real address.
+    </p>
+    <div class="explorer-search">
+        <select id="genesisPoolSelect">
+            <option value="VALIDATOR_REWARD">Validator Reward</option>
+            <option value="ECOSYSTEM_DEV">Ecosystem Development</option>
+            <option value="GOVERNANCE_TREASURY">Governance Treasury</option>
+            <option value="COMMUNITY_INCENTIVES">Community Incentives</option>
+        </select>
+        <input type="text" id="genesisPoolToInput" placeholder="Destination address">
+        <input type="number" id="genesisPoolAmountInput" placeholder="Amount (CCT)" min="1">
+        <button onclick="withdrawGenesisPool()">Withdraw</button>
+    </div>
+    <p id="genesisPoolWithdrawStatus"></p>
+</div>
+
+<br>
+
+<p style="opacity:0.6;font-size:12px;">
+    More admin sections (validators, governance, website, system) are coming in a later phase - this page is
+    intentionally scoped to Treasury/Sale/Genesis-Pool controls only for now.
+</p>
+
+<p style="margin-top:20px;">
+    <a href="outernet.html">Back to OUTERNET</a>
+</p>
+
+<script src="js/api.js"></script>
+<script src="js/admin.js"></script>
+
+</body>
+</html>

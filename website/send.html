@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OUTERNET Send</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .address-row{
+            display:flex;
+            gap:8px;
+            align-items:center;
+        }
+        .address-row input{
+            flex:1;
+        }
+        .scan-btn{
+            width:40px;
+            height:40px;
+            flex-shrink:0;
+            border-radius:8px;
+            border:1px solid rgba(255,255,255,0.15);
+            background:rgba(255,255,255,0.05);
+            color:white;
+            font-size:18px;
+            cursor:pointer;
+        }
+        .modal-overlay{
+            display:none;
+            position:fixed;
+            inset:0;
+            background:rgba(0,0,0,0.7);
+            align-items:center;
+            justify-content:center;
+            z-index:10000;
+        }
+        .modal-box{
+            background:var(--cc-bg-2, #082616);
+            border-radius:16px;
+            padding:20px;
+            width:min(420px, 90vw);
+        }
+        #scanVideo{
+            width:100%;
+            border-radius:10px;
+            background:black;
+        }
+    </style>
+</head>
+<body>
+<script src="js/device-lock.js"></script>
+
+<h1>Send</h1>
+
+<div class="card">
+
+    <select id="sendSymbol">
+        <option value="CCT">CCT</option>
+        <option value="ETHTEST">ETHTEST</option>
+        <option value="USDCTEST">USDCTEST</option>
+    </select>
+
+    <p>
+        Your balance:
+        <span id="balance">
+            Loading...
+        </span>
+        <span id="sendSymbolLabel">CCT</span>
+    </p>
+
+    <p id="sendAddressHint" style="opacity:0.75;font-size:13px;display:none;">
+        ETHTEST/USDCTEST are imported tokens with their own address (see your wallet card on OUTERNET) -
+        enter the recipient's ETHTEST/USDCTEST address here, not their CCT address.
+    </p>
+
+    <p id="sendFeeNote" style="opacity:0.75;font-size:13px;"></p>
+
+    <div class="address-row">
+        <input
+            type="text"
+            id="toAddress"
+            placeholder="Recipient address">
+        <button type="button" class="scan-btn" onclick="openScanModal()" title="Scan a QR code">&#9678;</button>
+    </div>
+
+    <br>
+
+    <input
+        type="number"
+        id="amount"
+        placeholder="Amount">
+
+    <br><br>
+
+    <button onclick="send()">
+        Send
+    </button>
+
+    <p id="sendStatus"></p>
+
+</div>
+
+<br>
+
+<button
+    onclick="location.href='outernet.html'">
+    Back To OUTERNET
+</button>
+
+<div class="modal-overlay" id="scanModalOverlay">
+    <div class="modal-box">
+        <h3 style="margin-top:0;">Scan Address QR Code</h3>
+        <video id="scanVideo" autoplay playsinline muted></video>
+        <p id="scanStatus" style="opacity:0.75;font-size:13px;"></p>
+        <label for="scanFileInput" style="display:block;margin-top:10px;">
+            <span style="opacity:0.75;font-size:12px;">Camera not working? Take or choose a photo of the code instead:</span>
+            <input type="file" accept="image/*" capture="environment" id="scanFileInput" style="display:block;margin-top:6px;width:100%;box-sizing:border-box;">
+        </label>
+        <button onclick="closeScanModal()" style="margin-top:10px;">Cancel</button>
+    </div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/ai-assistant.js"></script>
+<script src="js/qrcode.js"></script>
+<script src="js/qr-decode.js"></script>
+<script src="js/send.js"></script>
+
+</body>
+</html>

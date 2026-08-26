@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Asset</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/theme.css">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/outernet.css">
+    <style>
+        .asset-page{
+            max-width:600px;
+            margin:0 auto;
+        }
+        .asset-chart-area{
+            min-height:22vh;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            padding:10px 0;
+        }
+        .asset-hero{
+            text-align:center;
+            padding:10px 0 20px;
+        }
+        .asset-hero-symbol{
+            font-size:28px;
+            font-weight:700;
+        }
+        .asset-hero-price{
+            font-size:15px;
+            opacity:0.75;
+            margin-top:4px;
+        }
+        .asset-actions{
+            justify-content:center;
+        }
+        .asset-tabs{
+            display:flex;
+            border-bottom:1px solid rgba(255,255,255,0.15);
+            margin:20px 0 0;
+        }
+        .asset-tab{
+            flex:1;
+            text-align:center;
+            padding:10px 0;
+            cursor:pointer;
+            opacity:0.6;
+            border-bottom:2px solid transparent;
+        }
+        .asset-tab.active{
+            opacity:1;
+            border-bottom-color:#00ff95;
+            font-weight:600;
+        }
+        .asset-tab-panel{
+            display:none;
+            padding:16px 0;
+        }
+        .asset-tab-panel.active{
+            display:block;
+        }
+        .asset-history-row{
+            display:flex;
+            justify-content:space-between;
+            gap:10px;
+            padding:8px 0;
+            border-bottom:1px solid rgba(255,255,255,0.08);
+            font-size:13px;
+        }
+        /* This page's own borders assume the site's default dark
+           background - flip them for the light outernet theme (see
+           css/outernet.css's body.outernet-light block) so they stay
+           visible instead of nearly disappearing on white. */
+        body.outernet-light .asset-tabs{
+            border-bottom-color:rgba(0,0,0,0.12);
+        }
+        body.outernet-light .asset-history-row{
+            border-bottom-color:rgba(0,0,0,0.08);
+        }
+    </style>
+</head>
+<body class="outernet-light">
+<script src="js/device-lock.js"></script>
+
+<div class="asset-page">
+
+<p><a href="outernet.html" style="color:var(--cc-accent-gold, #c9a227);">&larr; Back to OUTERNET</a></p>
+
+<div class="card">
+    <div class="asset-chart-area" id="assetChartArea">Loading...</div>
+
+    <div class="asset-hero">
+        <div class="asset-hero-symbol" id="assetSymbol">-</div>
+        <div class="asset-hero-price" id="assetBalance">-</div>
+        <div class="asset-hero-fiat" id="assetFiat" style="opacity:0.65;font-size:14px;"></div>
+    </div>
+
+    <div class="quick-actions asset-actions">
+        <button id="assetSendBtn">
+            <span class="qa-icon">&#8593;</span>
+            Send
+        </button>
+        <button id="assetReceiveBtn">
+            <span class="qa-icon">&#8595;</span>
+            Receive
+        </button>
+        <button disabled title="Coming soon" style="opacity:0.5;cursor:default;">
+            <span class="qa-icon">&#128279;</span>
+            Bridge
+        </button>
+    </div>
+
+    <div id="assetReceivePanel" style="display:none;text-align:center;margin-top:16px;">
+        <div id="assetReceiveNetworkPicker" style="display:none;margin-bottom:14px;">
+            <p style="font-size:13px;opacity:0.8;margin:0 0 8px;">Which network?</p>
+            <button onclick="loadReceiveForNetwork('CCT')">CCT network</button>
+            <button onclick="loadReceiveForNetwork('ERC')" style="margin-left:8px;">ERC network</button>
+        </div>
+        <div id="assetReceiveQrArea">
+            <canvas id="assetQrCanvas" style="max-width:70vw;height:auto;border-radius:8px;"></canvas>
+            <p id="assetReceiveAddress" style="word-break:break-all;font-family:monospace;font-size:12px;margin:10px 0;"></p>
+            <button onclick="copyAssetAddress()">Copy Address</button>
+            <p id="assetCopyStatus" style="font-size:12px;opacity:0.7;"></p>
+        </div>
+    </div>
+
+    <div class="asset-tabs">
+        <div class="asset-tab active" id="assetTabOverviewBtn" onclick="showAssetTab('overview')">Overview</div>
+        <div class="asset-tab" id="assetTabHistoryBtn" onclick="showAssetTab('history')">History</div>
+    </div>
+
+    <div class="asset-tab-panel active" id="assetTabOverview">
+        <div class="explorer-row" style="display:flex;justify-content:space-between;padding:6px 0;">
+            <span>Symbol</span>
+            <span id="ovSymbol">-</span>
+        </div>
+        <div class="explorer-row" style="display:flex;justify-content:space-between;padding:6px 0;">
+            <span>Description</span>
+            <span id="ovDescription" style="text-align:right;max-width:60%;">-</span>
+        </div>
+        <div class="explorer-row" style="display:flex;justify-content:space-between;padding:6px 0;">
+            <span>Address</span>
+            <span id="ovAddress" style="font-family:monospace;font-size:11px;word-break:break-all;text-align:right;max-width:60%;">-</span>
+        </div>
+        <div class="explorer-row" style="display:flex;justify-content:space-between;padding:6px 0;">
+            <span>Balance</span>
+            <span id="ovBalance">-</span>
+        </div>
+        <div id="ovOtherNetworks" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08);">
+            <p style="opacity:0.7;font-size:12px;margin-bottom:6px;">Also available on:</p>
+            <div id="ovOtherNetworksList"></div>
+        </div>
+    </div>
+
+    <div class="asset-tab-panel" id="assetTabHistory">
+        <div id="assetHistoryList">Loading...</div>
+        <p style="margin-top:10px;">
+            <a id="assetExplorerLink" href="#" style="color:var(--cc-accent-gold, #c9a227);">View this address on Explorer &rarr;</a>
+        </p>
+    </div>
+
+</div>
+
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/currency.js"></script>
+<script src="js/ai-assistant.js"></script>
+<script src="js/qrcode.js"></script>
+<script src="js/asset.js"></script>
+
+</body>
+</html>

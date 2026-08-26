@@ -1,18 +1,61 @@
+html, body{
+    max-width:100%;
+    overflow-x:hidden;
+}
+
+/* Shared copy-to-clipboard icon (see js/api.js's copyIconHTML) - used
+   anywhere an address is displayed so copying it is an obvious,
+   dedicated action instead of a silent side-effect of clicking
+   something else. */
+.copy-icon{
+    background:rgba(15,157,88,0.08);
+    border:1px solid rgba(15,157,88,0.25);
+    color:#0d2818;
+    border-radius:6px;
+    padding:2px 7px;
+    font-size:12px;
+    line-height:1.6;
+    cursor:pointer;
+    margin-left:6px;
+    vertical-align:middle;
+}
+.copy-icon:hover{
+    background:rgba(15,157,88,0.18);
+}
+.copy-icon.copy-icon-done{
+    background:rgba(15,157,88,0.2);
+    border-color:#0f9d58;
+    color:#0f9d58;
+}
+
+/* White + green - replaces the earlier dark forest-green theme for
+   every page still using plain style.css (index.html now has its own
+   distinct white+blue landing.css instead - see that file's header
+   comment). Deliberately reuses theme.css's already-green
+   --cc-accent-1/2/--cc-glow tokens as-is (buttons/card-glow were
+   already green, only the dark BACKGROUND needed to flip to white),
+   so this is a background/text-color swap, not a full retheme. */
 body{
     background:
-        linear-gradient(
-            135deg,
-            #050816,
-            #0b1026,
-            #101d42
-        );
+        radial-gradient(1100px 650px at 12% -8%, rgba(15,157,88,0.24), transparent 60%),
+        radial-gradient(1000px 700px at 108% 8%, rgba(22,196,111,0.18), transparent 55%),
+        radial-gradient(900px 550px at 50% 118%, rgba(0,255,149,0.16), transparent 60%),
+        #ffffff;
 
-    color:white;
+    color:#0d2818;
     font-family:
         Arial,
         sans-serif;
 
     margin:0;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+input, textarea {
+    max-width: 100%;
 }
 
 .card{
@@ -22,7 +65,7 @@ body{
             255,
             255,
             255,
-            0.05
+            0.7
         );
 
     backdrop-filter:
@@ -30,10 +73,10 @@ body{
 
     border:
         1px solid rgba(
-            255,
-            255,
-            255,
-            0.08
+            15,
+            157,
+            88,
+            0.16
         );
 
     border-radius:20px;
@@ -44,12 +87,7 @@ body{
 
     box-shadow:
         0 0 30px
-        rgba(
-            0,
-            200,
-            255,
-            0.15
-        );
+        var(--cc-glow, rgba(16, 196, 111, 0.18));
 
     transition:
         0.3s;
@@ -62,12 +100,7 @@ body{
 
     box-shadow:
         0 0 40px
-        rgba(
-            0,
-            255,
-            255,
-            0.35
-        );
+        var(--cc-glow-hover, rgba(24, 230, 140, 0.35));
 }
 
 button{
@@ -75,8 +108,8 @@ button{
     background:
         linear-gradient(
             90deg,
-            #00d2ff,
-            #3a7bd5
+            var(--cc-accent-1, #0f9d58),
+            var(--cc-accent-2, #16c46f)
         );
 
     color:white;
@@ -104,7 +137,7 @@ button:hover{
 
     box-shadow:
         0 0 20px
-        #00d2ff;
+        var(--cc-accent-2, #16c46f);
 }
 
 .sidebar{
@@ -120,11 +153,13 @@ button:hover{
 
     background:
         rgba(
-            0,
-            0,
-            0,
-            0.35
+            255,
+            255,
+            255,
+            0.6
         );
+
+    border-right:1px solid rgba(15,157,88,0.15);
 
     backdrop-filter:
         blur(20px);
@@ -141,7 +176,10 @@ button:hover{
 
 .network-live{
 
-    color:#00ff95;
+    /* #00ff95 (the original bright mint) reads too low-contrast
+       against the new white background - var(--cc-accent-1) is the
+       same green family, darkened for legibility. */
+    color:var(--cc-accent-1, #0f9d58);
 
     animation:
         pulse 2s infinite;
