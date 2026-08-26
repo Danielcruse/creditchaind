@@ -1,0 +1,3 @@
+SHA256: c7c37902472957f095805a6fcf178ff1d6da012cebf2ca878b45758605f94e21 
+Snapshot of node1 (creditchain.site) production binary, captured 2026-08-26. 
+Preserved because the Go source that built it (in /tmp/creditchaind-src on node1) was lost to a /tmp cleanup job before it could be recovered. 
