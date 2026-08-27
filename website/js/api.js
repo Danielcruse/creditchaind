@@ -40,22 +40,23 @@ function escapeHtmlMultiline(s) {
     return escapeHtml(s).replace(/\n/g, "<br>");
 }
 
-// Switches window.CC_NETWORK for future page loads. Deliberately NOT a
-// reload of whatever page you happen to be on: the page you're
-// currently viewing may not make sense (or may even be broken) under
-// the other network (e.g. an admin/explorer page mid-flow), so every
-// network switch lands on a known-safe starting point instead. A full
-// navigation is required either way since api.js's own API_BASE is a
-// const computed once at load time, same as a real MetaMask network
-// switch typically reloading the dapp. Selecting Mainnet specifically
-// lands on the CreditChain landing page (index.html), not the wallet -
-// mainnet is real value, so the user should land somewhere that
-// re-orients them rather than dropping straight back into a wallet
-// view. Testnet keeps its existing wallet.html target.
-function switchCreditChainNetwork(network) {
-    const isMainnet = network === "mainnet";
-    localStorage.setItem("cc_network", isMainnet ? "mainnet" : "testnet");
-    location.href = isMainnet ? "/" : "wallet";
+// Navigates to Mainnet's own domain - a genuinely separate host (see
+// network-config.js), not just a different port on this one. One-way
+// only, by design: this is exposed on Testnet as "switch to Mainnet"
+// and is never wired up on Mainnet itself (showDemoBanner below skips
+// building the control entirely when already on Mainnet's host), since
+// Mainnet is the official production site and shouldn't advertise a
+// path back down to a demo network. Lands on Mainnet's root
+// (index.html) rather than a wallet view - Testnet and Mainnet are
+// fully independent creditchaind processes with separate wallets/chain
+// state, so there's nothing to "carry over"; the user just arrives at
+// Mainnet's own landing page and logs in there if they have an account
+// on it.
+function switchCreditChainNetwork() {
+    const mainnet = (window.CC_NETWORK_ENDPOINTS && window.CC_NETWORK_ENDPOINTS.mainnet) || {};
+    const host = mainnet.host || window.location.hostname;
+    localStorage.setItem("cc_network", "mainnet");
+    location.href = `https://${host}/`;
 }
 
 // buildDisclosureFooter builds the full disclosure text + whitepaper
@@ -96,12 +97,18 @@ function buildDisclosureFooter(isMainnet) {
 }
 
 // Injected on every page that loads this script - a small, glanceable
-// network indicator + switcher (see network-config.js), styled as a
-// compact red pill on mainnet ("Not Audited") vs a neutral pill on
-// testnet. Lives in the top-left corner as a small floating control
-// (not a full-width bar) so it doesn't compete with page content or
-// push everything down - the full disclosure paragraph lives in the
-// page footer instead (buildDisclosureFooter above).
+// network indicator, styled as a compact red pill on mainnet ("Not
+// Audited") vs a neutral pill on testnet. Lives in the top-left corner
+// as a small floating control (not a full-width bar) so it doesn't
+// compete with page content or push everything down - the full
+// disclosure paragraph lives in the page footer instead
+// (buildDisclosureFooter above).
+//
+// One-directional by design: only Testnet's pill includes a "Switch to
+// Mainnet" control (see switchCreditChainNetwork above). Mainnet is the
+// official production site - its pill is a plain disclosure indicator
+// with no way back to Testnet, so nothing on Mainnet advertises a demo
+// network to switch to.
 //
 // Starts COLLAPSED (just the warning icon) rather than the full pill -
 // a fixed-position full pill was found to sit directly over real page
@@ -109,11 +116,9 @@ function buildDisclosureFooter(isMainnet) {
 // than chase down and CSS-override every page this could ever overlap,
 // the control itself stays small by default (a single emoji glyph
 // rarely overlaps anything worth clicking) and expands to the full
-// pill + network switcher only on click - "shrink to stay out of the
-// way, open back up on demand" per the explicit request this replaced
-// the always-expanded version for. Collapse/expand never touches
-// window.CC_NETWORK - it's purely a display toggle, independent of
-// which network is actually selected.
+// pill only on click - "shrink to stay out of the way, open back up on
+// demand" per the explicit request this replaced the always-expanded
+// version for.
 (function showDemoBanner() {
     const isMainnet = window.CC_NETWORK === "mainnet";
     const banner = document.createElement("div");
@@ -141,18 +146,19 @@ function buildDisclosureFooter(isMainnet) {
     networkPill.title = "Click to collapse.";
     expanded.appendChild(networkPill);
 
-    const networkSelect = document.createElement("select");
-    networkSelect.style.cssText =
-        "font-size:11px;background:#1a1200;color:#ffd166;border:1px solid #ffd166;border-radius:6px;padding:1px 4px;";
-    Object.keys(endpoints).forEach((key) => {
-        const opt = document.createElement("option");
-        opt.value = key;
-        opt.innerText = endpoints[key].label;
-        opt.selected = key === window.CC_NETWORK;
-        networkSelect.appendChild(opt);
-    });
-    networkSelect.addEventListener("change", (e) => switchCreditChainNetwork(e.target.value));
-    expanded.appendChild(networkSelect);
+    // Only ever built on Testnet - see the function-level comment above
+    // switchCreditChainNetwork for why Mainnet never gets the reverse
+    // control.
+    if (!isMainnet) {
+        const switchButton = document.createElement("button");
+        switchButton.type = "button";
+        switchButton.innerText = "Switch to " + (endpoints.mainnet ? endpoints.mainnet.label : "Mainnet") + " →";
+        switchButton.style.cssText =
+            "font-size:11px;font-weight:bold;background:#1a1200;color:#ffd166;" +
+            "border:1px solid #ffd166;border-radius:6px;padding:2px 6px;cursor:pointer;";
+        switchButton.addEventListener("click", () => switchCreditChainNetwork());
+        expanded.appendChild(switchButton);
+    }
 
     banner.appendChild(icon);
     banner.appendChild(expanded);
@@ -170,9 +176,9 @@ function buildDisclosureFooter(isMainnet) {
     setCollapsed(true);
 
     // Only the icon (collapsed) or the network-label span (expanded)
-    // toggle - the <select> itself must NOT re-trigger this, or
-    // clicking it to open its own dropdown would collapse the whole
-    // control out from under it first.
+    // toggle - the switch button is a sibling of networkPill, not a
+    // child, so clicking it doesn't also trigger networkPill's
+    // collapse handler.
     icon.addEventListener("click", () => setCollapsed(false));
     networkPill.addEventListener("click", () => setCollapsed(true));
 
