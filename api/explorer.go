@@ -21,6 +21,11 @@ type ExplorerResponse struct {
 	BlockHeight     int    `json:"blockHeight"`
 	LatestBlockHash string `json:"latestBlockHash"`
 
+	// PeerCount mirrors HandleNetwork's own peerStore.List() count
+	// (api/network.go) - surfaced here too so the Explorer's stats bar
+	// doesn't require a second request to /network just to show it.
+	PeerCount int `json:"peerCount"`
+
 	Blocks       []core.Block `json:"blocks"`
 	BlocksTotal  int          `json:"blocksTotal"`
 	BlocksOffset int          `json:"blocksOffset"`
@@ -162,6 +167,7 @@ func HandleExplorer(w http.ResponseWriter, r *http.Request) {
 	resp := ExplorerResponse{
 		BlockHeight:     total,
 		LatestBlockHash: latestHash,
+		PeerCount:       len(peerStore.List()),
 
 		Blocks:       window,
 		BlocksTotal:  total,

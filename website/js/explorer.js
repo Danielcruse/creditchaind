@@ -407,6 +407,7 @@ async function loadExplorer() {
         // itself is always shownBlocks[0] on page one).
         document.getElementById("statBlockHeight").innerText = blocksTotal > 0 ? blocksTotal - 1 : 0;
         document.getElementById("statPendingTx").innerText = (data.pendingTransactions || []).length;
+        document.getElementById("statPeerCount").innerText = data.peerCount ?? 0;
         if (blocksOffset === 0 && shownBlocks.length > 0 && shownBlocks[0].Timestamp) {
             document.getElementById("statLatestBlockTime").innerText =
                 new Date(shownBlocks[0].Timestamp * 1000).toLocaleTimeString();
