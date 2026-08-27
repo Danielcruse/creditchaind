@@ -317,6 +317,11 @@ func HandlePeerTx(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !allowPeerRequest(r.RemoteAddr) {
+		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+		return
+	}
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "POST only", http.StatusMethodNotAllowed)
 		return
@@ -356,6 +361,11 @@ func HandlePeerBlock(w http.ResponseWriter, r *http.Request) {
 
 	if !requireNetworkSecret(r) {
 		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
+	if !allowPeerRequest(r.RemoteAddr) {
+		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
 
