@@ -56,7 +56,16 @@ function switchCreditChainNetwork() {
     const mainnet = (window.CC_NETWORK_ENDPOINTS && window.CC_NETWORK_ENDPOINTS.mainnet) || {};
     const host = mainnet.host || window.location.hostname;
     localStorage.setItem("cc_network", "mainnet");
-    location.href = `https://${host}/`;
+
+    // Carry the current wallet identity over via a one-time URL
+    // fragment - see network-config.js's consumeWalletHandoff for the
+    // receiving side and why a fragment (never sent to the server,
+    // never logged) is the safe mechanism here. Only attached when a
+    // local wallet actually exists - a visitor with none just lands on
+    // Mainnet's plain landing page exactly as before, same as always.
+    const wallet = getWallet();
+    const fragment = wallet ? "#ccwallet=" + encodeURIComponent(JSON.stringify(wallet)) : "";
+    location.href = `https://${host}/${fragment}`;
 }
 
 // buildDisclosureFooter builds the full disclosure text + whitepaper

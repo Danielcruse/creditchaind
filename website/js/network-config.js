@@ -63,3 +63,45 @@ window.CC_API_HOST = window.CC_NETWORK_ENDPOINTS[ccSelectedNetwork].host || wind
 if (ccSelectedNetwork === "mainnet" && document.body && document.body.classList.contains("outernet-light")) {
     document.body.classList.add("outernet-mainnet");
 }
+
+// --- Cross-network wallet handoff -------------------------------------
+//
+// Consumes a one-time wallet handoff carried in the URL fragment by
+// switchCreditChainNetwork() (api.js) - fragments are never sent to the
+// server (not part of the HTTP request line, never logged server-side),
+// so this is the standard safe pattern for a client-side-only
+// cross-origin secret handoff. Lets the same private key work on both
+// networks without a manual re-import: Testnet and Mainnet are separate
+// creditchaind processes with separate wallet stores (see this file's
+// own doc comment above), but the identity itself (an address/keypair)
+// isn't network-specific - only the balance/reputation attached to it
+// is, and that's expected to start fresh on whichever network the
+// address hasn't transacted on yet, exactly like importing the same
+// private key into login.html manually already behaves today.
+//
+// Runs here (before api.js) rather than in api.js itself, since several
+// pages redirect to register.html the instant they find no local
+// wallet (requireWallet(), api.js) - this has to consume and store the
+// handoff before that check ever runs. Writes directly to localStorage
+// rather than calling setWallet() (api.js) since this file loads first
+// and that function isn't defined yet.
+(function consumeWalletHandoff() {
+    if (!location.hash || location.hash.indexOf("#ccwallet=") !== 0) return;
+
+    try {
+        const payload = decodeURIComponent(location.hash.slice("#ccwallet=".length));
+        const wallet = JSON.parse(payload);
+        if (wallet && wallet.address && wallet.privateKey) {
+            localStorage.setItem("cc_wallet", JSON.stringify(wallet));
+        }
+    } catch (e) {
+        // Malformed/tampered fragment - ignore; the page falls through
+        // to its normal no-wallet behavior (e.g. requireWallet()'s
+        // redirect to register.html).
+    }
+
+    // Strip the fragment immediately regardless of parse success - a
+    // private key must never sit visibly in the URL bar or browser
+    // history for even one render.
+    history.replaceState(null, "", location.pathname + location.search);
+})();
