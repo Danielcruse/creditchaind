@@ -55,7 +55,16 @@ function escapeHtmlMultiline(s) {
 function switchCreditChainNetwork() {
     const mainnet = (window.CC_NETWORK_ENDPOINTS && window.CC_NETWORK_ENDPOINTS.mainnet) || {};
     const host = mainnet.host || window.location.hostname;
-    localStorage.setItem("cc_network", "mainnet");
+
+    // Deliberately does NOT set localStorage "cc_network" here - unlike
+    // the old same-origin toggle this replaced, this is a REAL
+    // cross-origin navigation (a different domain entirely), so
+    // writing "mainnet" here would land in THIS origin's (Testnet's)
+    // own localStorage and permanently misidentify Testnet as Mainnet
+    // on every future load, exactly the "creditchain.site still shows
+    // mainnet" bug this fixes. Mainnet's own network-config.js already
+    // correctly self-identifies via ccDefaultNetworkForHost() matching
+    // its own hostname - no explicit flag needs to travel with it.
 
     // Carry the current wallet identity over via a one-time URL
     // fragment - see network-config.js's consumeWalletHandoff for the
