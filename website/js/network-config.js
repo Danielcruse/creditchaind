@@ -45,10 +45,41 @@ function ccDefaultNetworkForHost() {
     return "testnet";
 }
 
+// Self-healing against stale/poisoned storage: an earlier version of
+// switchCreditChainNetwork() (api.js) wrote "mainnet" into whichever
+// origin was calling it, including Testnet's own - anyone who clicked
+// the old broken toggle got cc_network permanently stuck at "mainnet"
+// in their Testnet browser storage, showing Mainnet-styled content on
+// creditchain.site forever, with no way for them to know to clear it.
+// The actual hostname is the one thing that can never lie about which
+// network this is, so it's now the tiebreaker: a stored value is only
+// trusted when it's consistent with the host actually being loaded
+// from. Concretely - if this host doesn't match Mainnet's own
+// configured host, "mainnet" cannot be a genuine, current selection
+// for it (nothing on this box even serves that network), so it's
+// treated as exactly the leftover poison described above and
+// corrected back to this host's real default, the same as if storage
+// had never been set. The corrected value is written back so this
+// self-heals permanently on the very next load, not just this one.
 var ccStoredNetwork = localStorage.getItem("cc_network");
-var ccSelectedNetwork = (ccStoredNetwork === "mainnet" || ccStoredNetwork === "testnet")
-    ? ccStoredNetwork
-    : ccDefaultNetworkForHost();
+var ccIsMainnetHost = window.location.hostname === window.CC_NETWORK_ENDPOINTS.mainnet.host;
+var ccSelectedNetwork;
+if (ccIsMainnetHost) {
+    // Being on Mainnet's own domain is unambiguous regardless of
+    // whatever a prior visit (or a synced/shared browser profile)
+    // left in storage.
+    ccSelectedNetwork = "mainnet";
+} else if (ccStoredNetwork === "testnet") {
+    ccSelectedNetwork = "testnet";
+} else {
+    // Covers both "nothing stored yet" and the poisoned
+    // "mainnet"-while-not-on-Mainnet's-host case - both correctly
+    // resolve to this host's real default.
+    ccSelectedNetwork = ccDefaultNetworkForHost();
+}
+if (ccSelectedNetwork !== ccStoredNetwork) {
+    localStorage.setItem("cc_network", ccSelectedNetwork);
+}
 window.CC_NETWORK = ccSelectedNetwork;
 window.CC_API_PORT = window.CC_NETWORK_ENDPOINTS[ccSelectedNetwork].port;
 window.CC_API_HOST = window.CC_NETWORK_ENDPOINTS[ccSelectedNetwork].host || window.location.hostname;
