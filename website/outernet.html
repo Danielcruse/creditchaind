@@ -8,6 +8,11 @@ content="width=device-width, initial-scale=1, maximum-scale=1">
 
 <title>OUTERNET</title>
 
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#04150d">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-512.png">
+
 <link rel="stylesheet" href="css/theme.css?v=fixaug5c">
 
 <link
@@ -589,6 +594,20 @@ style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);align-ite
 <script src="js/hd_migrate.js?v=fixaug5b"></script>
 <script src="js/mobile-nav.js?v=fixaug5b"></script>
 <script src="js/vault-lock-gate.js?v=sec0818a"></script>
+
+<script>
+// Registers sw.js so Outernet is installable (Add to Home Screen /
+// desktop install prompt) - see sw.js's own doc comment for why it's
+// network-first, not cache-first. Scoped to this page rather than
+// site-wide, matching the explicit "make outernet an app" request -
+// the service worker's own fetch handler still only ever touches
+// static assets regardless of which page registered it.
+if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+        navigator.serviceWorker.register("sw.js").catch((e) => console.error("SW registration failed:", e));
+    });
+}
+</script>
 
 </body>
 </html>
