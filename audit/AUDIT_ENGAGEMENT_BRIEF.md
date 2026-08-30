@@ -120,5 +120,4 @@ move in the direction the evidence actually supports.
 
 ## Contact
 
-*[Fill in: who at CreditChain a responding firm should reach, and
-how.]*
+luciferdell11star@gmail.com
