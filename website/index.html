@@ -20,6 +20,7 @@
       <li><a href="#features">Features</a></li>
       <li><a href="#roadmap">Roadmap</a></li>
       <li><a href="whitepaper" id="navWhitepaperLink">Whitepaper</a></li>
+      <li><a href="developers#mainnet-mechanics">Mainnet Mechanics</a></li>
       <li><a href="faq">FAQ</a></li>
       <li><a href="login">Launch App</a></li>
     </ul>
@@ -205,16 +206,25 @@
 })();
 
 // On mainnet, "Read Whitepaper" (and every other in-page whitepaper
-// link) routes to the Developers Manual's Roadmap/Mainnet Mechanics
-// section instead of the local whitepaper.html page, which is written
-// specifically around testnet usage tips and would be misleading on a
-// real network. Testnet keeps linking to whitepaper.html unchanged.
-// The separate site-wide banner's "Read the original whitepaper" link
-// (api.js's buildDisclosureFooter) is unrelated to this - it already
-// points to the real external whitepaper docx on both networks.
+// link) now points at the same real, self-hosted whitepaper PDF the
+// site-wide disclosure banner's "Read the original whitepaper" link
+// already uses (api.js's buildDisclosureFooter,
+// downloads/CreditChain_Whitepaper_v0.9.pdf) - a plain static file, not
+// a GitHub link, since this repository is private and a raw GitHub
+// link to it would 404 for any visitor exactly the way an earlier
+// Office-web-viewer link to the raw .docx already did once (see that
+// function's own doc comment). The local whitepaper.html page is
+// written specifically around testnet usage tips and would be
+// misleading framed as mainnet's whitepaper, so mainnet is routed to
+// the PDF instead of that page - testnet keeps linking to
+// whitepaper.html unchanged. This link previously (wrongly) redirected
+// to the Developers Manual's Mainnet Mechanics section instead of the
+// whitepaper - that content now has its own honestly-labeled nav tab
+// ("Mainnet Mechanics" in the navbar above) rather than living behind
+// a mislabeled "Whitepaper" link.
 (function mainnetAwareWhitepaperLinks() {
     if (window.CC_NETWORK !== "mainnet") return;
-    const target = "developers#mainnet-mechanics";
+    const target = "downloads/CreditChain_Whitepaper_v0.9.pdf";
 
     const navLink = document.getElementById("navWhitepaperLink");
     if (navLink) navLink.href = target;
@@ -223,13 +233,7 @@
     if (heroBtn) heroBtn.setAttribute("onclick", `location.href='${target}'`);
 
     const ecoCard = document.getElementById("ecosystemWhitepaperCard");
-    if (ecoCard) {
-        ecoCard.setAttribute("onclick", `location.href='${target}'`);
-        const title = document.getElementById("ecosystemWhitepaperTitle");
-        if (title) title.innerText = "🟨 Mainnet Mechanics";
-        const desc = document.getElementById("ecosystemWhitepaperDesc");
-        if (desc) desc.innerText = "Learn how CreditChain's mainnet actually works.";
-    }
+    if (ecoCard) ecoCard.setAttribute("onclick", `location.href='${target}'`);
 })();
 </script>
 

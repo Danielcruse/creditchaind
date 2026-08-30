@@ -93,7 +93,7 @@ function buildDisclosureFooter(isMainnet) {
 
     const disclosure = document.createElement("span");
     disclosure.innerText = isMainnet
-        ? "⚠ Preliminary internal review complete; full independent professional audit still pending — each account's total BTC + ETH holdings are capped during this stabilization period. "
+        ? "⚠ Internal and automated review only — no independent third-party security audit has been performed. Each account's total BTC + ETH holdings are capped during this stabilization period. "
         : "⚠ Testnet demo, not audited — tokens have no real value. \"ETHTEST\", \"CCT\" and \"USDCTEST\" are test/participation tokens only. ";
     footer.appendChild(disclosure);
 
@@ -144,7 +144,7 @@ function buildDisclosureFooter(isMainnet) {
 
     const endpoints = window.CC_NETWORK_ENDPOINTS || { testnet: { label: "Testnet" }, mainnet: { label: "Mainnet" } };
     const disclosureTitle = isMainnet
-        ? "Preliminary internal review complete; full independent security audit still pending. Each account's total BTC + ETH holdings are capped; see the receive page for the current limit. Full list of known gaps at /security, linked in the page footer. Click to expand."
+        ? "Internal and automated review only - no independent third-party security audit has been performed. Each account's total BTC + ETH holdings are capped; see the receive page for the current limit. Full list of known gaps at /security, linked in the page footer. Click to expand."
         : "\"ETHTEST\", \"CCT\" and \"USDCTEST\" are test/participation tokens only, with no real monetary value. Full disclosure in the page footer. Click to expand.";
 
     const icon = document.createElement("span");
@@ -155,7 +155,7 @@ function buildDisclosureFooter(isMainnet) {
     expanded.style.cssText = "display:none;align-items:center;";
 
     const networkPill = document.createElement("span");
-    networkPill.innerText = isMainnet ? "⚠ " + endpoints.mainnet.label + " - Not Audited" : "🧪 " + endpoints.testnet.label;
+    networkPill.innerText = isMainnet ? "⚠ " + endpoints.mainnet.label + " - Internal Review Only" : "🧪 " + endpoints.testnet.label;
     networkPill.style.cssText =
         "display:inline-block;font-weight:bold;padding:2px 8px;border-radius:10px;margin-right:6px;cursor:pointer;" +
         (isMainnet

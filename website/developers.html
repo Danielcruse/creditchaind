@@ -144,12 +144,14 @@
     has a real, tamper-resistant price to resolve against, not a UI feature of their own.
 </p>
 
-<h2 id="mainnet-mechanics">Roadmap / Mainnet Mechanics</h2>
+<h2 id="mainnet-mechanics">Mainnet Mechanics</h2>
 <p style="opacity:0.85;">
     A real explainer of the mechanics already live on both networks today - not a marketing roadmap.
-    This is where "Read Whitepaper" points to on mainnet (see the site-wide banner), since the
-    separate <a href="whitepaper" style="color:var(--cc-accent-gold, #16B8A6);">whitepaper.html</a>
-    page is written around testnet usage tips specifically.
+    Reachable from its own "Mainnet Mechanics" link in the main site's navbar, separate from
+    "Whitepaper" (which now points to the actual
+    <a href="downloads/CreditChain_Whitepaper_v0.9.pdf" style="color:var(--cc-accent-gold, #16B8A6);">whitepaper PDF</a>
+    on mainnet, and to the testnet-specific
+    <a href="whitepaper" style="color:var(--cc-accent-gold, #16B8A6);">whitepaper.html</a> page on testnet).
 </p>
 
 <div class="card" style="margin:14px 0;">
@@ -275,12 +277,11 @@ DATA_DIR=./data PORT=8080 ./creditchaind
     if (testnetLine) {
         testnetLine.innerText = "This is Mainnet - CCT and other mainnet balances carry real value. ETHTEST/USDCTEST are testnet-only and unavailable here.";
     }
-    // The two whitepaper links already inside this page's own body
-    // (near "Roadmap / Mainnet Mechanics") should keep pointing at
-    // whitepaper.html - it's fine to reference from within the manual
-    // itself. Only this disclosures-list link, which is presented as
-    // "read this for real network context," redirects to the manual's
-    // own anchor instead.
+    // The whitepaper link already inside this page's own body (near
+    // "Mainnet Mechanics") should keep pointing at whitepaper.html -
+    // it's fine to reference from within the manual itself. Only this
+    // disclosures-list link, which is presented as "read this for real
+    // network context," redirects to the manual's own anchor instead.
     const link = document.getElementById("devDisclosureWhitepaperLink");
     if (link) link.href = "#mainnet-mechanics";
 })();
