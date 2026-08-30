@@ -29,15 +29,31 @@ persistent disclosure banner on both network domains).
 
 What *has* been done: several rounds of thorough internal review,
 carried out by AI-assisted engineering sessions (Claude Code) working
-directly against the live systems and source — not a substitute for
-independent human review, and not represented as one anywhere in this
-repository. See `outputs/creditchain-security-audit-2026-08-24.md` for
-the most recent pass and `audit/HARDENING_HISTORY.md` for the full
-history of what those passes have found and fixed. Treat every claim in
-this repository's own documentation as a starting point to verify
+directly against the live systems and source (SSH into both hosts,
+reading live systemd/journald output, direct on-chain reads) — not a
+substitute for independent human review, and not represented as one
+anywhere in this repository. See
+`outputs/creditchain-security-audit-2026-08-24.md` for the most recent
+pass and `audit/HARDENING_HISTORY.md` for the full history of what
+those passes have found and fixed. Treat every claim in this
+repository's own documentation as a starting point to verify
 independently, not as ground truth — that is this project's own stated
 convention (see `audit/README.md`'s "Corrections" section for a
 concrete example of that convention catching real drift).
+
+Separately, an externally-supplied archive review (a static,
+SHA-256-hashed source snapshot, not this live deployment) surfaced this
+same week. `outputs/creditchain-mainnet-scope-correction-2026-08-30.md`
+records the material distinction: that archive review verified an
+offline snapshot plus the public testnet frontend — it did **not**
+independently verify the live mainnet service's configuration, database
+state, KMS policy, validator identities, or deployed Ethereum bytecode,
+and does not constitute a production sign-off. Read it before treating
+any archive-based finding as settled against the current mainnet
+deployment; it also lists exactly what a real engagement would need
+(release manifest, verified bytecode, redacted prod config, a
+multi-validator staging environment, rules of engagement) to actually
+close that gap.
 
 **We are seeking a genuine third-party engagement now.** This document
 exists to make that engagement fast to scope, not to argue that one is
