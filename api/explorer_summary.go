@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/creditchain/creditchaind/core"
 )
@@ -31,10 +32,51 @@ type TransactionView struct {
 	// been recorded yet.
 	ExternalTxHash string `json:"externalTxHash,omitempty"`
 	ExternalTxLink string `json:"externalTxLink,omitempty"`
+
+	// Category is a coarse, UI-facing bucket for tx.Type - lets the
+	// Explorer's transaction page pick a display treatment (which flow
+	// visualization to draw, which icon to use) without re-implementing
+	// this same ~90-way type switch client-side. Deliberately much
+	// coarser than Type itself; "other" is a legitimate bucket for
+	// anything not user-facing enough to need its own visual treatment
+	// (governance, admin, moderation, etc.) - it isn't a fallback for
+	// types this switch forgot.
+	Category string `json:"category"`
+}
+
+// txCategory buckets a transaction type into the handful of categories
+// the Explorer's transaction page actually renders differently. See
+// the Explorer design spec's "Transaction Types" section - this is the
+// one place that classification is decided, so the tx detail page and
+// any future activity-feed page agree on it automatically.
+func txCategory(t core.TransactionType) string {
+	switch t {
+	case core.TxExchange:
+		return "transfer"
+	case core.TxPoolSwap, core.TxSwapViaCCT, core.TxFairValueSwap:
+		return "swap"
+	case core.TxBridgeDeposit, core.TxBridgeBtcDeposit, core.TxBridgeWithdraw, core.TxBridgeBtcWithdraw,
+		core.TxVaultBurn, core.TxVaultLockAttest, core.TxVaultReleaseComplete:
+		return "cross_network"
+	case core.TxPoolAddLiquidity, core.TxPoolRemoveLiquidity:
+		return "liquidity"
+	case core.TxLend, core.TxLoanOfferCreate, core.TxLoanRequestFulfill:
+		return "lending"
+	case core.TxBorrow, core.TxLoanOfferDraw, core.TxLoanRequestCreate:
+		return "borrowing"
+	case core.TxRepay, core.TxLoanAddCollateral, core.TxLoanRedeemShortfall:
+		return "repayment"
+	case core.TxStakeETH, core.TxValidatorDelegate:
+		return "staking"
+	case core.TxUnstakeETH, core.TxValidatorUndelegate:
+		return "unstaking"
+	default:
+		return "other"
+	}
 }
 
 func viewTransaction(tx core.Transaction) TransactionView {
-	v := TransactionView{Transaction: tx, Summary: buildTransactionSummary(tx)}
+	v := TransactionView{Transaction: tx, Summary: buildTransactionSummary(tx), Category: txCategory(tx.Type)}
 	if event, ok := reputationEventStore.Get(tx.ID); ok {
 		v.ReputationDelta = event.Delta
 		v.ReputationTarget = event.Target
@@ -70,6 +112,33 @@ func short(addr string) string {
 		return addr
 	}
 	return addr[:8] + "..." + addr[len(addr)-6:]
+}
+
+// weiToEthString and satsToBtcString render a wei/satoshi integer as a
+// trimmed decimal ETH/BTC string (e.g. 1500000000000000000 -> "1.5"),
+// for the handful of bridge summary lines that need a human amount
+// instead of the raw smallest-unit integer. Mirrors website/js/tx.js's
+// own BigInt-based version of the same conversion (kept in sync
+// manually, same "each layer keeps its own copy of a tiny formatter"
+// precedent already used for weiToEth/satsToBtc elsewhere).
+func weiToEthString(wei uint64) string {
+	whole := wei / 1_000_000_000_000_000_000
+	frac := wei % 1_000_000_000_000_000_000
+	if frac == 0 {
+		return fmt.Sprintf("%d", whole)
+	}
+	fracStr := strings.TrimRight(fmt.Sprintf("%018d", frac), "0")
+	return fmt.Sprintf("%d.%s", whole, fracStr)
+}
+
+func satsToBtcString(sats uint64) string {
+	whole := sats / 100_000_000
+	frac := sats % 100_000_000
+	if frac == 0 {
+		return fmt.Sprintf("%d", whole)
+	}
+	fracStr := strings.TrimRight(fmt.Sprintf("%08d", frac), "0")
+	return fmt.Sprintf("%d.%s", whole, fracStr)
 }
 
 // buildTransactionSummary is the single place that turns a raw
@@ -303,7 +372,13 @@ func buildTransactionSummary(tx core.Transaction) string {
 		return "Removed liquidity from a pool"
 
 	case core.TxExchange:
-		return fmt.Sprintf("Transferred %d tokens", tx.Amount)
+		var data tokenTransferData
+		json.Unmarshal([]byte(tx.Data), &data)
+		symbol := data.Symbol
+		if symbol == "" {
+			symbol = "CCT"
+		}
+		return fmt.Sprintf("Sent %d %s", tx.Amount, symbol)
 
 	case core.TxSetRecoveryEmail:
 		return "Set a wallet recovery email"
@@ -318,57 +393,61 @@ func buildTransactionSummary(tx core.Transaction) string {
 		return fmt.Sprintf("Admin minted %d tokens (testnet faucet/seeding)", tx.Amount)
 
 	case core.TxBridgeWithdraw:
-		return fmt.Sprintf("Bridged %d wei of ETH out to a real Sepolia address", tx.Amount)
+		return fmt.Sprintf("Moved %s ETH out of CreditChain to Ethereum", weiToEthString(tx.Amount))
 
 	case core.TxBridgeBtcWithdraw:
-		return fmt.Sprintf("Bridged %d sats of BTC out to a real Bitcoin testnet address", tx.Amount)
+		return fmt.Sprintf("Moved %s BTC out of CreditChain to Bitcoin", satsToBtcString(tx.Amount))
 
-	// --- Vault (lock-and-mint bridge) ---------------------------------
+	// --- Vault (lock-and-mint bridge) - user-facing wording never says
+	// "Vault"/"Bridge Contract"/"Mint" per the Explorer design spec;
+	// that machinery is real (see the doc comments on the underlying
+	// core.Tx* types and the fields below) but belongs in Advanced
+	// Details, not the primary summary a normal user reads first. ------
 
 	case core.TxVaultLockAttest:
 		var data vaultLockAttestData
 		json.Unmarshal([]byte(tx.Data), &data)
-		return fmt.Sprintf("Bridge validator attested a real %s deposit from %s (tx %s) - contributes toward minting %s_CCC1", data.Chain, short(data.DepositorCcAddress), short(data.ExternalTxHash), data.Chain)
+		return fmt.Sprintf("Confirmed a real %s deposit from %s - contributes toward crediting Wrapped %s", data.Chain, short(data.DepositorCcAddress), data.Chain)
 
 	case core.TxVaultBurn:
 		var data vaultBurnData
 		json.Unmarshal([]byte(tx.Data), &data)
-		return fmt.Sprintf("Burned %s_CCC1 to withdraw the real locked asset to %s", data.Chain, short(data.DestinationExtAddress))
+		return fmt.Sprintf("Moved Wrapped %s off CreditChain to %s", data.Chain, short(data.DestinationExtAddress))
 
 	case core.TxVaultReleaseApprove:
 		var data vaultReleaseApproveData
 		json.Unmarshal([]byte(tx.Data), &data)
-		return fmt.Sprintf("Bridge validator co-signed the real release for burn %s", short(data.BurnTxId))
+		return fmt.Sprintf("Co-signed a pending withdrawal (ref %s)", short(data.BurnTxId))
 
 	case core.TxVaultReleaseComplete:
 		var data vaultReleaseCompleteData
 		json.Unmarshal([]byte(tx.Data), &data)
 		if data.ExternalHash != "" {
-			return fmt.Sprintf("Vault release broadcast confirmed - real external transaction %s", short(data.ExternalHash))
+			return fmt.Sprintf("Withdrawal confirmed on the external network (%s)", short(data.ExternalHash))
 		}
-		return "Vault release broadcast confirmed"
+		return "Withdrawal confirmed on the external network"
 
 	case core.TxBridgeValidatorRegister:
 		var data bridgeValidatorRegisterData
 		json.Unmarshal([]byte(tx.Data), &data)
-		return fmt.Sprintf("Registered as a bridge validator (ETH signing address %s)", short(data.EthSigningAddress))
+		return fmt.Sprintf("Registered as a network validator (ETH signing address %s)", short(data.EthSigningAddress))
 
 	// --- Legacy mirror-model bridge (ETHB/BTCB) - node-authored, report the poll result -----
 
 	case core.TxBridgeDeposit:
 		var data bridgeDepositReportData
 		json.Unmarshal([]byte(tx.Data), &data)
-		return fmt.Sprintf("Detected a real ETH deposit for %s - synced bridged balance", short(data.CreditChainAddress))
+		return fmt.Sprintf("Moved ETH to CreditChain (%s)", short(data.CreditChainAddress))
 
 	case core.TxBridgeBtcDeposit:
 		var data btcBridgeDepositReportData
 		json.Unmarshal([]byte(tx.Data), &data)
-		return fmt.Sprintf("Detected a real BTC deposit for %s - synced bridged balance", short(data.CreditChainAddress))
+		return fmt.Sprintf("Moved BTC to CreditChain (%s)", short(data.CreditChainAddress))
 
 	case core.TxBridgeTxHashRecord:
 		var data bridgeTxHashRecordData
 		json.Unmarshal([]byte(tx.Data), &data)
-		return fmt.Sprintf("Recorded the real external transaction hash %s for a bridge withdrawal", short(data.ExternalHash))
+		return fmt.Sprintf("Recorded the external transaction hash %s for a withdrawal", short(data.ExternalHash))
 
 	// --- P2P disputes --------------------------------------------------
 

@@ -159,7 +159,7 @@ function txTypeLabel(tx) {
         // behalf.
         const chain = VAULT_CHAIN_LABEL[data.chain] || data.chain || "?";
         const dest = data.destinationExtAddress ? shortHash(data.destinationExtAddress) : "an external address";
-        return `Bridged Out: ${chain} released from CreditChain to ${dest} (signed in-app by the sender)`;
+        return `Moved Wrapped ${chain} off CreditChain to ${dest}`;
     }
     if (tx.Type === "VAULT_LOCK_ATTEST") {
         // One bridge validator's own independent confirmation that a
@@ -170,7 +170,7 @@ function txTypeLabel(tx) {
         // about, not "minting completed."
         const chain = VAULT_CHAIN_LABEL[data.chain] || data.chain || "?";
         const depositor = data.depositorCcAddress ? shortHash(data.depositorCcAddress) : "an unknown depositor";
-        return `Deposit Received: ${chain} from ${depositor} (bridge → vault → mint)`;
+        return `Confirmed a ${chain} deposit from ${depositor}`;
     }
     if (tx.Type === "VAULT_RELEASE_COMPLETE") {
         // The real external send actually landed - the part
@@ -178,7 +178,7 @@ function txTypeLabel(tx) {
         // ever recorded once a node-local relay observes the real
         // release()/broadcast succeed (api/vault_release_relay.go /
         // api/vault_btc_release_relay.go).
-        return `Bridge Confirmed: external transaction ${data.externalHash ? shortHash(data.externalHash) : "-"} succeeded`;
+        return `Withdrawal confirmed on the external network${data.externalHash ? ` (${shortHash(data.externalHash)})` : ""}`;
     }
     return tx.Type;
 }
@@ -202,20 +202,35 @@ function reputationBadge(tx) {
 // show everything about every row. A pending transaction (still in
 // the mempool, not yet in a block) has no page to link to yet, so it
 // renders as plain text instead of a link.
+//
+// The Amount column prefers the backend's own tx.summary (a plain-
+// English sentence already built once, server-side, in
+// api/explorer_summary.go's buildTransactionSummary - "Sent 5 CCT",
+// "Moved Wrapped BTC off CreditChain to ...", never "Vault"/"Bridge
+// Contract" per the Explorer design spec) over reconstructing a label
+// from tx.Type/tx.Data here, so this list can't drift out of sync with
+// - or reintroduce jargon already cleaned out of - that one source of
+// truth. txTypeLabel/formatTxAmount stay as a fallback only for a
+// TransactionView that somehow arrives without a summary.
 function renderTxRow(tx, confirmed) {
     const label = confirmed ? "confirmed" : "pending";
     const time = tx.Timestamp ? new Date(tx.Timestamp * 1000).toLocaleString() : "-";
     const idDisplay = confirmed
         ? `<a href="tx?id=${encodeURIComponent(tx.ID)}" style="color:#16A34A;">${shortHash(tx.ID)}</a>`
         : shortHash(tx.ID);
-    const amount = formatTxAmount(tx);
-    const amountPrefix = amount === "" ? "" : `${amount} `;
+    const description = tx.summary
+        ? escapeHtml(tx.summary)
+        : (() => {
+              const amount = formatTxAmount(tx);
+              const amountPrefix = amount === "" ? "" : `${amount} `;
+              return `${amountPrefix}(${txTypeLabel(tx)})`;
+          })();
     return `
         <tr title="${tx.ID || ""}">
             <td data-label="Status"><span class="explorer-pill ${label}">${label}</span></td>
             <td data-label="Tx">${idDisplay}</td>
             <td data-label="From &rarr; To" class="explorer-hash">${shortHash(tx.From)} &rarr; ${shortHash(tx.To)}</td>
-            <td data-label="Amount">${amountPrefix}(${txTypeLabel(tx)}) ${reputationBadge(tx)}</td>
+            <td data-label="Amount">${description} ${reputationBadge(tx)}</td>
             <td data-label="Time">${time}</td>
         </tr>
     `;
@@ -244,13 +259,19 @@ function renderLoanRow(loan) {
     `;
 }
 
-// renderAddressProfile is the "explorer sheet" for a single address.
-// Order follows the explicit ask: CCT balance, then any other token
-// with a nonzero available balance, then staked amounts, then held
-// loans - deliberately no marketplace-offers section (those are the
-// user's own posted offers, not public standing) - then transaction
-// history, governance votes, and finally block/network info (handled
-// by the caller, this only renders the per-address sheet).
+// renderAddressProfile is the "explorer sheet" for a single address -
+// a CreditChain-native (CCT) address, currently the only kind
+// addressPattern/buildAddressProfile in api/explorer.go can look up
+// (a real 0x-format Ethereum self-custodial address isn't supported by
+// this search yet - see that regex's own doc comment). The badge below
+// says so plainly rather than implying an equivalence with an
+// Ethereum-compatible view this page can't actually produce.
+//
+// Split into two tabs per the Explorer design spec: "Assets" (what
+// this address holds right now - balances, staked positions, open
+// loans) and "Activity" (what it's done - transaction history,
+// governance votes), with reputation/tier/voting power surfaced above
+// both tabs since those apply regardless of which tab is open.
 function renderAddressProfile(profile) {
     const transactions = profile.transactions || [];
     const votes = profile.votes || [];
@@ -259,7 +280,7 @@ function renderAddressProfile(profile) {
 
     const txSection =
         transactions.length === 0
-            ? `<div class="explorer-empty">No transactions yet.</div>`
+            ? `<tr><td colspan="5" class="explorer-empty">No transactions yet.</td></tr>`
             : transactions.map((tx) => renderTxRow(tx, true)).join("");
 
     const votesSection =
@@ -291,42 +312,16 @@ function renderAddressProfile(profile) {
 
     return `
         <div class="card" style="margin:0;">
-            <h3 style="word-break:break-all;">${formatAddress(profile.address)}</h3>
-
-            <div class="explorer-row">
-                <span>CCT</span>
-                <span>${cctFromSmallest(profile.cctBalance)}</span>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+                <h3 style="word-break:break-all;margin:0;">${formatAddress(profile.address)}</h3>
+                <span class="explorer-addr-badge" title="Looked up by its CreditChain-native address">CreditChain Address</span>
             </div>
 
-            <h4 style="margin-bottom:4px;">Other Balances</h4>
-            ${heldBalancesSection}
-
-            <h4 style="margin-bottom:4px;">Staked</h4>
-            <div class="explorer-row">
-                <span>CCT staked</span>
-                <span>${profile.cctStaked}</span>
+            <div class="explorer-row" style="margin-top:6px;">
+                <span>CCT Balance</span>
+                <span style="font-weight:700;">${cctFromSmallest(profile.cctBalance)} CCT</span>
             </div>
             <div class="explorer-row">
-                <span>ETHTEST staked</span>
-                <span>${profile.ethTestStaked}</span>
-            </div>
-            <div class="explorer-row">
-                <span>oETH (staked-ETHTEST receipt)</span>
-                <span>${profile.oethBalance}</span>
-            </div>
-            <div class="explorer-row">
-                <span>USDCTEST staked</span>
-                <span>${profile.usdcTestStaked}</span>
-            </div>
-            <div class="explorer-row">
-                <span>REPT</span>
-                <span>${profile.reptBalance}</span>
-            </div>
-
-            <h4 style="margin-bottom:4px;">Loans</h4>
-            ${loansSection}
-
-            <div class="explorer-row" style="margin-top:10px;">
                 <span>Reputation</span>
                 <span>${profile.reputation} (${profile.creditTier})</span>
             </div>
@@ -334,14 +329,66 @@ function renderAddressProfile(profile) {
                 <span>Voting Power</span>
                 <span>${profile.votingPower}</span>
             </div>
+
+            <div class="explorer-addr-tabs">
+                <button type="button" class="explorer-addr-tab-btn active" data-addr-tab="assets" onclick="showAddrTab('assets')">Assets</button>
+                <button type="button" class="explorer-addr-tab-btn" data-addr-tab="activity" onclick="showAddrTab('activity')">Activity</button>
+            </div>
+
+            <div class="explorer-addr-tab-panel" data-addr-panel="assets">
+                <h4 style="margin-bottom:4px;">Other Balances</h4>
+                ${heldBalancesSection}
+
+                <h4 style="margin-bottom:4px;">Staked</h4>
+                <div class="explorer-row">
+                    <span>CCT staked</span>
+                    <span>${profile.cctStaked}</span>
+                </div>
+                <div class="explorer-row">
+                    <span>ETHTEST staked</span>
+                    <span>${profile.ethTestStaked}</span>
+                </div>
+                <div class="explorer-row">
+                    <span>oETH (staked-ETHTEST receipt)</span>
+                    <span>${profile.oethBalance}</span>
+                </div>
+                <div class="explorer-row">
+                    <span>USDCTEST staked</span>
+                    <span>${profile.usdcTestStaked}</span>
+                </div>
+                <div class="explorer-row">
+                    <span>REPT</span>
+                    <span>${profile.reptBalance}</span>
+                </div>
+
+                <h4 style="margin-bottom:4px;">Loans</h4>
+                ${loansSection}
+            </div>
+
+            <div class="explorer-addr-tab-panel" data-addr-panel="activity" style="display:none;">
+                <h4 style="margin-bottom:4px;">Transaction History${totalNote}</h4>
+                <div class="explorer-table-scroll">
+                    <table class="explorer-table"><tbody>${txSection}</tbody></table>
+                </div>
+
+                <h4 style="margin-bottom:4px;margin-top:14px;">Governance Votes</h4>
+                ${votesSection}
+            </div>
         </div>
-
-        <h3>Transaction History${totalNote}</h3>
-        ${txSection}
-
-        <h3>Governance Votes</h3>
-        ${votesSection}
     `;
+}
+
+// showAddrTab switches renderAddressProfile's two tabs - plain
+// show/hide on the two known panels, not a generic tab framework,
+// since this page only ever has the one address profile mounted at a
+// time (a fresh search replaces the whole result div, tabs included).
+function showAddrTab(name) {
+    document.querySelectorAll("[data-addr-panel]").forEach((el) => {
+        el.style.display = el.getAttribute("data-addr-panel") === name ? "" : "none";
+    });
+    document.querySelectorAll("[data-addr-tab]").forEach((el) => {
+        el.classList.toggle("active", el.getAttribute("data-addr-tab") === name);
+    });
 }
 
 function renderList(container, items, emptyMessage, rowFn) {
@@ -417,6 +464,17 @@ async function loadExplorer() {
     }
 }
 
+// RESULT_TYPE_LABEL names what was actually found, shown as a small
+// banner above the result itself - per the Explorer design spec, a
+// search should say plainly what kind of thing matched (block /
+// transaction / address) before showing its detail, rather than
+// leaving the visitor to infer that from the shape of what renders.
+const RESULT_TYPE_LABEL = {
+    block: "Block found",
+    transactions: "Transaction found",
+    address: "Address found",
+};
+
 async function runSearch() {
     const input = document.getElementById("explorerSearchInput");
     // normalizeAddress strips an optional "cc" prefix - a no-op for
@@ -433,17 +491,20 @@ async function runSearch() {
         document.getElementById("explorerSearchClearBtn").style.display = "inline-block";
 
         if (!data.found) {
-            resultDiv.innerHTML = `<div class="explorer-empty">No block or transaction matches "${escapeHtml(query)}".</div>`;
+            resultDiv.innerHTML = `<div class="explorer-empty">No block, transaction, or address matches "${escapeHtml(query)}".</div>`;
             return;
         }
 
+        const banner = `<div class="explorer-result-type">${RESULT_TYPE_LABEL[data.type] || "Result found"}</div>`;
+
         if (data.type === "block") {
-            resultDiv.innerHTML = `<div class="block-chain">${renderBlockCube(data.block)}</div>`;
+            resultDiv.innerHTML = banner + `<div class="block-chain">${renderBlockCube(data.block)}</div>`;
         } else if (data.type === "transactions") {
             const rows = data.transactions.map((tx) => renderTxRow(tx, true)).join("");
-            resultDiv.innerHTML = `<div class="explorer-table-scroll"><table class="explorer-table"><tbody>${rows}</tbody></table></div>`;
+            resultDiv.innerHTML =
+                banner + `<div class="explorer-table-scroll"><table class="explorer-table"><tbody>${rows}</tbody></table></div>`;
         } else if (data.type === "address") {
-            resultDiv.innerHTML = renderAddressProfile(data.address);
+            resultDiv.innerHTML = banner + renderAddressProfile(data.address);
         }
     } catch (e) {
         resultDiv.innerHTML = `<div class="explorer-empty">Search failed.</div>`;

@@ -73,19 +73,137 @@
             border-color:#16A34A;
         }
         .tx-summary{
+            font-size:16px;
+            font-weight:600;
+            margin:0 0 14px;
+        }
+
+        /* Status header - icon + text + color together, never color
+           alone (a colorblind visitor, or anyone on a low-color
+           terminal/reader, still gets the word "Confirmed"). */
+        .tx-status-header{
+            display:flex;
+            align-items:center;
+            gap:10px;
+            margin-bottom:10px;
+            flex-wrap:wrap;
+        }
+        .tx-status-icon{
+            font-size:20px;
+            font-weight:700;
+        }
+        .tx-status-text{
             font-size:15px;
-            margin:0 0 16px;
+            font-weight:700;
         }
-        .tx-raw{
-            margin-top:16px;
+        .tx-category-badge{
+            margin-left:auto;
+            font-size:11px;
+            font-weight:600;
+            text-transform:uppercase;
+            letter-spacing:0.5px;
+            color:var(--brand-blue, #2F6BFF);
+            border:1px solid var(--brand-blue, #2F6BFF);
+            border-radius:8px;
+            padding:2px 9px;
         }
-        .tx-raw summary{
+
+        /* Plain sender -> amount -> recipient (or, for a cross-network
+           transaction, source-network -> CreditChain -> destination-
+           network) picture - deliberately just three boxes and an
+           arrow, not a full diagramming library, per the design spec's
+           "simple ASCII/visual flow" ask. */
+        .tx-flow{
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            gap:10px;
+            margin:14px 0 18px;
+            padding:14px 10px;
+            background:#f9fafb;
+            border:1px solid #e5e7eb;
+            border-radius:10px;
+            flex-wrap:wrap;
+        }
+        .tx-flow-node{
+            font-family:monospace;
+            font-size:12px;
+            font-weight:600;
+            padding:8px 12px;
+            background:#ffffff;
+            border:1px solid #d1d5db;
+            border-radius:8px;
+            word-break:break-all;
+            text-align:center;
+        }
+        .tx-flow-arrow{
+            font-size:18px;
+            opacity:0.7;
+            text-align:center;
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            gap:2px;
+        }
+        .tx-flow-amount{
+            font-size:11px;
+            font-weight:700;
+            opacity:1;
+            color:var(--brand-teal, #16B8A6);
+        }
+
+        .tx-actions{
+            display:flex;
+            gap:8px;
+            margin-bottom:18px;
+            flex-wrap:wrap;
+        }
+        .tx-action-btn{
+            font-size:12px;
+            font-weight:600;
+            padding:7px 14px;
+            border-radius:8px;
+            border:1px solid #d1d5db;
+            background:#ffffff;
+            cursor:pointer;
+        }
+        .tx-action-btn:hover{
+            border-color:var(--brand-blue, #2F6BFF);
+            color:var(--brand-blue, #2F6BFF);
+        }
+
+        .tx-section-title{
+            font-size:12px;
+            text-transform:uppercase;
+            letter-spacing:0.5px;
+            opacity:0.6;
+            margin:18px 0 4px;
+        }
+
+        /* Advanced Blockchain Data - kept visually secondary (smaller,
+           collapsed by default, muted) and always below the plain-
+           English summary/flow/transfer-details above it, never the
+           other way around. */
+        .tx-advanced{
+            margin-top:20px;
+            border-top:1px solid #e5e7eb;
+            padding-top:6px;
+        }
+        .tx-advanced summary{
             cursor:pointer;
             font-size:12px;
+            font-weight:600;
             opacity:0.6;
+            padding:6px 0;
+        }
+        .tx-advanced .tx-row{
+            font-size:12px;
+        }
+        .tx-raw{
+            margin-top:12px;
         }
         .tx-raw pre{
-            margin-top:10px;
+            margin-top:6px;
             padding:12px;
             background:#f9fafb;
             border:1px solid #e5e7eb;

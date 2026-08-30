@@ -179,6 +179,57 @@
             padding:10px 0;
         }
 
+        /* Search result type preview - shown above the actual result so
+           a visitor knows what kind of thing matched (block/tx/address)
+           before reading its detail, per the Explorer design spec. */
+        .explorer-result-type{
+            display:inline-block;
+            font-size:11px;
+            font-weight:700;
+            text-transform:uppercase;
+            letter-spacing:0.5px;
+            color:var(--brand-blue, #2F6BFF);
+            border:1px solid var(--brand-blue, #2F6BFF);
+            border-radius:8px;
+            padding:3px 10px;
+            margin-bottom:10px;
+        }
+
+        .explorer-addr-badge{
+            display:inline-block;
+            font-size:11px;
+            font-weight:600;
+            text-transform:uppercase;
+            letter-spacing:0.5px;
+            color:var(--brand-teal, #16B8A6);
+            border:1px solid var(--brand-teal, #16B8A6);
+            border-radius:8px;
+            padding:2px 9px;
+            white-space:nowrap;
+        }
+
+        .explorer-addr-tabs{
+            display:flex;
+            gap:6px;
+            margin:14px 0 10px;
+            border-bottom:1px solid #e5e7eb;
+        }
+        .explorer-addr-tab-btn{
+            background:none;
+            border:none;
+            border-bottom:2px solid transparent;
+            padding:8px 4px;
+            font-size:13px;
+            font-weight:600;
+            opacity:0.55;
+            cursor:pointer;
+        }
+        .explorer-addr-tab-btn.active{
+            opacity:1;
+            border-bottom-color:var(--brand-blue, #2F6BFF);
+            color:var(--brand-blue, #2F6BFF);
+        }
+
         /* Block-shape chain view - each block renders as a connected
            cube instead of a table row, echoing how a real blockchain's
            blocks link to one another. Horizontally scrollable so the
