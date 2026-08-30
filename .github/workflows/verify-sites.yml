@@ -14,17 +14,19 @@ jobs:
     steps:
       - name: Check creditchain.site (node1 / testnet)
         run: |
-          echo "=== creditchain.site : / (full head + first stylesheet links) ==="
+          echo "=== creditchain.site : / ==="
           curl -s -o /dev/null -w "HTTP %{http_code}\n" https://creditchain.site/ || true
-          curl -s https://creditchain.site/ | sed -n '1,20p' || true
-          echo "--- stylesheet links found ---"
-          curl -s https://creditchain.site/ | grep -o '<link[^>]*stylesheet[^>]*>' || true
-          echo
-          echo "=== creditchain.site : design-system.css ==="
-          curl -s -o /dev/null -w "HTTP %{http_code}\n" https://creditchain.site/css/design-system.css || true
-          echo
-          echo "=== creditchain.site : theme.css (known-old file, sanity check) ==="
-          curl -s -o /dev/null -w "HTTP %{http_code}\n" https://creditchain.site/css/theme.css || true
+          echo "=== creditchain.site : /css/ (directory listing?) ==="
+          curl -s https://creditchain.site/css/ | sed -n '1,15p' || true
+          echo "=== creditchain.site : /website/ ==="
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" https://creditchain.site/website/ || true
+          curl -s https://creditchain.site/website/ | sed -n '1,15p' || true
+          echo "=== creditchain.site : /website/index.html ==="
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" https://creditchain.site/website/index.html || true
+          echo "=== creditchain.site : /website/css/design-system.css ==="
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" https://creditchain.site/website/css/design-system.css || true
+          echo "=== creditchain.site : port 8080 (API, sanity check it's alive) ==="
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" https://creditchain.site:8080/ || true
 
       - name: Check service.creditchain.site (mainnet)
         run: |
