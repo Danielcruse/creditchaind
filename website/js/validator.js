@@ -449,13 +449,29 @@ async function produceBlock() {
 // APPROVED - the actual security boundary is server-side
 // (applyValidatorRegister's gate), this is just matching what the page
 // shows to what a wallet can actually do.
+//
+// The staged application pipeline is the CURRENT onboarding path, but
+// not the only way a wallet can already be a real, active validator -
+// core.ValidatorStore (registered via the older direct TxValidatorRegister,
+// or via a completed application from before this gate existed) is the
+// actual source of truth for "is this wallet a validator right now."
+// Checking only the application record left already-registered
+// validators stuck seeing "Steps to Becoming a Validator" on every visit
+// forever, since their own application either never existed or never
+// updated past its original status. GET /validators (the same list the
+// leaderboard already renders) is checked as a second, independent path
+// to validatorApproved=true.
 let validatorApproved = false;
 
 async function checkValidatorApplicationGate() {
     if (!wallet) return;
     try {
-        const app = await apiGet(`/validator-application?address=${wallet.address}`);
-        validatorApproved = app.exists && app.status === "APPROVED";
+        const [app, validators] = await Promise.all([
+            apiGet(`/validator-application?address=${wallet.address}`),
+            apiGet(`/validators`).catch(() => []),
+        ]);
+        const alreadyRegistered = Array.isArray(validators) && validators.some((v) => v.address === wallet.address);
+        validatorApproved = alreadyRegistered || (app.exists && app.status === "APPROVED");
 
         document.getElementById("approvedOnlyContent").style.display = validatorApproved ? "block" : "none";
         document.getElementById("unapprovedContent").style.display = validatorApproved ? "none" : "block";

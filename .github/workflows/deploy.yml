@@ -160,15 +160,16 @@ jobs:
           # Install path and service name aren't secrets (just a filesystem
           # path and a systemd unit name) - found via the discover step and
           # hardcoded here instead of asking for more repo secrets.
-          # DEPLOY_SERVICES deliberately names only the static-website
-          # service: creditchain-mainnet.service is the live blockchain
-          # node and nothing in this deploy touches Go code, so there's no
-          # reason to stop/restart it. The creditchaind binary on disk
-          # still gets replaced (identical content, no source changed this
-          # session) - it just won't be picked up until that service's
-          # next restart for an unrelated reason.
+          # DEPLOY_SERVICES names only the static-website service by
+          # default - creditchain-mainnet.service is the live blockchain
+          # node, and restarting it briefly pauses block production, so it
+          # only gets included when this run's inputs.restart_node is
+          # explicitly true (see that input's own doc comment above). The
+          # creditchaind binary on disk still gets replaced either way -
+          # without restart_node, it just won't be picked up until that
+          # service's next restart for an unrelated reason.
           ssh -i ~/.ssh/deploy_key "${{ secrets.MAINNET_DEPLOY_USER }}@${{ secrets.MAINNET_DEPLOY_HOST }}" \
-            "DEPLOY_BIN_PATH='/opt/creditchain-mainnet/creditchaind' DEPLOY_WEBSITE_PATH='/opt/creditchain-mainnet/website' DEPLOY_SERVICES='creditchain-mainnet-web.service' bash -s" <<'REMOTE'
+            "DEPLOY_BIN_PATH='/opt/creditchain-mainnet/creditchaind' DEPLOY_WEBSITE_PATH='/opt/creditchain-mainnet/website' DEPLOY_SERVICES='creditchain-mainnet-web.service${{ inputs.restart_node && ' creditchain-mainnet.service' || '' }}' bash -s" <<'REMOTE'
             set -e
             echo "Stopping: $DEPLOY_SERVICES"
             sudo systemctl stop $DEPLOY_SERVICES
