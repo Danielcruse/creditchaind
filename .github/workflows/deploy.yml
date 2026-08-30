@@ -152,8 +152,18 @@ jobs:
         run: |
           scp -i ~/.ssh/deploy_key creditchaind-linux-amd64 "${{ secrets.MAINNET_DEPLOY_USER }}@${{ secrets.MAINNET_DEPLOY_HOST }}:/tmp/creditchaind-new"
           scp -i ~/.ssh/deploy_key -r website "${{ secrets.MAINNET_DEPLOY_USER }}@${{ secrets.MAINNET_DEPLOY_HOST }}:/tmp/website-new"
+          # Install path and service name aren't secrets (just a filesystem
+          # path and a systemd unit name) - found via the discover step and
+          # hardcoded here instead of asking for more repo secrets.
+          # DEPLOY_SERVICES deliberately names only the static-website
+          # service: creditchain-mainnet.service is the live blockchain
+          # node and nothing in this deploy touches Go code, so there's no
+          # reason to stop/restart it. The creditchaind binary on disk
+          # still gets replaced (identical content, no source changed this
+          # session) - it just won't be picked up until that service's
+          # next restart for an unrelated reason.
           ssh -i ~/.ssh/deploy_key "${{ secrets.MAINNET_DEPLOY_USER }}@${{ secrets.MAINNET_DEPLOY_HOST }}" \
-            "DEPLOY_BIN_PATH='${{ secrets.MAINNET_DEPLOY_BIN_PATH }}' DEPLOY_WEBSITE_PATH='${{ secrets.MAINNET_DEPLOY_WEBSITE_PATH }}' DEPLOY_SERVICES='${{ secrets.MAINNET_DEPLOY_SERVICES }}' bash -s" <<'REMOTE'
+            "DEPLOY_BIN_PATH='/opt/creditchain-mainnet/creditchaind' DEPLOY_WEBSITE_PATH='/opt/creditchain-mainnet/website' DEPLOY_SERVICES='creditchain-mainnet-web.service' bash -s" <<'REMOTE'
             set -e
             echo "Stopping: $DEPLOY_SERVICES"
             sudo systemctl stop $DEPLOY_SERVICES
