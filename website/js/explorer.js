@@ -259,13 +259,44 @@ function renderLoanRow(loan) {
     `;
 }
 
+// WRAPPED_ASSET_LABEL turns a raw held-balance symbol into the plain
+// name the Explorer design spec asks for - "Wrapped Bitcoin"/"Wrapped
+// Ethereum" over a raw symbol like "BTC_CCC1"/"ETHB". The technical
+// symbol still appears, just as secondary metadata (see
+// heldBalanceRow below), never as the primary label. Symbols not
+// listed here (USDC_CCC1, USDCTEST, REPT, YENE, developer-registered
+// tokens, ...) are already plain enough to show as-is.
+const WRAPPED_ASSET_LABEL = {
+    ETH_CCC1: "Wrapped Ethereum",
+    BTC_CCC1: "Wrapped Bitcoin",
+    STETH_CCC1: "Wrapped Staked Ethereum",
+    ETHB: "Wrapped Ethereum",
+    BTCB: "Wrapped Bitcoin",
+};
+
+function heldBalanceRow(b) {
+    const friendly = WRAPPED_ASSET_LABEL[b.symbol];
+    const label = friendly
+        ? `${friendly} <span style="opacity:0.5;font-size:11px;">${b.symbol}</span>`
+        : b.symbol;
+    return `
+        <div class="explorer-row">
+            <span>${label}</span>
+            <span>${formatSymbolAmount(b.symbol, b.balance)}</span>
+        </div>`;
+}
+
 // renderAddressProfile is the "explorer sheet" for a single address -
-// a CreditChain-native (CCT) address, currently the only kind
-// addressPattern/buildAddressProfile in api/explorer.go can look up
-// (a real 0x-format Ethereum self-custodial address isn't supported by
-// this search yet - see that regex's own doc comment). The badge below
-// says so plainly rather than implying an equivalence with an
-// Ethereum-compatible view this page can't actually produce.
+// either a CreditChain-native (CCT) address or, when the search query
+// itself was a real 0x Ethereum address, the same wallet's profile
+// reached via its linked Ethereum-compatible address (see
+// profile.lookedUpByEthAddress). Per the design spec this is the same
+// wallet identity either way, never a separate product - only the
+// badge and which address is shown "primary" change with which one
+// was actually searched for. A Linked Addresses row only ever appears
+// when profile.ethAddress/profile.address are BOTH populated, i.e. a
+// genuinely registered (signed, account-level-verified) link exists -
+// never inferred or assumed.
 //
 // Split into two tabs per the Explorer design spec: "Assets" (what
 // this address holds right now - balances, staked positions, open
@@ -277,6 +308,24 @@ function renderAddressProfile(profile) {
     const votes = profile.votes || [];
     const heldBalances = profile.heldBalances || [];
     const loans = profile.loans || [];
+
+    // A real-shaped Ethereum address search that found no wallet on
+    // this node has ever registered - honest "nothing known" rather
+    // than a fabricated profile (see api/explorer.go's
+    // HandleExplorerSearch doc comment on this branch).
+    if (profile.lookedUpByEthAddress && !profile.address) {
+        return `
+            <div class="card" style="margin:0;">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+                    <h3 style="word-break:break-all;margin:0;">${profile.ethAddress}</h3>
+                    <span class="explorer-addr-badge" title="Ethereum-compatible address">Ethereum Compatible</span>
+                </div>
+                <div class="explorer-empty" style="margin-top:10px;">
+                    No CreditChain wallet has registered this Ethereum address yet.
+                </div>
+            </div>
+        `;
+    }
 
     const txSection =
         transactions.length === 0
@@ -291,15 +340,7 @@ function renderAddressProfile(profile) {
     const heldBalancesSection =
         heldBalances.length === 0
             ? `<div class="explorer-empty">No other token balances.</div>`
-            : heldBalances
-                  .map(
-                      (b) => `
-            <div class="explorer-row">
-                <span>${b.symbol}</span>
-                <span>${formatSymbolAmount(b.symbol, b.balance)}</span>
-            </div>`
-                  )
-                  .join("");
+            : heldBalances.map(heldBalanceRow).join("");
 
     const loansSection =
         loans.length === 0 ? `<div class="explorer-empty">No loans.</div>` : loans.map(renderLoanRow).join("");
@@ -310,12 +351,30 @@ function renderAddressProfile(profile) {
             ? ` (showing most recent ${shownCount} of ${profile.transactionsTotal})`
             : "";
 
+    // primaryAddress/primaryBadge is whichever address the search
+    // query itself named; linkedAddress/linkedLabel (if any) is its
+    // verified counterpart, shown as a secondary "Linked Addresses"
+    // row - never the reverse, and never shown at all when no link is
+    // on file.
+    const primaryAddress = profile.lookedUpByEthAddress ? profile.ethAddress : formatAddress(profile.address);
+    const primaryBadge = profile.lookedUpByEthAddress ? "Ethereum Compatible" : "CreditChain Native";
+    const linkedAddress = profile.lookedUpByEthAddress ? profile.address && formatAddress(profile.address) : profile.ethAddress;
+    const linkedLabel = profile.lookedUpByEthAddress ? "CreditChain Native" : "Ethereum Compatible";
+    const linkedSection = linkedAddress
+        ? `
+            <div class="explorer-row" style="margin-top:6px;">
+                <span>Linked Address <span style="opacity:0.5;font-size:11px;">(${linkedLabel})</span></span>
+                <span style="word-break:break-all;">${linkedAddress}</span>
+            </div>`
+        : "";
+
     return `
         <div class="card" style="margin:0;">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
-                <h3 style="word-break:break-all;margin:0;">${formatAddress(profile.address)}</h3>
-                <span class="explorer-addr-badge" title="Looked up by its CreditChain-native address">CreditChain Address</span>
+                <h3 style="word-break:break-all;margin:0;">${primaryAddress}</h3>
+                <span class="explorer-addr-badge" title="${profile.lookedUpByEthAddress ? "Ethereum-compatible address" : "CreditChain-native address"}">${primaryBadge}</span>
             </div>
+            ${linkedSection}
 
             <div class="explorer-row" style="margin-top:6px;">
                 <span>CCT Balance</span>
@@ -472,8 +531,17 @@ async function loadExplorer() {
 const RESULT_TYPE_LABEL = {
     block: "Block found",
     transactions: "Transaction found",
-    address: "Address found",
 };
+
+// addressResultTypeLabel is RESULT_TYPE_LABEL's counterpart for a
+// found address - distinguishes which of the two address kinds the
+// design spec calls out (CreditChain Native vs Ethereum Compatible)
+// rather than a single generic "Address found", so the search result
+// preview says plainly which one matched before the visitor reads any
+// further detail.
+function addressResultTypeLabel(profile) {
+    return profile && profile.lookedUpByEthAddress ? "Wallet found (Ethereum Compatible)" : "Wallet found (CreditChain Native)";
+}
 
 async function runSearch() {
     const input = document.getElementById("explorerSearchInput");
@@ -495,7 +563,8 @@ async function runSearch() {
             return;
         }
 
-        const banner = `<div class="explorer-result-type">${RESULT_TYPE_LABEL[data.type] || "Result found"}</div>`;
+        const bannerText = data.type === "address" ? addressResultTypeLabel(data.address) : RESULT_TYPE_LABEL[data.type] || "Result found";
+        const banner = `<div class="explorer-result-type">${bannerText}</div>`;
 
         if (data.type === "block") {
             resultDiv.innerHTML = banner + `<div class="block-chain">${renderBlockCube(data.block)}</div>`;

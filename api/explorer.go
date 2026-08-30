@@ -204,6 +204,15 @@ type ExplorerSearchResponse struct {
 // have zero activity yet.
 var addressPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
+// ethAddressPattern matches a real 0x-prefixed, self-custodial Ethereum
+// address, as registered via HandleEthRegisterAddress - the "ETH_CCC1"/
+// "Ethereum-compatible" address the Explorer design spec asks to be
+// searchable, distinct from addressPattern's plain CCT address shape.
+// Case-insensitive on the hex digits since Ethereum addresses are
+// themselves case-insensitive (EIP-55 checksum casing is a client-side
+// typo check only - see normalizeEthAddress's doc comment).
+var ethAddressPattern = regexp.MustCompile(`^0x[0-9a-fA-F]{40}$`)
+
 // maxAddressProfileTransactions/Votes cap how much history a single
 // search result carries - the same "windowed, not an endless dump"
 // principle already applied to the main block/transaction lists (see
@@ -295,6 +304,24 @@ type AddressProfile struct {
 	TransactionsTotal int               `json:"transactionsTotal"`
 
 	Votes []AddressVoteRecord `json:"votes"`
+
+	// EthAddress is the real 0x self-custodial Ethereum address this
+	// wallet has registered (core.EthAddressStore, set via
+	// HandleEthRegisterAddress) - empty if none. That registration is
+	// itself a signed request from this wallet's own key, so this is a
+	// genuinely account-level-verified link, never a guess - see the
+	// Explorer design spec's "only display linked relationships when
+	// cryptographically or account-level verified" rule. Populated
+	// whenever a link exists, regardless of whether this profile was
+	// reached by searching Address or EthAddress itself.
+	EthAddress string `json:"ethAddress,omitempty"`
+
+	// LookedUpByEthAddress is true when the search query that produced
+	// this profile was EthAddress itself, not Address - lets the
+	// Explorer badge the Ethereum-compatible address as the one actually
+	// searched for (with Address shown as its linked CreditChain-native
+	// counterpart), rather than always defaulting to the reverse.
+	LookedUpByEthAddress bool `json:"lookedUpByEthAddress,omitempty"`
 }
 
 // buildAddressProfile walks the full chain newest-block-first exactly
@@ -438,6 +465,11 @@ func buildAddressProfile(address string) AddressProfile {
 		}
 	}
 
+	ethAddress := ""
+	if watched, ok := ethAddressStore.Get(address); ok {
+		ethAddress = normalizeEthAddress(watched.EthAddress)
+	}
+
 	return AddressProfile{
 		Address: address,
 
@@ -459,7 +491,25 @@ func buildAddressProfile(address string) AddressProfile {
 		TransactionsTotal: total,
 
 		Votes: votes,
+
+		EthAddress: ethAddress,
 	}
+}
+
+// findCctAddressForEthAddress reverse-scans ethAddressStore (keyed by
+// CCT address) for the wallet that registered the given real Ethereum
+// address - the search direction api/subaddress.go's
+// resolveBalanceAddress never needs, since it always starts from the
+// CCT side already knowing which wallet it's resolving for. A linear
+// scan is fine at this project's scale, matching buildAddressProfile's
+// own full-chain-walk-per-search precedent just above.
+func findCctAddressForEthAddress(ethAddress string) (string, bool) {
+	for cctAddr, watched := range ethAddressStore.Snapshot() {
+		if normalizeEthAddress(watched.EthAddress) == ethAddress {
+			return cctAddr, true
+		}
+	}
+	return "", false
 }
 
 // HandleExplorerSearch resolves a query against the full chain, not just
@@ -519,6 +569,36 @@ func HandleExplorerSearch(w http.ResponseWriter, r *http.Request) {
 		resp.Found = true
 		resp.Type = "address"
 		resp.Address = &profile
+	} else if ethAddressPattern.MatchString(query) {
+		// A real Ethereum-compatible (ETH_CCC1) address - reverse-look-up
+		// which CCT wallet registered it (a signed, account-level-verified
+		// link - see AddressProfile.EthAddress's doc comment) and return
+		// THAT wallet's full profile, badged as having been reached via
+		// its Ethereum-compatible address rather than its native one; per
+		// the design spec, this is the same wallet identity, not a
+		// separate product.
+		normalized := normalizeEthAddress(query)
+		if cctAddr, ok := findCctAddressForEthAddress(normalized); ok {
+			profile := buildAddressProfile(cctAddr)
+			profile.LookedUpByEthAddress = true
+			resp.Found = true
+			resp.Type = "address"
+			resp.Address = &profile
+		} else {
+			// Real address shape, but no wallet on this node has ever
+			// registered it - an honest "nothing known" profile rather
+			// than fabricating a CreditChain identity for it.
+			resp.Found = true
+			resp.Type = "address"
+			resp.Address = &AddressProfile{
+				EthAddress:           normalized,
+				LookedUpByEthAddress: true,
+				HeldBalances:         []HeldTokenBalance{},
+				Loans:                []AddressLoanView{},
+				Transactions:         []TransactionView{},
+				Votes:                []AddressVoteRecord{},
+			}
+		}
 	}
 
 	json.NewEncoder(w).Encode(resp)
