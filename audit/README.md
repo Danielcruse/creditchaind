@@ -22,6 +22,12 @@ read `outputs/` to see what past reviews actually found.
 
 ## Contents
 
+0. **`AUDIT_ENGAGEMENT_BRIEF.md`** — start here if you're a prospective
+   auditor deciding whether to take this on. A short, standalone cover
+   note: current audit status stated plainly, the one Critical finding
+   that can't wait for a full engagement, suggested scope, and what
+   "audited" will actually mean once this is done. Everything below is
+   the deeper material it points into.
 1. **`ARCHITECTURE.md`** — what the system is, how it's laid out, the
    transaction-authenticity model, consensus/networking model, the token
    model, the CCT order book, and a pointer to the five areas an auditor
