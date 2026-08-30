@@ -214,17 +214,28 @@
             margin:14px 0 10px;
             border-bottom:1px solid #e5e7eb;
         }
-        .explorer-addr-tab-btn{
+        /* Qualified as .card .explorer-addr-tab-btn (two classes,
+           specificity 0-2-0), not just .explorer-addr-tab-btn alone
+           (0-1-0) - outernet.css's ".card button" rule (0-1-1) is more
+           specific than a single class and was otherwise winning,
+           painting these as solid teal pill buttons instead of the
+           plain underlined tabs intended here. */
+        .card .explorer-addr-tab-btn{
             background:none;
             border:none;
             border-bottom:2px solid transparent;
+            margin:0;
             padding:8px 4px;
             font-size:13px;
             font-weight:600;
+            color:inherit;
             opacity:0.55;
             cursor:pointer;
         }
-        .explorer-addr-tab-btn.active{
+        .card .explorer-addr-tab-btn:hover{
+            transform:none;
+        }
+        .card .explorer-addr-tab-btn.active{
             opacity:1;
             border-bottom-color:var(--brand-blue, #2F6BFF);
             color:var(--brand-blue, #2F6BFF);
