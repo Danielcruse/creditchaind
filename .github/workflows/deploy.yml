@@ -1,20 +1,36 @@
-name: Deploy to node1
+name: Deploy
 
 # Manual-trigger only, by design - nothing here ever runs on a push.
 # Runs on GitHub's own runners (which have normal internet access,
 # unlike the sandboxed dev environment this was authored in) so it can
 # actually reach the production server.
 #
+# `target` selects which deployment this run touches - node1
+# (creditchain.site, testnet) or mainnet (service.creditchain.site,
+# the official mainnet handle). Each target has its own, separately
+# named set of secrets (DEPLOY_* for node1, MAINNET_DEPLOY_* for
+# mainnet) so configuring one can never accidentally affect the
+# other, and a target with no secrets configured yet just has nothing
+# to do rather than silently deploying to the wrong host.
+#
 # Default mode is "discover": a read-only probe that reports the real
-# install path/service names on node1 without changing anything. Run
-# that first, fill in the *_PATH/*_SERVICES secrets from its output,
-# then re-run in "deploy" mode.
+# install path/service names on the target without changing anything.
+# Run that first, fill in the *_PATH/*_SERVICES secrets for that
+# target from its output, then re-run in "deploy" mode.
 
 on:
   workflow_dispatch:
     inputs:
+      target:
+        description: "node1 = creditchain.site (testnet). mainnet = service.creditchain.site (official mainnet)."
+        required: true
+        default: node1
+        type: choice
+        options:
+          - node1
+          - mainnet
       mode:
-        description: "discover = read-only probe of node1's layout. deploy = stop services, replace binary+website, restart."
+        description: "discover = read-only probe of the target's layout. deploy = stop services, replace binary+website, restart."
         required: true
         default: discover
         type: choice
@@ -35,15 +51,34 @@ jobs:
       - name: Build linux/amd64 binary
         run: GOOS=linux GOARCH=amd64 go build -o creditchaind-linux-amd64 .
 
-      - name: Set up SSH
+      - name: Set up SSH (node1)
+        if: ${{ inputs.target == 'node1' }}
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
+      - name: Set up SSH (mainnet)
+        if: ${{ inputs.target == 'mainnet' }}
+        run: |
+          mkdir -p ~/.ssh
+          # MAINNET_DEPLOY_SSH_KEY holds the private key base64-encoded as
+          # ONE line, not the raw multi-line PEM - two prior attempts with
+          # a raw multi-line paste both failed ssh-keygen's parser despite
+          # a correct line count, almost certainly clipboard-introduced
+          # CRLF/whitespace corruption from a Windows copy-paste. A single
+          # base64 line has no embedded newlines for a clipboard to mangle.
+          printf '%s' "${{ secrets.MAINNET_DEPLOY_SSH_KEY }}" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.MAINNET_DEPLOY_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+          echo "--- key line count (expect 7 for a plain ed25519 OpenSSH key) ---"
+          wc -l ~/.ssh/deploy_key
+          echo "--- attempting to parse the key locally (fingerprint only, never the key itself) ---"
+          ssh-keygen -l -f ~/.ssh/deploy_key || echo "KEY FAILED TO PARSE - the MAINNET_DEPLOY_SSH_KEY secret is not valid base64 of a real key file"
+
       - name: Discover node1 layout (read-only)
-        if: ${{ inputs.mode == 'discover' }}
+        if: ${{ inputs.target == 'node1' && inputs.mode == 'discover' }}
         run: |
           ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
             echo "--- creditchain-related systemd units ---"
@@ -67,13 +102,58 @@ jobs:
             done
           '
 
-      - name: Deploy binary + website (real change)
-        if: ${{ inputs.mode == 'deploy' }}
+      - name: Discover mainnet layout (read-only)
+        if: ${{ inputs.target == 'mainnet' && inputs.mode == 'discover' }}
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.MAINNET_DEPLOY_USER }}@${{ secrets.MAINNET_DEPLOY_HOST }}" '
+            echo "--- creditchain-related systemd units ---"
+            systemctl list-units --type=service --all 2>/dev/null | grep -i creditchain || echo "(none found via list-units)"
+            echo
+            echo "--- likely install directories ---"
+            for d in /opt/creditchain /opt/creditchaind /srv/creditchain /home/*/creditchain*; do
+              if [ -e "$d" ]; then
+                echo "$d:"
+                ls -la "$d" 2>&1
+                echo
+              fi
+            done
+            echo "--- running creditchaind process(es) and their binary path ---"
+            pgrep -fa creditchaind || echo "(none running)"
+            echo
+            echo "--- unit file contents, if found ---"
+            for u in $(systemctl list-units --type=service --all 2>/dev/null | grep -i creditchain | awk "{print \$1}"); do
+              echo "== $u =="
+              systemctl cat "$u" 2>&1
+            done
+          '
+
+      - name: Deploy binary + website to node1 (real change)
+        if: ${{ inputs.target == 'node1' && inputs.mode == 'deploy' }}
         run: |
           scp -i ~/.ssh/deploy_key creditchaind-linux-amd64 "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/creditchaind-new"
           scp -i ~/.ssh/deploy_key -r website "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/website-new"
           ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
             "DEPLOY_BIN_PATH='${{ secrets.DEPLOY_BIN_PATH }}' DEPLOY_WEBSITE_PATH='${{ secrets.DEPLOY_WEBSITE_PATH }}' DEPLOY_SERVICES='${{ secrets.DEPLOY_SERVICES }}' bash -s" <<'REMOTE'
+            set -e
+            echo "Stopping: $DEPLOY_SERVICES"
+            sudo systemctl stop $DEPLOY_SERVICES
+            sudo cp "$DEPLOY_BIN_PATH" "$DEPLOY_BIN_PATH.bak.$(date +%s)"
+            sudo mv /tmp/creditchaind-new "$DEPLOY_BIN_PATH"
+            sudo chmod +x "$DEPLOY_BIN_PATH"
+            sudo rsync -a --delete /tmp/website-new/ "$DEPLOY_WEBSITE_PATH"/
+            echo "Starting: $DEPLOY_SERVICES"
+            sudo systemctl start $DEPLOY_SERVICES
+            sleep 2
+            systemctl is-active $DEPLOY_SERVICES
+          REMOTE
+
+      - name: Deploy binary + website to mainnet (real change)
+        if: ${{ inputs.target == 'mainnet' && inputs.mode == 'deploy' }}
+        run: |
+          scp -i ~/.ssh/deploy_key creditchaind-linux-amd64 "${{ secrets.MAINNET_DEPLOY_USER }}@${{ secrets.MAINNET_DEPLOY_HOST }}:/tmp/creditchaind-new"
+          scp -i ~/.ssh/deploy_key -r website "${{ secrets.MAINNET_DEPLOY_USER }}@${{ secrets.MAINNET_DEPLOY_HOST }}:/tmp/website-new"
+          ssh -i ~/.ssh/deploy_key "${{ secrets.MAINNET_DEPLOY_USER }}@${{ secrets.MAINNET_DEPLOY_HOST }}" \
+            "DEPLOY_BIN_PATH='${{ secrets.MAINNET_DEPLOY_BIN_PATH }}' DEPLOY_WEBSITE_PATH='${{ secrets.MAINNET_DEPLOY_WEBSITE_PATH }}' DEPLOY_SERVICES='${{ secrets.MAINNET_DEPLOY_SERVICES }}' bash -s" <<'REMOTE'
             set -e
             echo "Stopping: $DEPLOY_SERVICES"
             sudo systemctl stop $DEPLOY_SERVICES
