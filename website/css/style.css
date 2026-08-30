@@ -110,8 +110,8 @@ button{
     background:
         linear-gradient(
             90deg,
-            var(--cc-accent-1, #0f9d58),
-            var(--cc-accent-2, #16c46f)
+            var(--cc-accent-1, #1D4ED8),
+            var(--cc-accent-2, #2F6BFF)
         );
 
     color:white;
@@ -139,7 +139,7 @@ button:hover{
 
     box-shadow:
         0 0 20px
-        var(--cc-accent-2, #16c46f);
+        var(--cc-accent-2, #2F6BFF);
 }
 
 .sidebar{

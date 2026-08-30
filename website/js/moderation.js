@@ -107,7 +107,7 @@ async function refreshAssignedTrades() {
                 rows.push(
                     `<p>P2P Offer ${o.ID} (external): ${o.OfferAmount} ${o.OfferSymbol} for ${o.WantAmount} ${o.WantSymbol} (off-app), ` +
                     `creator ${o.Creator.slice(0, 8)}... - settlement ${o.SettlementStatus || "-"}${disputeNote} ` +
-                    `<a href="p2p" style="color:var(--cc-accent-gold, #c9a227);">Open on Marketplace (P2P)</a></p>`
+                    `<a href="p2p" style="color:var(--cc-accent-gold, #16B8A6);">Open on Marketplace (P2P)</a></p>`
                 );
                 return;
             }

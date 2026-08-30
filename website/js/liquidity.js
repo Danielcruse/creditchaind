@@ -74,7 +74,7 @@ async function loadPoolInfo(symbol) {
 
         document.getElementById("liqPoolInfo").innerHTML = `
             <p>Reserves: ${cctReserveDisplay} CCT / ${info.tokenReserve} ${symbol}</p>
-            <p style="color:${info.tradeable ? "#059669" : "#dc2626"};">${statusLine}</p>
+            <p style="color:${info.tradeable ? "#16A34A" : "#dc2626"};">${statusLine}</p>
             <p>Your LP shares: ${info.yourShares ? cctFromSmallest(info.yourShares) : 0} of ${cctFromSmallest(info.totalShares)} total</p>
             ${balanceLine}
         `;

@@ -152,7 +152,7 @@ async function refreshBalances() {
     if (!btcAddressMatchesNetwork(btcAccount.address)) {
         document.getElementById("realBtcAddress").innerHTML =
             `${btcAccount.address} - derived for the other network. ` +
-            `<a href="btc-network-fix" style="color:var(--cc-accent-gold, #c9a227);">Re-enter your recovery phrase to fix it &rarr;</a>`;
+            `<a href="btc-network-fix" style="color:var(--cc-accent-gold, #16B8A6);">Re-enter your recovery phrase to fix it &rarr;</a>`;
         document.getElementById("realBtcBalance").innerText = "Wrong network for this address";
         document.getElementById("modeBtcBtn").disabled = true;
         return;
@@ -370,7 +370,7 @@ async function confirmSend() {
                 return;
             }
 
-            statusEl.innerHTML = `Sent - <a href="${BTC_EXPLORER_BASE}${result.txid}" target="_blank" rel="noopener" style="color:var(--cc-accent-gold, #c9a227);">view on ${BTC_EXPLORER_NAME}</a><br>Returning to your wallet shortly...`;
+            statusEl.innerHTML = `Sent - <a href="${BTC_EXPLORER_BASE}${result.txid}" target="_blank" rel="noopener" style="color:var(--cc-accent-gold, #16B8A6);">view on ${BTC_EXPLORER_NAME}</a><br>Returning to your wallet shortly...`;
 
             let attempts = 0;
             const poll = setInterval(async () => {

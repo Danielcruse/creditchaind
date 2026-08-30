@@ -191,7 +191,7 @@ function reputationBadge(tx) {
     if (!tx.reputationDelta) return "";
     const positive = tx.reputationDelta > 0;
     const sign = positive ? "+" : "";
-    const color = positive ? "#0f9d58" : "#ff6b6b";
+    const color = positive ? "#16A34A" : "#ff6b6b";
     const target = tx.reputationTarget ? ` for ${shortHash(tx.reputationTarget)}` : "";
     return `<span style="color:${color};font-weight:600;font-size:11px;border:1px solid ${color};border-radius:8px;padding:1px 7px;" title="Reputation change${target}">${sign}${tx.reputationDelta} rep</span>`;
 }
@@ -206,7 +206,7 @@ function renderTxRow(tx, confirmed) {
     const label = confirmed ? "confirmed" : "pending";
     const time = tx.Timestamp ? new Date(tx.Timestamp * 1000).toLocaleString() : "-";
     const idDisplay = confirmed
-        ? `<a href="tx?id=${encodeURIComponent(tx.ID)}" style="color:#0f9d58;">${shortHash(tx.ID)}</a>`
+        ? `<a href="tx?id=${encodeURIComponent(tx.ID)}" style="color:#16A34A;">${shortHash(tx.ID)}</a>`
         : shortHash(tx.ID);
     const amount = formatTxAmount(tx);
     const amountPrefix = amount === "" ? "" : `${amount} `;

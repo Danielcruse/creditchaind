@@ -339,7 +339,7 @@ async function render() {
                             : "";
 
             const systemBadge = p.SystemGenerated
-                ? `<span style="opacity:0.7;color:#c9a227;">[System-generated]</span>`
+                ? `<span style="opacity:0.7;color:#16B8A6;">[System-generated]</span>`
                 : "";
 
             let statusBadge;
@@ -571,10 +571,10 @@ async function loadVotingBallots() {
                         const deadlineLine = b.deadline
                             ? `Voting ends ${new Date(b.deadline * 1000).toLocaleString()}${remainingMs > 0 ? " (" + formatCountdown(remainingMs) + " left)" : " (closing soon)"}`
                             : "";
-                        const systemBadge = b.systemGenerated ? `<span style="opacity:0.7;color:#c9a227;">[System-generated]</span>` : "";
+                        const systemBadge = b.systemGenerated ? `<span style="opacity:0.7;color:#16B8A6;">[System-generated]</span>` : "";
                         const promoted = b.promotedUntil > Date.now() / 1000;
                         const promotedBadge = promoted
-                            ? `<span style="opacity:0.85;color:#c9a227;">[Promoted, ${formatCountdown(b.promotedUntil * 1000 - Date.now())} left]</span>`
+                            ? `<span style="opacity:0.85;color:#16B8A6;">[Promoted, ${formatCountdown(b.promotedUntil * 1000 - Date.now())} left]</span>`
                             : "";
 
                         if (b.kind === "PREDICTION") {
@@ -694,7 +694,7 @@ async function loadPredictionPool(proposalId) {
             </div>
         `;
         if (pool.Resolved) {
-            html += `<p style="font-size:12px;color:#c9a227;margin:2px 0;">Resolved - winning side: ${pool.WinningSide}${pool.BonusMinted ? ` (patience bonus minted: ${pool.BonusMinted} RC)` : ""}</p>`;
+            html += `<p style="font-size:12px;color:#16B8A6;margin:2px 0;">Resolved - winning side: ${pool.WinningSide}${pool.BonusMinted ? ` (patience bonus minted: ${pool.BonusMinted} RC)` : ""}</p>`;
             if (wallet && Array.isArray(pool.Infusions)) {
                 const mine = pool.Infusions.find((i) => i.Address === wallet.address);
                 if (mine) {

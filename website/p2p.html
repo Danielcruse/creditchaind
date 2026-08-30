@@ -4,6 +4,7 @@
     <title>Marketplace (P2P)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+<link rel="stylesheet" href="css/design-system.css?v=1">
     <link rel="stylesheet" href="css/style.css?v=fixaug5c">
     <link rel="stylesheet" href="css/outernet.css?v=fixaug5d">
     <style>
@@ -130,8 +131,8 @@
         }
         .hub-mode-toggle button.active{
             opacity:1;
-            border-color:var(--cc-accent-gold, #c9a227);
-            background:rgba(201,162,39,0.15);
+            border-color:var(--cc-accent-gold, #16B8A6);
+            background:rgba(22,184,166,0.15);
         }
         .hub-marketplace-col h3{
             text-align:center;
@@ -225,28 +226,28 @@
             left:50%;
             transform:translateX(-50%);
             z-index:10002;
-            background:var(--cc-bg-2, #082616);
-            border:1px solid var(--cc-accent-gold, #c9a227);
+            background:var(--cc-bg-2, #0B1628);
+            border:1px solid var(--cc-accent-gold, #16B8A6);
             border-radius:10px;
             padding:10px 18px;
             font-size:13px;
             box-shadow:0 10px 30px rgba(0,0,0,0.5);
         }
         #activeTradesToggle{
-            background:linear-gradient(90deg,var(--cc-accent-1, #0f9d58),var(--cc-accent-2, #16c46f));
+            background:linear-gradient(90deg,var(--cc-accent-1, #1D4ED8),var(--cc-accent-2, #2F6BFF));
             color:white;
             padding:10px 16px;
             border-radius:10px;
             cursor:pointer;
             font-size:13px;
             font-weight:600;
-            box-shadow:0 0 20px rgba(16,196,111,0.4);
+            box-shadow:0 0 20px rgba(47,107,255,0.4);
             border:none;
         }
         #activeTradesList{
             display:none;
             margin-top:8px;
-            background:var(--cc-bg-2, #082616);
+            background:var(--cc-bg-2, #0B1628);
             border:1px solid rgba(255,255,255,0.15);
             border-radius:10px;
             padding:6px;
@@ -292,7 +293,7 @@
             z-index:10001;
         }
         .rules-modal-box{
-            background:var(--cc-bg-2, #082616);
+            background:var(--cc-bg-2, #0B1628);
             border-radius:16px;
             padding:24px;
             width:min(500px, 90vw);
@@ -366,7 +367,7 @@
             white-space:nowrap;
         }
         .p2p-chat-starter-chip:hover{
-            background:rgba(0,255,149,0.18);
+            background:rgba(47,107,255,0.18);
         }
         #p2pChatClose{
             position:absolute;
@@ -444,7 +445,7 @@
             font-size:22px;
         }
         .p2p-countdown.concluded{
-            color:#00ff95;
+            color:#16A34A;
         }
         .p2p-fraud-warning{
             background:rgba(255,107,107,0.12);
@@ -513,7 +514,7 @@
         }
         .chat-message.mine{
             float:right;
-            background:rgba(0,255,149,0.16);
+            background:rgba(47,107,255,0.20);
             border-bottom-right-radius:2px;
         }
         .chat-message .sender{
@@ -533,8 +534,8 @@
            notices SettlementStatus has newly reached a terminal,
            funds-moved state (see renderP2PChatModal in p2p.js). */
         .p2p-trade-complete-banner{
-            background:rgba(0,255,149,0.12);
-            border:1px solid #00ff95;
+            background:rgba(22,163,74,0.12);
+            border:1px solid #16A34A;
             border-radius:10px;
             padding:10px 14px;
             font-size:13px;
@@ -547,8 +548,8 @@
            before the trade starts) so it's still there to reference
            once payment is actually due. */
         .p2p-payment-instructions{
-            background:rgba(201,162,39,0.08);
-            border:1px solid rgba(201,162,39,0.35);
+            background:rgba(22,184,166,0.08);
+            border:1px solid rgba(22,184,166,0.35);
             border-radius:10px;
             padding:10px 14px;
             font-size:12px;
@@ -566,8 +567,8 @@
            exactly what they'll owe/receive as a distinct confirmation
            step before ever clicking Buy/Sell. */
         .p2p-quote-box{
-            background:rgba(0,255,149,0.08);
-            border:1px solid #00ff95;
+            background:rgba(47,107,255,0.08);
+            border:1px solid #2F6BFF;
             border-radius:10px;
             padding:10px 14px;
             margin:8px 0;
@@ -611,8 +612,8 @@
             font-size:13px;
         }
         .hub-panel-nav-btn.active{
-            background:rgba(0,255,149,0.12);
-            border-color:#00ff95;
+            background:rgba(47,107,255,0.14);
+            border-color:#2F6BFF;
             font-weight:600;
         }
         .hub-panel-content{
@@ -677,9 +678,9 @@
             color:#111827;
         }
         .hub-page-light .hub-mode-toggle button.active{
-            background:#d1fae5;
-            border-color:#059669;
-            color:#065f46;
+            background:#DCE9FF;
+            border-color:#2F6BFF;
+            color:#1D4ED8;
         }
         .hub-page-light .hub-panel-nav-btn{
             background:#f3f4f6;
@@ -687,9 +688,9 @@
             color:#111827;
         }
         .hub-page-light .hub-panel-nav-btn.active{
-            background:#d1fae5;
-            border-color:#059669;
-            color:#065f46;
+            background:#DCE9FF;
+            border-color:#2F6BFF;
+            color:#1D4ED8;
         }
         .hub-page-light .hub-trade-row{
             border:1px solid #e5e7eb;
@@ -744,13 +745,13 @@
 <h1>Marketplace (P2P)</h1>
 
 <p style="font-size:12px;">
-    <a href="p2p-terms" style="color:var(--cc-accent-gold, #c9a227);">These are the terms of the P2P Marketplace</a>
+    <a href="p2p-terms" style="color:var(--cc-accent-gold, #16B8A6);">These are the terms of the P2P Marketplace</a>
     - who may operate a Trading Hub and how identity verification works.
 </p>
 
 <p style="opacity:0.75;font-size:13px;background:rgba(201,162,39,0.1);border:1px solid rgba(201,162,39,0.35);border-radius:10px;padding:10px 14px;">
     OUTERNET is seeking sponsors to infuse capital in exchange for ownership rights.
-    <a href="mailto:luciferdell11star@gmail.com" style="color:var(--cc-accent-gold, #c9a227);">Reach out to discuss becoming a sponsor</a>.
+    <a href="mailto:luciferdell11star@gmail.com" style="color:var(--cc-accent-gold, #16B8A6);">Reach out to discuss becoming a sponsor</a>.
 </p>
 
 <div id="p2pLoggedOut" class="card" style="display:none;">
@@ -762,7 +763,7 @@
     <h2>Trading Hubs</h2>
     <p style="opacity:0.75;font-size:13px;">
         Every trade here goes through a verified Trading Hub - select one below to see what it
-        trades and at what rate. Not verified yet? <a href="companies" style="color:var(--cc-accent-gold, #c9a227);">Apply here</a>.
+        trades and at what rate. Not verified yet? <a href="companies" style="color:var(--cc-accent-gold, #16B8A6);">Apply here</a>.
     </p>
     <div id="connectedHubBanner" style="display:none;"></div>
     <div class="explorer-search" style="margin-bottom:10px;">

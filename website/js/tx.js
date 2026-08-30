@@ -95,7 +95,7 @@ async function loadTxDetail() {
         const reputation = tx.reputationDelta
             ? txRow(
                   "Reputation",
-                  `<span style="color:${tx.reputationDelta > 0 ? "#0f9d58" : "#ff6b6b"};">${tx.reputationDelta > 0 ? "+" : ""}${tx.reputationDelta}</span>` +
+                  `<span style="color:${tx.reputationDelta > 0 ? "#16A34A" : "#ff6b6b"};">${tx.reputationDelta > 0 ? "+" : ""}${tx.reputationDelta}</span>` +
                       (tx.reputationTarget ? ` for ${formatAddress(tx.reputationTarget)}` : "")
               )
             : "";
@@ -104,7 +104,7 @@ async function loadTxDetail() {
         const externalLinkRow = tx.externalTxLink
             ? txRow(
                   "External Tx",
-                  `<a href="${tx.externalTxLink}" target="_blank" rel="noopener" style="color:var(--cc-accent-gold, #c9a227);">${tx.externalTxHash}</a>` +
+                  `<a href="${tx.externalTxLink}" target="_blank" rel="noopener" style="color:var(--cc-accent-gold, #16B8A6);">${tx.externalTxHash}</a>` +
                       `<br><span style="opacity:0.55;font-size:11px;">CreditChain bridged this - view the real transaction on the external network</span>`
               )
             : "";

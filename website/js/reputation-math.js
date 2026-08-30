@@ -11,7 +11,7 @@ function tierRewardRow(reward) {
     return `
         <div class="explorer-row">
             <span>Reach ${reward.tier}</span>
-            <span style="color:#0f9d58;font-weight:600;">+${reward.reptReward} REPT (one-time)</span>
+            <span style="color:#16A34A;font-weight:600;">+${reward.reptReward} REPT (one-time)</span>
         </div>
     `;
 }
@@ -19,7 +19,7 @@ function tierRewardRow(reward) {
 function mechanismRow(m) {
     const positive = m.delta > 0;
     const sign = positive ? "+" : "";
-    const color = positive ? "#0f9d58" : "#ff6b6b";
+    const color = positive ? "#16A34A" : "#ff6b6b";
     const wiredBadge = m.wired
         ? ""
         : `<div style="margin-top:4px;"><span style="color:#ffb020;font-weight:600;font-size:11px;border:1px solid #ffb020;border-radius:8px;padding:1px 7px;">defined, not yet wired</span></div>`;

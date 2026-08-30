@@ -271,7 +271,7 @@ function renderConnectedHubBanner() {
     }
     banner.style.display = "block";
     banner.innerHTML = `
-        <div class="card" style="border:2px solid var(--cc-accent-gold, #c9a227);margin-bottom:10px;">
+        <div class="card" style="border:2px solid var(--cc-accent-gold, #16B8A6);margin-bottom:10px;">
             <p style="margin:0;font-size:13px;">
                 Continue trading with <strong>${escapeHtml(hubName || "your Trading Hub")}</strong>
                 <button style="margin-left:10px;" onclick="viewHub('${connectedHub}')">Open &rarr;</button>
@@ -349,7 +349,7 @@ function renderHubDirectoryCards(companies, isFiltered) {
         <div class="hub-card">
             <div class="hub-card-namerow">
                 <span class="hub-card-name">${escapeHtml(c.Name)}</span>
-                <span class="hub-card-badge" title="Moderator-reviewed testnet badge - not real KYC/AML" style="color:var(--cc-accent-gold, #c9a227);">&#9989; Verified</span>
+                <span class="hub-card-badge" title="Moderator-reviewed testnet badge - not real KYC/AML" style="color:var(--cc-accent-gold, #16B8A6);">&#9989; Verified</span>
             </div>
             <button class="hub-view-btn" onclick="viewHub('${c.Address}')">View</button>
         </div>`

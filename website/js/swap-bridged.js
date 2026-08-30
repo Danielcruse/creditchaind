@@ -278,7 +278,7 @@ async function loadNetworkAddresses() {
             document.getElementById("btcNetAddress").innerText = "No self-custodial BTC account found - migrate your wallet first.";
         } else if (!btcAddressMatchesNetwork(btcAddr)) {
             document.getElementById("btcNetAddress").innerHTML =
-                `${btcAddr}<br><a href="btc-network-fix" style="color:var(--cc-accent-gold, #c9a227);">This was derived for the other network - fix it &rarr;</a>`;
+                `${btcAddr}<br><a href="btc-network-fix" style="color:var(--cc-accent-gold, #16B8A6);">This was derived for the other network - fix it &rarr;</a>`;
         } else {
             document.getElementById("btcNetAddress").innerText = btcAddr;
         }

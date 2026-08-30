@@ -165,7 +165,7 @@ async function confirmSend() {
         const txHash = result.txHash;
 
         const explorerBase = window.CC_NETWORK === "mainnet" ? "https://etherscan.io/tx/" : "https://sepolia.etherscan.io/tx/";
-        statusEl.innerHTML = `Sent - <a href="${explorerBase}${txHash}" target="_blank" rel="noopener" style="color:var(--cc-accent-gold, #c9a227);">view on Etherscan</a><br>Returning to your wallet shortly...`;
+        statusEl.innerHTML = `Sent - <a href="${explorerBase}${txHash}" target="_blank" rel="noopener" style="color:var(--cc-accent-gold, #16B8A6);">view on Etherscan</a><br>Returning to your wallet shortly...`;
 
         let attempts = 0;
         const poll = setInterval(async () => {

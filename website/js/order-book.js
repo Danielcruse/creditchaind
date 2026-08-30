@@ -186,7 +186,7 @@ async function obLoadMyOrders() {
             .map(
                 (o) => `
                     <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:6px 0;border-bottom:1px solid #f3f4f6;">
-                        <span style="color:${o.Side === "BUY" ? "#059669" : "#dc2626"};font-weight:700;">${o.Side}</span>
+                        <span style="color:${o.Side === "BUY" ? "#16A34A" : "#dc2626"};font-weight:700;">${o.Side}</span>
                         <span>${(o.Price / PRICE_SCALE).toFixed(6)} CCT</span>
                         <span class="pool-muted">${o.Remaining}/${o.Amount} ${o.Symbol}</span>
                         <button class="pool-btn pool-btn-secondary" onclick="obCancelOrder('${o.ID}')">Cancel</button>

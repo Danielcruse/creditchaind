@@ -23,7 +23,7 @@ async function loadCompanies() {
             .map((c) => {
                 const badge = c.Status === "VERIFIED" ? " ✅ Verified" : c.Status === "REJECTED" ? " ❌ Rejected" : " ⏳ Pending review";
                 const isHighlighted = highlightAddress && c.Address === highlightAddress;
-                const rowStyle = isHighlighted ? " style=\"border:1px solid var(--cc-accent-gold, #c9a227);border-radius:8px;background:rgba(201,162,39,0.08);\"" : "";
+                const rowStyle = isHighlighted ? " style=\"border:1px solid var(--cc-accent-gold, #16B8A6);border-radius:8px;background:rgba(22,184,166,0.08);\"" : "";
                 return `
                 <div class="explorer-row" id="company-${escapeHtml(c.Address)}"${rowStyle}>
                     <span><strong>${escapeHtml(c.Name)}</strong>${badge}</span>

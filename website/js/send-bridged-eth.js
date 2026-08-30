@@ -262,7 +262,7 @@ async function confirmSend() {
             statusEl.innerText = "Broadcasting...";
             const result = await apiPost("/eth-selfcustody/broadcast", { rawTxHex });
 
-            statusEl.innerHTML = `Sent - <a href="${ETH_EXPLORER_BASE}${result.txHash}" target="_blank" rel="noopener" style="color:var(--cc-accent-gold, #c9a227);">view on ${ETH_EXPLORER_NAME}</a><br>Returning to your wallet shortly...`;
+            statusEl.innerHTML = `Sent - <a href="${ETH_EXPLORER_BASE}${result.txHash}" target="_blank" rel="noopener" style="color:var(--cc-accent-gold, #16B8A6);">view on ${ETH_EXPLORER_NAME}</a><br>Returning to your wallet shortly...`;
 
             let attempts = 0;
             const poll = setInterval(async () => {

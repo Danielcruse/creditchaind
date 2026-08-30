@@ -200,7 +200,7 @@ async function loadMyTransactions() {
         div.innerHTML = combined
             .map((tx) => {
                 const other = mine(tx.From) ? tx.To : tx.From;
-                const statusColor = tx._status === "confirmed" ? "#0f9d58" : "#ffb020";
+                const statusColor = tx._status === "confirmed" ? "#16A34A" : "#ffb020";
                 // tx.summary (only present on confirmed TransactionViews,
                 // see explorer_summary.go) already describes system-only
                 // transactions (faucet claims, block rewards) correctly -
@@ -232,7 +232,7 @@ function openTxDetail(id) {
     const direction = mine(tx.From) ? "Sent" : "Received";
     const other = mine(tx.From) ? tx.To : tx.From;
     const statusLabel = tx._status === "confirmed" ? "Delivered" : "Pending";
-    const statusColor = tx._status === "confirmed" ? "#0f9d58" : "#ffb020";
+    const statusColor = tx._status === "confirmed" ? "#16A34A" : "#ffb020";
 
     document.getElementById("txDetailBody").innerHTML = `
         <p><strong>${tx.summary ? escapeHtml(tx.summary) : `${direction} ${tx.Amount} ${txSymbol(tx)}`}</strong></p>

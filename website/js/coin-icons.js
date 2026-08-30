@@ -18,7 +18,7 @@ const COIN_ICON_DEFS = {
     USDC: { colors: ["#2775ca", "#1a4f8f"], mark: "$" },
     USDCTEST: { colors: ["#2775ca", "#1a4f8f"], mark: "$" },
     YENE: { colors: ["#c9a227", "#8a6d1f"], mark: "¥" },
-    CCT: { colors: ["#0f9d58", "#16c46f"], mark: null },
+    CCT: { colors: ["#2F6BFF", "#1D4ED8"], mark: null },
 };
 
 // coinIconSVG returns a self-contained inline SVG string for a known

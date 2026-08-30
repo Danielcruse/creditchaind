@@ -20,7 +20,7 @@ function ensureLandingNewsBox() {
     box.id = "landingNewsBox";
     box.style.cssText =
         "position:fixed;bottom:18px;right:18px;max-width:320px;z-index:9998;" +
-        "background:var(--cc-bg-2, #082616);border:1px solid rgba(255,255,255,0.15);border-radius:12px;" +
+        "background:var(--cc-bg-2, #0B1628);border:1px solid rgba(255,255,255,0.15);border-radius:12px;" +
         "padding:14px 16px;box-shadow:0 6px 24px rgba(0,0,0,0.4);color:#fff;" +
         "font-family:Arial,sans-serif;display:none;";
     box.innerHTML = `

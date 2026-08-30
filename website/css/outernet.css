@@ -317,7 +317,7 @@ body{
     border-radius:10px;
 
     background:
-        var(--cc-accent-gold, #c9a227);
+        var(--cc-accent-gold, #16B8A6);
 
     color:white;
 
@@ -584,7 +584,7 @@ pre{
         break-word;
 
     color:
-        var(--cc-accent-gold-soft, #e0c674);
+        var(--cc-accent-gold-soft, #5CE0D2);
 
     font-size:
         12px;
@@ -738,7 +738,7 @@ body.mobile-nav .mobile-tabbar{
 
 .tabbar-btn.active{
     opacity:1;
-    color:var(--cc-accent-gold, #c9a227);
+    color:var(--cc-accent-gold, #16B8A6);
 }
 
 .tabbar-icon{
@@ -780,7 +780,7 @@ body.mobile-nav .mobile-tabbar{
 }
 
 .modal-box{
-    background:var(--cc-bg-2, #082616);
+    background:var(--cc-bg-2, #0B1628);
     color:#fff;
     border-radius:16px;
     padding:20px;
@@ -1019,7 +1019,7 @@ body.outernet-light .mobile-tabbar{
 }
 
 body.outernet-light .tabbar-btn.active{
-    color:var(--cc-accent-gold, #c9a227);
+    color:var(--cc-accent-gold, #16B8A6);
 }
 
 body.outernet-light .modal-box{
@@ -1138,7 +1138,7 @@ body.outernet-light .copy-icon:hover{
     font-size:44px;
     font-weight:700;
     line-height:1.1;
-    background:linear-gradient(90deg,var(--cc-accent-1, #0f9d58),var(--cc-accent-gold-soft, #e0c674));
+    background:linear-gradient(90deg,var(--cc-accent-1, #1D4ED8),var(--cc-accent-gold-soft, #5CE0D2));
     -webkit-background-clip:text;
     background-clip:text;
     color:transparent;

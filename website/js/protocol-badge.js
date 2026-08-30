@@ -28,8 +28,8 @@
         badge.style.cssText =
             "display:inline-block;vertical-align:middle;margin-left:10px;font-size:11px;font-weight:600;" +
             "letter-spacing:0.3px;padding:2px 9px;border-radius:10px;" +
-            "background:rgba(201,162,39,0.12);border:1px solid var(--cc-accent-gold, #c9a227);" +
-            "color:var(--cc-accent-gold, #c9a227);white-space:nowrap;";
+            "background:rgba(22,184,166,0.12);border:1px solid var(--cc-accent-gold, #16B8A6);" +
+            "color:var(--cc-accent-gold, #16B8A6);white-space:nowrap;";
 
         h1.appendChild(document.createTextNode(" "));
         h1.appendChild(badge);

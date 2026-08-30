@@ -24,7 +24,7 @@ function btcTxRow(tx, address) {
     }
     const net = received - sent;
     const sign = net >= 0 ? "+" : "";
-    const color = net >= 0 ? "#0f9d58" : "#ff6b6b";
+    const color = net >= 0 ? "#16A34A" : "#ff6b6b";
     const confirmed = tx.status && tx.status.confirmed;
 
     return `

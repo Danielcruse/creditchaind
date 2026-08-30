@@ -158,7 +158,7 @@ async function loadPriceChart(symbol) {
 
         const first = prices[0];
         const last = prices[prices.length - 1];
-        const changeColor = last >= first ? "#0f9d58" : "#ff5f5f";
+        const changeColor = last >= first ? "#16A34A" : "#ff5f5f";
         const changePct = first !== 0 ? (((last - first) / first) * 100).toFixed(2) : "0.00";
 
         container.innerHTML = `

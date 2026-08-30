@@ -107,8 +107,8 @@ body.pool-light{
     justify-content:center;
     font-size:20px;
     margin-bottom:14px;
-    background:linear-gradient(135deg,#e6fff5,#fdf6e3);
-    color:#059669;
+    background:linear-gradient(135deg,#EAF1FF,#E6FBF8);
+    color:#2F6BFF;
 }
 
 .pool-tile h3{
@@ -180,7 +180,7 @@ body.pool-light{
 
 .pool-row input:focus, .pool-row select:focus{
     outline:none;
-    border-color:#059669;
+    border-color:#2F6BFF;
     background:#ffffff;
 }
 
@@ -188,7 +188,7 @@ body.pool-light{
     padding:11px 20px;
     border-radius:10px;
     border:none;
-    background:#059669;
+    background:#2F6BFF;
     color:#ffffff;
     font-weight:700;
     font-size:14px;
@@ -197,16 +197,16 @@ body.pool-light{
 }
 
 .pool-btn:hover{
-    background:#047857;
+    background:#1D4ED8;
 }
 
 .pool-btn-secondary{
-    background:#eef2ff;
-    color:#3730a3;
+    background:#EAF1FF;
+    color:#1D4ED8;
 }
 
 .pool-btn-secondary:hover{
-    background:#e0e7ff;
+    background:#DCE9FF;
 }
 
 .pool-status{

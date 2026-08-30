@@ -203,7 +203,7 @@ async function loadHero() {
         document.getElementById("ovOtherNetworksList").innerHTML =
             `This account holds real ETH directly - the key never leaves this browser. ` +
             `Deposits here are what get locked into your spendable ETH_CCC1 balance above; ` +
-            `<a href="send-bridged-eth" style="color:var(--cc-accent-gold, #c9a227);">CCT network / direct-from-address send options</a> are also available.`;
+            `<a href="send-bridged-eth" style="color:var(--cc-accent-gold, #16B8A6);">CCT network / direct-from-address send options</a> are also available.`;
         document.getElementById("ovOtherNetworks").style.display = "block";
         return;
     }
@@ -275,7 +275,7 @@ async function loadHero() {
         }
 
         document.getElementById("ovOtherNetworksList").innerHTML =
-            `<a href="send-bridged-eth" style="color:var(--cc-accent-gold, #c9a227);">Send</a>`;
+            `<a href="send-bridged-eth" style="color:var(--cc-accent-gold, #16B8A6);">Send</a>`;
         document.getElementById("ovOtherNetworks").style.display = "block";
         loadVaultSection("ETH");
         return;
@@ -340,7 +340,7 @@ async function loadHero() {
 
         document.getElementById("ovOtherNetworksList").innerHTML =
             `Deposits to your real BTC address get locked into your spendable BTC_CCC1 balance above; ` +
-            `<a href="send-bridged-btc" style="color:var(--cc-accent-gold, #c9a227);">CCT network / direct-from-address send options</a> are also available.`;
+            `<a href="send-bridged-btc" style="color:var(--cc-accent-gold, #16B8A6);">CCT network / direct-from-address send options</a> are also available.`;
         document.getElementById("ovOtherNetworks").style.display = "block";
         return;
     }
@@ -362,7 +362,7 @@ async function loadHero() {
                 document.getElementById("ovBalance").innerText = "-";
                 document.getElementById("assetSendBtn").style.display = "none";
                 document.getElementById("ovOtherNetworksList").innerHTML =
-                    `<a href="btc-network-fix" style="color:var(--cc-accent-gold, #c9a227);">This address was derived for the other network - re-enter your recovery phrase to fix it &rarr;</a>`;
+                    `<a href="btc-network-fix" style="color:var(--cc-accent-gold, #16B8A6);">This address was derived for the other network - re-enter your recovery phrase to fix it &rarr;</a>`;
                 document.getElementById("ovOtherNetworks").style.display = "block";
                 return;
             }
@@ -384,7 +384,7 @@ async function loadHero() {
             }
 
             document.getElementById("ovOtherNetworksList").innerHTML =
-                `<a href="asset?symbol=BTCB" style="color:var(--cc-accent-gold, #c9a227);">Spend inside CreditChain &rarr;</a>`;
+                `<a href="asset?symbol=BTCB" style="color:var(--cc-accent-gold, #16B8A6);">Spend inside CreditChain &rarr;</a>`;
             document.getElementById("ovOtherNetworks").style.display = "block";
             return;
         }
@@ -426,7 +426,7 @@ async function loadHero() {
     // Wallet plan's §A.6 unified-asset UX.
     if (symbol === "ETHTEST" && externalChainAddress("ETH")) {
         document.getElementById("ovOtherNetworksList").innerHTML =
-            `<a href="asset?symbol=ETH" style="color:var(--cc-accent-gold, #c9a227);">Ethereum (self-custodial, receive-only) &rarr;</a>`;
+            `<a href="asset?symbol=ETH" style="color:var(--cc-accent-gold, #16B8A6);">Ethereum (self-custodial, receive-only) &rarr;</a>`;
         document.getElementById("ovOtherNetworks").style.display = "block";
     }
 }
@@ -480,7 +480,7 @@ async function loadChart() {
 
         const first = prices[0];
         const last = prices[prices.length - 1];
-        const changeColor = last >= first ? "#0f9d58" : "#ff6b6b";
+        const changeColor = last >= first ? "#16A34A" : "#ff6b6b";
 
         container.innerHTML = `
             <svg viewBox="0 0 ${width} ${height}" style="width:100%;height:100%;display:block;">
@@ -589,7 +589,7 @@ async function loadHistory() {
             const label = escapeHtml(tx.summary || tx.Type);
             const network = networkLabelForTx(tx);
             const externalLink = tx.externalTxLink
-                ? ` &middot; <a href="${tx.externalTxLink}" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="color:var(--cc-accent-gold, #c9a227);">view on external network &#8599;</a>`
+                ? ` &middot; <a href="${tx.externalTxLink}" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="color:var(--cc-accent-gold, #16B8A6);">view on external network &#8599;</a>`
                 : "";
             return `
                 <div class="asset-history-row" style="cursor:pointer;" onclick="location.href='tx?id=${tx.ID}'">
@@ -713,7 +713,7 @@ async function loadReceiveForNetwork(network) {
         }
         if (!btcAddressMatchesNetwork(btcAddress)) {
             addressEl.innerText = "";
-            statusEl.innerHTML = `This address was derived for the other network - <a href="btc-network-fix" style="color:var(--cc-accent-gold, #c9a227);">re-enter your recovery phrase to fix it</a> before receiving on this network.`;
+            statusEl.innerHTML = `This address was derived for the other network - <a href="btc-network-fix" style="color:var(--cc-accent-gold, #16B8A6);">re-enter your recovery phrase to fix it</a> before receiving on this network.`;
             return;
         }
         addressEl.innerText = btcAddress;
@@ -724,7 +724,7 @@ async function loadReceiveForNetwork(network) {
         // doc comment), or lock the same real BTC into the new vault
         // for a real 1:1-backed, withdrawable balance instead.
         statusEl.innerHTML = `Sending BTC (testnet) here auto-credits BTCB. For a real 1:1-backed, withdrawable balance instead, use ` +
-            `<a href="vault-deposit-btc" style="color:var(--cc-accent-gold, #c9a227);">Vault BTC to CreditChain network</a>.`;
+            `<a href="vault-deposit-btc" style="color:var(--cc-accent-gold, #16B8A6);">Vault BTC to CreditChain network</a>.`;
         return;
     }
 
@@ -742,7 +742,7 @@ async function loadReceiveForNetwork(network) {
         const address = externalChainAddress("ETH");
         if (!address) {
             addressEl.innerText = "";
-            statusEl.innerHTML = `No self-custodial Ethereum address found for this wallet yet - <a href="outernet" style="color:var(--cc-accent-gold, #c9a227);">go to OUTERNET</a>, which will prompt you to set one up (needed to receive real ETH).`;
+            statusEl.innerHTML = `No self-custodial Ethereum address found for this wallet yet - <a href="outernet" style="color:var(--cc-accent-gold, #16B8A6);">go to OUTERNET</a>, which will prompt you to set one up (needed to receive real ETH).`;
             return;
         }
         addressEl.innerText = address;
@@ -762,7 +762,7 @@ async function loadReceiveForNetwork(network) {
     const ethAddress = externalChainAddress("ETH");
     if (!ethAddress) {
         addressEl.innerText = "";
-        statusEl.innerHTML = `No self-custodial Ethereum address found for this wallet yet - <a href="outernet" style="color:var(--cc-accent-gold, #c9a227);">go to OUTERNET</a>, which will prompt you to set one up (needed to receive real ETH).`;
+        statusEl.innerHTML = `No self-custodial Ethereum address found for this wallet yet - <a href="outernet" style="color:var(--cc-accent-gold, #16B8A6);">go to OUTERNET</a>, which will prompt you to set one up (needed to receive real ETH).`;
         return;
     }
     addressEl.innerText = ethAddress;
@@ -772,7 +772,7 @@ async function loadReceiveForNetwork(network) {
     // ETHB (legacy mirror-model, kept running), or the same address can
     // be locked into the new vault for a real 1:1-backed balance.
     statusEl.innerHTML = `Sending ETH here auto-credits ETHB. For a real 1:1-backed, withdrawable balance instead, use ` +
-        `<a href="vault-deposit-eth" style="color:var(--cc-accent-gold, #c9a227);">Vault ETH or USDC to CreditChain network</a>.`;
+        `<a href="vault-deposit-eth" style="color:var(--cc-accent-gold, #16B8A6);">Vault ETH or USDC to CreditChain network</a>.`;
 }
 
 function copyAssetAddress() {
