@@ -14,13 +14,17 @@ jobs:
     steps:
       - name: Check creditchain.site (node1 / testnet)
         run: |
-          echo "=== creditchain.site : / ==="
+          echo "=== creditchain.site : / (full head + first stylesheet links) ==="
           curl -s -o /dev/null -w "HTTP %{http_code}\n" https://creditchain.site/ || true
-          curl -s https://creditchain.site/ | grep -o '<title>[^<]*</title>' || true
+          curl -s https://creditchain.site/ | sed -n '1,20p' || true
+          echo "--- stylesheet links found ---"
+          curl -s https://creditchain.site/ | grep -o '<link[^>]*stylesheet[^>]*>' || true
           echo
           echo "=== creditchain.site : design-system.css ==="
           curl -s -o /dev/null -w "HTTP %{http_code}\n" https://creditchain.site/css/design-system.css || true
-          curl -s https://creditchain.site/css/design-system.css | grep -m1 -o '\-\-brand-blue:[^;]*' || true
+          echo
+          echo "=== creditchain.site : theme.css (known-old file, sanity check) ==="
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" https://creditchain.site/css/theme.css || true
 
       - name: Check service.creditchain.site (mainnet)
         run: |
