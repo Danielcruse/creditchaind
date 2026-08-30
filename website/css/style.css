@@ -8,9 +8,9 @@ html, body{
    dedicated action instead of a silent side-effect of clicking
    something else. */
 .copy-icon{
-    background:rgba(15,157,88,0.08);
-    border:1px solid rgba(15,157,88,0.25);
-    color:#0d2818;
+    background:rgba(47,107,255,0.08);
+    border:1px solid rgba(47,107,255,0.25);
+    color:var(--light-text, #0B1628);
     border-radius:6px;
     padding:2px 7px;
     font-size:12px;
@@ -20,12 +20,12 @@ html, body{
     vertical-align:middle;
 }
 .copy-icon:hover{
-    background:rgba(15,157,88,0.18);
+    background:rgba(47,107,255,0.18);
 }
 .copy-icon.copy-icon-done{
-    background:rgba(15,157,88,0.2);
-    border-color:#0f9d58;
-    color:#0f9d58;
+    background:rgba(22,163,74,0.2);
+    border-color:var(--sem-success, #16A34A);
+    color:var(--sem-success, #16A34A);
 }
 
 /* Green background + white/blue mix - a deep green gradient backdrop
@@ -34,15 +34,15 @@ html, body{
    the earlier all-white body this file used briefly. */
 body{
     background:
-        radial-gradient(1100px 650px at 12% -8%, rgba(59,130,246,0.16), transparent 60%),
-        radial-gradient(1000px 700px at 108% 8%, rgba(15,157,88,0.22), transparent 55%),
-        radial-gradient(900px 550px at 50% 118%, rgba(0,255,149,0.14), transparent 60%),
+        radial-gradient(1100px 650px at 12% -8%, rgba(47,107,255,0.18), transparent 60%),
+        radial-gradient(1000px 700px at 108% 8%, rgba(22,184,166,0.16), transparent 55%),
+        radial-gradient(900px 550px at 50% 118%, rgba(91,140,255,0.12), transparent 60%),
         linear-gradient(160deg,
-            var(--cc-bg-2, #082616),
-            var(--cc-bg-1, #04150d) 60%,
-            var(--cc-bg-3, #0c3a22));
+            var(--cc-bg-2, #0B1628),
+            var(--cc-bg-1, #07111F) 60%,
+            var(--cc-bg-3, #10233D));
 
-    color:#eaf4ee;
+    color:var(--text-on-dark, #E7ECF5);
     font-family:
         Arial,
         sans-serif;
@@ -68,7 +68,7 @@ input, textarea {
             0.85
         );
 
-    color:#0d2818;
+    color:var(--light-text, #0B1628);
 
     backdrop-filter:
         blur(15px);
@@ -161,7 +161,7 @@ button:hover{
             0.85
         );
 
-    color:#0d2818;
+    color:var(--light-text, #0B1628);
 
     border-right:1px solid rgba(29,78,216,0.15);
 

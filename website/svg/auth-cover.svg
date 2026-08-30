@@ -1,13 +1,13 @@
 <svg viewBox="0 0 800 600" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <radialGradient id="ac-bg" cx="50%" cy="30%" r="85%">
-      <stop offset="0%" stop-color="#0c3a22"/>
-      <stop offset="55%" stop-color="#082616"/>
-      <stop offset="100%" stop-color="#04150d"/>
+      <stop offset="0%" stop-color="#10233D"/>
+      <stop offset="55%" stop-color="#0B1628"/>
+      <stop offset="100%" stop-color="#07111F"/>
     </radialGradient>
     <linearGradient id="ac-figure" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#2fbf71"/>
-      <stop offset="100%" stop-color="#0f9d58"/>
+      <stop offset="0%" stop-color="#5B8CFF"/>
+      <stop offset="100%" stop-color="#1D4ED8"/>
     </linearGradient>
     <filter id="ac-soft" x="-40%" y="-40%" width="180%" height="180%">
       <feGaussianBlur stdDeviation="1.4"/>
@@ -17,21 +17,21 @@
   <rect width="800" height="600" fill="url(#ac-bg)"/>
 
   <!-- faint floating orbs for depth -->
-  <circle cx="120" cy="90" r="2.5" fill="#e0c674" opacity="0.35"/>
-  <circle cx="660" cy="140" r="2" fill="#c9a227" opacity="0.3"/>
-  <circle cx="740" cy="420" r="3" fill="#3b82f6" opacity="0.25"/>
-  <circle cx="60" cy="480" r="2" fill="#2fbf71" opacity="0.3"/>
-  <circle cx="400" cy="60" r="2" fill="#e0c674" opacity="0.25"/>
+  <circle cx="120" cy="90" r="2.5" fill="#5CE0D2" opacity="0.35"/>
+  <circle cx="660" cy="140" r="2" fill="#16B8A6" opacity="0.3"/>
+  <circle cx="740" cy="420" r="3" fill="#2F6BFF" opacity="0.25"/>
+  <circle cx="60" cy="480" r="2" fill="#5B8CFF" opacity="0.3"/>
+  <circle cx="400" cy="60" r="2" fill="#5CE0D2" opacity="0.25"/>
 
   <!-- exchange connectors, drawn first so figures sit above them -->
-  <g stroke="#c9a227" stroke-width="1.6" stroke-dasharray="2 7" fill="none" opacity="0.55">
+  <g stroke="#16B8A6" stroke-width="1.6" stroke-dasharray="2 7" fill="none" opacity="0.55">
     <path d="M 190 230 Q 300 180 400 235"/>
     <path d="M 430 250 Q 540 300 610 245"/>
   </g>
-  <circle cx="300" cy="196" r="9" fill="#c9a227" opacity="0.85" filter="url(#ac-soft)"/>
-  <circle cx="300" cy="196" r="9" fill="none" stroke="#e0c674" stroke-width="1"/>
-  <circle cx="516" cy="278" r="9" fill="#c9a227" opacity="0.85" filter="url(#ac-soft)"/>
-  <circle cx="516" cy="278" r="9" fill="none" stroke="#e0c674" stroke-width="1"/>
+  <circle cx="300" cy="196" r="9" fill="#16B8A6" opacity="0.85" filter="url(#ac-soft)"/>
+  <circle cx="300" cy="196" r="9" fill="none" stroke="#5CE0D2" stroke-width="1"/>
+  <circle cx="516" cy="278" r="9" fill="#16B8A6" opacity="0.85" filter="url(#ac-soft)"/>
+  <circle cx="516" cy="278" r="9" fill="none" stroke="#5CE0D2" stroke-width="1"/>
 
   <!-- floating figure: simple flat silhouette (circle head + soft
        trapezoid body), reused via <use> at different positions/scales/

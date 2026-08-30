@@ -29,7 +29,8 @@
 body.auth-cover-page .card{
     position:relative;
     z-index:1;
-    background:rgba(4,21,13,0.55);
+    background:rgba(7,17,31,0.6);
+    color:var(--text-on-dark, #E7ECF5);
     backdrop-filter:blur(2px);
 }
 body.auth-cover-page > h1{

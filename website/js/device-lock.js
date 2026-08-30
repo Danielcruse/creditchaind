@@ -66,7 +66,7 @@
     var overlay = document.createElement("div");
     overlay.id = "ccDeviceLockOverlay";
     overlay.style.cssText =
-        "position:fixed;inset:0;z-index:999999;background:#04150d;color:#eee;" +
+        "position:fixed;inset:0;z-index:999999;background:var(--surface-bg, #07111F);color:var(--text-on-dark, #E7ECF5);" +
         "display:flex;align-items:center;justify-content:center;font-family:sans-serif;" +
         "padding:20px;box-sizing:border-box;";
     // Appended to <html>, not <body> - this script is the very first
@@ -90,9 +90,9 @@
         "width:100%;box-sizing:border-box;padding:10px 12px;margin:8px 0;border-radius:8px;" +
         "border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.05);color:#eee;font-size:14px;";
     var btnStyle =
-        "width:100%;padding:10px;border-radius:8px;border:none;background:#16c46f;color:#04150d;" +
+        "width:100%;padding:10px;border-radius:8px;border:none;background:var(--brand-blue, #2F6BFF);color:#fff;" +
         "font-weight:600;cursor:pointer;margin-top:6px;font-size:14px;";
-    var linkStyle = "color:#c9a227;cursor:pointer;font-size:12px;text-decoration:underline;";
+    var linkStyle = "color:var(--brand-teal, #16B8A6);cursor:pointer;font-size:12px;text-decoration:underline;";
 
     function showSetup() {
         render(
