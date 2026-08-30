@@ -37,6 +37,11 @@ on:
         options:
           - discover
           - deploy
+      restart_node:
+        description: "mainnet deploy only. Also stop/restart creditchain-mainnet.service (the real blockchain node), not just the website - needed whenever this deploy includes actual Go/api changes, not just website content. Leave false for a website-only deploy; the node then keeps running its old binary in memory until its own next restart, exactly as before."
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   run:
