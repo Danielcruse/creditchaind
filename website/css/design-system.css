@@ -1,0 +1,319 @@
+/* design-system.css - CreditChain's institutional-web3 design system.
+   Phase 1 of the full brand/product redesign: tokens + core reusable
+   components, applied first to one representative page per visual
+   family (index/wallet/explorer/login) for review before rolling out
+   to the remaining pages. See the design directive for the full
+   rationale - this file is the "establish the system first" half of
+   it.
+
+   Loaded AFTER theme.css and BEFORE style.css/outernet.css on every
+   page it's added to: this file's :root block re-defines theme.css's
+   existing --cc-* tokens to the new brand values, so every existing
+   rule across style.css/outernet.css that already reads --cc-bg-1,
+   --cc-accent-1, etc. re-themes automatically, with zero changes to
+   those files and zero risk to the markup/JS they style. New
+   selectors/IDs are never required by this file - everything here is
+   additive (new tokens, new component classes) or a re-definition of
+   an existing token, never a redefinition of an existing component
+   class from style.css/outernet.css. */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;700;800&display=swap');
+
+:root{
+    /* ---- Re-themed legacy tokens (theme.css's own names) ---------- */
+    /* Old vault/ledger green -> new deep navy institutional
+       foundation. Kept as a 3-stop gradient scale since every existing
+       consumer (style.css/outernet.css) already expects one. */
+    --cc-bg-1: #07111F;
+    --cc-bg-2: #0B1628;
+    --cc-bg-3: #10233D;
+
+    /* Old blue accent -> Credit Blue, the new primary brand accent. */
+    --cc-accent-1: #1D4ED8;
+    --cc-accent-2: #2F6BFF;
+
+    /* Old gold/bronze secondary -> Digital Teal, used sparingly for
+       verified/positive/network-health states per the brand brief -
+       kept under the SAME variable names so existing "gold accent"
+       call-sites (badges, dividers) inherit the new secondary color
+       without per-selector edits. */
+    --cc-accent-gold: #16B8A6;
+    --cc-accent-gold-soft: #5CE0D2;
+
+    --cc-live-green: #16A34A;
+    --cc-glow: rgba(47, 107, 255, 0.22);
+    --cc-glow-hover: rgba(91, 140, 255, 0.4);
+
+    /* ---- New semantic tokens --------------------------------------- */
+    --brand-navy-1: #07111F;
+    --brand-navy-2: #0B1628;
+    --brand-navy-3: #10233D;
+
+    --brand-blue: #2F6BFF;
+    --brand-blue-light: #5B8CFF;
+    --brand-blue-dark: #1D4ED8;
+    --brand-teal: #16B8A6;
+
+    --sem-success: #16A34A;
+    --sem-warning: #F59E0B;
+    --sem-error: #EF4444;
+    --sem-info: #2F6BFF;
+
+    /* Dark application surfaces (Family C/D/E - authenticated app,
+       explorer, admin) - layered, never pure black. */
+    --surface-bg: #07111F;
+    --surface-sidebar: #0B1628;
+    --surface-card: #10233D;
+    --surface-elevated: #132944;
+    --surface-hover: #193451;
+    --surface-border: rgba(255,255,255,0.08);
+
+    /* Light marketing/account surfaces (Family A/B). */
+    --light-bg: #FFFFFF;
+    --light-bg-alt: #F6F8FB;
+    --light-surface: #FFFFFF;
+    --light-border: #E4E9F2;
+    --light-text: #0B1628;
+    --light-text-dim: #5B6B84;
+
+    /* Text on dark surfaces. */
+    --text-on-dark: #E7ECF5;
+    --text-on-dark-dim: #94A3BC;
+
+    --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-display: 'Manrope', 'Inter', -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+
+    /* 8px grid. */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    --space-7: 48px;
+    --space-8: 64px;
+
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+
+    --shadow-card: 0 1px 2px rgba(7,17,31,0.06), 0 1px 1px rgba(7,17,31,0.04);
+    --shadow-card-dark: 0 1px 2px rgba(0,0,0,0.3), 0 4px 16px rgba(0,0,0,0.24);
+}
+
+/* ==================================================================
+   Buttons
+   ================================================================== */
+.btn{
+    font-family:var(--font-ui);
+    font-weight:600;
+    font-size:14px;
+    line-height:1;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:var(--space-2);
+    height:40px;
+    padding:0 var(--space-4);
+    border-radius:var(--radius-md);
+    border:1px solid transparent;
+    cursor:pointer;
+    text-decoration:none;
+    transition:background .12s ease, border-color .12s ease, transform .08s ease;
+    white-space:nowrap;
+}
+.btn:active{transform:translateY(1px);}
+.btn-sm{height:32px;padding:0 var(--space-3);font-size:13px;}
+.btn-lg{height:48px;padding:0 var(--space-5);font-size:15px;}
+
+.btn-primary{
+    background:var(--brand-blue);
+    color:#fff;
+}
+.btn-primary:hover{background:var(--brand-blue-dark);}
+
+.btn-secondary{
+    background:var(--surface-elevated);
+    color:var(--text-on-dark);
+    border-color:var(--surface-border);
+}
+.btn-secondary:hover{background:var(--surface-hover);}
+
+.btn-ghost{
+    background:transparent;
+    color:var(--text-on-dark-dim);
+}
+.btn-ghost:hover{background:var(--surface-hover);color:var(--text-on-dark);}
+
+.btn-light{
+    background:var(--light-bg);
+    color:var(--brand-navy-2);
+    border-color:var(--light-border);
+}
+.btn-light:hover{background:var(--light-bg-alt);}
+
+.btn-icon{
+    width:40px;padding:0;
+}
+
+/* ==================================================================
+   Inputs
+   ================================================================== */
+.field{
+    font-family:var(--font-ui);
+    height:40px;
+    width:100%;
+    padding:0 var(--space-3);
+    background:var(--surface-elevated);
+    border:1px solid var(--surface-border);
+    border-radius:var(--radius-md);
+    color:var(--text-on-dark);
+    font-size:14px;
+    outline:none;
+    transition:border-color .12s ease, box-shadow .12s ease;
+}
+.field::placeholder{color:var(--text-on-dark-dim);}
+.field:focus{
+    border-color:var(--brand-blue);
+    box-shadow:0 0 0 3px var(--cc-glow);
+}
+.field-light{
+    background:var(--light-bg);
+    border-color:var(--light-border);
+    color:var(--light-text);
+}
+.field-light::placeholder{color:var(--light-text-dim);}
+
+.field-label{
+    display:block;
+    font-family:var(--font-ui);
+    font-size:12.5px;
+    font-weight:600;
+    color:var(--text-on-dark-dim);
+    margin-bottom:var(--space-2);
+}
+
+/* ==================================================================
+   Cards / surfaces
+   ================================================================== */
+.ds-card{
+    background:var(--surface-card);
+    border:1px solid var(--surface-border);
+    border-radius:var(--radius-lg);
+    padding:var(--space-5);
+    box-shadow:var(--shadow-card-dark);
+}
+.ds-card-light{
+    background:var(--light-surface);
+    border:1px solid var(--light-border);
+    border-radius:var(--radius-lg);
+    padding:var(--space-5);
+    box-shadow:var(--shadow-card);
+}
+.ds-card-elevated{background:var(--surface-elevated);}
+
+/* ==================================================================
+   Badges
+   ================================================================== */
+.badge{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    font-family:var(--font-ui);
+    font-size:12px;
+    font-weight:600;
+    padding:3px 10px;
+    border-radius:999px;
+    border:1px solid transparent;
+}
+.badge-info{background:rgba(47,107,255,0.14);color:var(--brand-blue-light);border-color:rgba(47,107,255,0.3);}
+.badge-success{background:rgba(22,163,74,0.14);color:#4ADE80;border-color:rgba(22,163,74,0.3);}
+.badge-teal{background:rgba(22,184,166,0.14);color:var(--brand-teal);border-color:rgba(22,184,166,0.3);}
+.badge-warning{background:rgba(245,158,11,0.14);color:#FBBF24;border-color:rgba(245,158,11,0.3);}
+.badge-error{background:rgba(239,68,68,0.14);color:#F87171;border-color:rgba(239,68,68,0.3);}
+
+/* ==================================================================
+   Tables (data-dense pages: explorer, network, tx history)
+   ================================================================== */
+.ds-table-wrap{overflow-x:auto;border:1px solid var(--surface-border);border-radius:var(--radius-lg);}
+.ds-table{width:100%;border-collapse:collapse;font-family:var(--font-ui);font-size:13.5px;}
+.ds-table th{
+    text-align:left;
+    font-size:11px;
+    font-weight:600;
+    letter-spacing:0.04em;
+    text-transform:uppercase;
+    color:var(--text-on-dark-dim);
+    padding:var(--space-3) var(--space-4);
+    background:var(--surface-sidebar);
+    border-bottom:1px solid var(--surface-border);
+    white-space:nowrap;
+}
+.ds-table td{
+    padding:var(--space-3) var(--space-4);
+    border-bottom:1px solid var(--surface-border);
+    color:var(--text-on-dark);
+    vertical-align:middle;
+    white-space:nowrap;
+}
+.ds-table tr:last-child td{border-bottom:none;}
+.ds-table tr:hover td{background:var(--surface-hover);}
+.ds-mono{font-family:var(--font-mono);}
+
+/* ==================================================================
+   Application shell (sidebar nav groups)
+   ================================================================== */
+.app-shell{
+    display:flex;
+    min-height:100vh;
+    background:var(--surface-bg);
+    font-family:var(--font-ui);
+    color:var(--text-on-dark);
+}
+.app-sidebar{
+    width:248px;
+    flex:0 0 auto;
+    background:var(--surface-sidebar);
+    border-right:1px solid var(--surface-border);
+    padding:var(--space-5) var(--space-3);
+    display:flex;
+    flex-direction:column;
+    gap:var(--space-6);
+}
+.app-sidebar.collapsed{width:72px;}
+.nav-group-label{
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--text-on-dark-dim);
+    padding:0 var(--space-3);
+    margin-bottom:var(--space-2);
+}
+.nav-item{
+    display:flex;
+    align-items:center;
+    gap:var(--space-3);
+    padding:var(--space-2) var(--space-3);
+    border-radius:var(--radius-md);
+    color:var(--text-on-dark-dim);
+    text-decoration:none;
+    font-size:14px;
+    font-weight:500;
+    margin-bottom:2px;
+    transition:background .12s ease, color .12s ease;
+}
+.nav-item:hover{background:var(--surface-hover);color:var(--text-on-dark);}
+.nav-item.active{background:var(--surface-elevated);color:var(--brand-blue-light);}
+.app-main{flex:1 1 auto;min-width:0;padding:var(--space-6);}
+
+/* ==================================================================
+   Typography helpers
+   ================================================================== */
+.ds-display{font-family:var(--font-display);font-weight:800;letter-spacing:-0.01em;}
+.ds-h1{font-family:var(--font-display);font-weight:800;font-size:clamp(32px,5vw,48px);line-height:1.08;letter-spacing:-0.01em;}
+.ds-h2{font-family:var(--font-display);font-weight:700;font-size:28px;line-height:1.2;}
+.ds-eyebrow{font-family:var(--font-ui);font-size:12px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--brand-blue-light);}
+.ds-body-dim{color:var(--text-on-dark-dim);}
+.ds-body-dim-light{color:var(--light-text-dim);}
