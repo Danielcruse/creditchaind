@@ -93,7 +93,7 @@
         Directly overrides one allowlisted protocol parameter (see api/admin_params.go). If multisig is
         configured above, submitting here creates a proposal that still needs approvals to reach the threshold
         before it takes effect - it does not act immediately. <code>EthUsdCentsPerEth</code>/<code>BtcUsdCentsPerBtc</code>
-        are the two values that activate the $10,000 per-account BTCB+ETHB holdings cap (0 = cap not enforced yet).
+        are the two values that activate the $50,000 per-account BTCB+ETHB holdings cap (0 = cap not enforced yet).
         For those two, the value field auto-fills with the current live market price (via the site's own price
         oracle) every time it refreshes - there's no server-held key able to submit this for you automatically
         (this network's admin signers are deliberately never stored server-side, same as every user's own
@@ -105,7 +105,7 @@
             <option value="EthUsdCentsPerEth">EthUsdCentsPerEth (USD cents per 1 ETH)</option>
             <option value="BtcUsdCentsPerBtc">BtcUsdCentsPerBtc (USD cents per 1 BTC)</option>
             <option value="CctUsdCents">CctUsdCents (USD cents per 1 whole CCT - values non-CCT platform-fee burns for the block reward, see api/burn_value_oracle.go. No live market for CCT, so this is NOT auto-filled - enter deliberately.)</option>
-            <option value="AccountHoldingsCapUsdCents">AccountHoldingsCapUsdCents (default 1000000 = $10,000)</option>
+            <option value="AccountHoldingsCapUsdCents">AccountHoldingsCapUsdCents (default 5000000 = $50,000)</option>
             <option value="UnbondingPeriodSeconds">UnbondingPeriodSeconds</option>
             <option value="DormancyPeriodSeconds">DormancyPeriodSeconds</option>
             <option value="ModeratorRegisterFeeCCT">ModeratorRegisterFeeCCT (default 10 CCT)</option>

@@ -38,11 +38,16 @@ var weiPerEthBig = new(big.Int).SetUint64(1_000_000_000_000_000_000)
 const satsPerBtc = 100_000_000
 
 // DefaultAccountHoldingsCapUsdCents is the default per-account total
-// BTCB+ETHB holdings cap - $10,000, expressed in cents so every
+// BTCB+ETHB holdings cap - $50,000, expressed in cents so every
 // comparison here stays integer/deterministic. Admin-settable via
 // "AccountHoldingsCapUsdCents" (see adminSettableParams) if this
-// figure ever needs to change without a redeploy.
-const DefaultAccountHoldingsCapUsdCents = 1_000_000
+// figure ever needs to change without a redeploy - this constant is
+// only what a node falls back to before that governance param has
+// ever been explicitly set (see accountHoldingsRatesSet's "0 =
+// unenforced" sibling logic just below); on a node where an admin
+// already set a value live, changing this constant alone has no
+// effect until they submit a new value.
+const DefaultAccountHoldingsCapUsdCents = 5_000_000
 
 // weiToUsdCents / satsToUsdCents convert a native-unit amount to USD
 // cents given an admin-set USD-cents-per-whole-coin rate, in
