@@ -1,0 +1,33 @@
+name: Verify sites
+
+# Manual-trigger only. Purely read-only - curls both public sites from
+# GitHub's own runner (real internet access, unlike the sandboxed dev
+# environment this was authored in) to confirm what's actually being
+# served after a deploy. No secrets, no SSH, nothing written anywhere.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check creditchain.site (node1 / testnet)
+        run: |
+          echo "=== creditchain.site : / ==="
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" https://creditchain.site/ || true
+          curl -s https://creditchain.site/ | grep -o '<title>[^<]*</title>' || true
+          echo
+          echo "=== creditchain.site : design-system.css ==="
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" https://creditchain.site/css/design-system.css || true
+          curl -s https://creditchain.site/css/design-system.css | grep -m1 -o '\-\-brand-blue:[^;]*' || true
+
+      - name: Check service.creditchain.site (mainnet)
+        run: |
+          echo "=== service.creditchain.site : / ==="
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" https://service.creditchain.site/ || true
+          curl -s https://service.creditchain.site/ | grep -o '<title>[^<]*</title>' || true
+          echo
+          echo "=== service.creditchain.site : design-system.css ==="
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" https://service.creditchain.site/css/design-system.css || true
+          curl -s https://service.creditchain.site/css/design-system.css | grep -m1 -o '\-\-brand-blue:[^;]*' || true
