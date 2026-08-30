@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/creditchain/creditchaind/core"
@@ -42,6 +43,60 @@ type TransactionView struct {
 	// (governance, admin, moderation, etc.) - it isn't a fallback for
 	// types this switch forgot.
 	Category string `json:"category"`
+
+	// ExternalDestination/ExternalDestinationChain/
+	// ExternalAmountSmallestUnit are populated only for
+	// TxVaultReleaseComplete - that transaction's own Data
+	// (vaultReleaseCompleteData) carries only a burn-tx reference and
+	// the external hash, never the real destination address or amount;
+	// those live on the ORIGINAL TxVaultBurn transaction instead (see
+	// vaultBurnData), resolved here via BurnTxId so the Explorer can
+	// show a real "To"/"Amount" for the confirmation transaction
+	// instead of the system-side "(none)"/"0" its own Data implies.
+	// Empty if the referenced burn transaction can't be found (e.g.
+	// pre-dates this lookup, or the chain was pruned/replaced).
+	ExternalDestination        string `json:"externalDestination,omitempty"`
+	ExternalDestinationChain   string `json:"externalDestinationChain,omitempty"`
+	ExternalAmountSmallestUnit string `json:"externalAmountSmallestUnit,omitempty"`
+}
+
+// findTransactionByID walks every block newest-first looking for one
+// transaction ID - the same linear "walk the whole chain" cost every
+// other single-transaction explorer lookup in this file already pays
+// (see HandleExplorerSearch's own tx-search loop), acceptable at this
+// project's current chain length. Used to resolve a TxVaultReleaseComplete
+// back to the TxVaultBurn it completes.
+func findTransactionByID(id string) (core.Transaction, bool) {
+	for i := len(blockchain.Blocks) - 1; i >= 0; i-- {
+		txs := blockchain.Blocks[i].Transactions
+		for j := len(txs) - 1; j >= 0; j-- {
+			if txs[j].ID == id {
+				return txs[j], true
+			}
+		}
+	}
+	return core.Transaction{}, false
+}
+
+// externalTxExplorerLink builds a real block-explorer URL for an
+// external-chain transaction hash - Ethereum mainnet/Bitcoin mainnet
+// when this node is actually running in mainnet mode, the same
+// Sepolia/Bitcoin-testnet explorers otherwise. isBtc distinguishes the
+// two supported external chains; USDC rides the same Ethereum-side
+// chain as ETH, so it shares ETH's explorer. This replaces two
+// previously hardcoded-to-Sepolia/testnet links (TxBridgeWithdraw/
+// TxBridgeBtcWithdraw below) that were wrong on a real mainnet node.
+func externalTxExplorerLink(isBtc bool, hash string) string {
+	if isBtc {
+		if mainnetMode() {
+			return "https://blockstream.info/tx/" + hash
+		}
+		return "https://blockstream.info/testnet/tx/" + hash
+	}
+	if mainnetMode() {
+		return "https://etherscan.io/tx/" + hash
+	}
+	return "https://sepolia.etherscan.io/tx/" + hash
 }
 
 // txCategory buckets a transaction type into the handful of categories
@@ -86,13 +141,31 @@ func viewTransaction(tx core.Transaction) TransactionView {
 	case core.TxBridgeWithdraw:
 		if hash, ok := lookupBridgeExternalTxHash(tx.ID); ok {
 			v.ExternalTxHash = hash
-			v.ExternalTxLink = "https://sepolia.etherscan.io/tx/" + hash
+			v.ExternalTxLink = externalTxExplorerLink(false, hash)
 		}
 	case core.TxBridgeBtcWithdraw:
 		var data bridgeBtcWithdrawData
 		if err := json.Unmarshal([]byte(tx.Data), &data); err == nil && data.BtcTxid != "" {
 			v.ExternalTxHash = data.BtcTxid
-			v.ExternalTxLink = "https://blockstream.info/testnet/tx/" + data.BtcTxid
+			v.ExternalTxLink = externalTxExplorerLink(true, data.BtcTxid)
+		}
+	case core.TxVaultReleaseComplete:
+		var releaseData vaultReleaseCompleteData
+		if err := json.Unmarshal([]byte(tx.Data), &releaseData); err == nil {
+			if releaseData.ExternalHash != "" {
+				v.ExternalTxHash = releaseData.ExternalHash
+			}
+			if burnTx, ok := findTransactionByID(releaseData.BurnTxId); ok {
+				var burnData vaultBurnData
+				if err := json.Unmarshal([]byte(burnTx.Data), &burnData); err == nil {
+					v.ExternalDestination = burnData.DestinationExtAddress
+					v.ExternalDestinationChain = burnData.Chain
+					v.ExternalAmountSmallestUnit = burnData.AmountSmallestUnit
+					if v.ExternalTxHash != "" {
+						v.ExternalTxLink = externalTxExplorerLink(burnData.Chain == "BTC", v.ExternalTxHash)
+					}
+				}
+			}
 		}
 	}
 
@@ -139,6 +212,36 @@ func satsToBtcString(sats uint64) string {
 	}
 	fracStr := strings.TrimRight(fmt.Sprintf("%08d", frac), "0")
 	return fmt.Sprintf("%d.%s", whole, fracStr)
+}
+
+// vaultChainAmountDisplay renders a vault release's real external
+// amount as a human decimal string for the given chain code (ETH/BTC/
+// USDC, as stored in vaultBurnData.Chain) - mirrors weiToEthString/
+// satsToBtcString's own trimmed-decimal convention just above, plus a
+// USDC (6-decimal) case those two don't cover. Falls back to the raw
+// string for an unrecognized chain or an unparseable amount, rather
+// than silently showing 0 - never worse than what was actually stored.
+func vaultChainAmountDisplay(chain, amountSmallestUnit string) string {
+	n, err := strconv.ParseUint(amountSmallestUnit, 10, 64)
+	if err != nil {
+		return amountSmallestUnit
+	}
+	switch chain {
+	case "ETH":
+		return weiToEthString(n)
+	case "BTC":
+		return satsToBtcString(n)
+	case "USDC":
+		whole := n / 1_000_000
+		frac := n % 1_000_000
+		if frac == 0 {
+			return fmt.Sprintf("%d", whole)
+		}
+		fracStr := strings.TrimRight(fmt.Sprintf("%06d", frac), "0")
+		return fmt.Sprintf("%d.%s", whole, fracStr)
+	default:
+		return amountSmallestUnit
+	}
 }
 
 // buildTransactionSummary is the single place that turns a raw
@@ -422,6 +525,23 @@ func buildTransactionSummary(tx core.Transaction) string {
 	case core.TxVaultReleaseComplete:
 		var data vaultReleaseCompleteData
 		json.Unmarshal([]byte(tx.Data), &data)
+		// The real destination/amount live on the ORIGINAL TxVaultBurn
+		// this completes, not on this transaction's own Data - see
+		// TransactionView.ExternalDestination's doc comment. When it's
+		// resolvable, present this as the plain "token sent"
+		// confirmation it actually is, not a generic "withdrawal"
+		// notice with no amount or recipient.
+		if burnTx, ok := findTransactionByID(data.BurnTxId); ok {
+			var burnData vaultBurnData
+			if err := json.Unmarshal([]byte(burnTx.Data), &burnData); err == nil && burnData.Chain != "" {
+				amount := vaultChainAmountDisplay(burnData.Chain, burnData.AmountSmallestUnit)
+				dest := short(burnData.DestinationExtAddress)
+				if data.ExternalHash != "" {
+					return fmt.Sprintf("Sent %s %s to %s - confirmed on the external network (%s)", amount, burnData.Chain, dest, short(data.ExternalHash))
+				}
+				return fmt.Sprintf("Sent %s %s to %s - confirmed on the external network", amount, burnData.Chain, dest)
+			}
+		}
 		if data.ExternalHash != "" {
 			return fmt.Sprintf("Withdrawal confirmed on the external network (%s)", short(data.ExternalHash))
 		}

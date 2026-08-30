@@ -37,9 +37,33 @@ function safeCopyIcon(text, iconId) {
     }
 }
 
-function addressWithCopy(address, iconId) {
+// explorerAddressHref only ever points at a shape /explorer/search can
+// actually resolve (a plain 40-hex CCT address or a real 0x Ethereum
+// address - see api/explorer.go's addressPattern/ethAddressPattern) -
+// linking anything else (a raw BTC address, say) would just be a dead
+// end dressed up as a working link.
+function explorerAddressHref(rawAddress) {
+    if (!rawAddress) return null;
+    if (/^[0-9a-f]{40}$/.test(rawAddress) || /^0x[0-9a-fA-F]{40}$/.test(rawAddress)) {
+        return `explorer?q=${encodeURIComponent(rawAddress)}`;
+    }
+    return null;
+}
+
+// addressWithCopy renders a CCT address (formatted with its display
+// "cc" prefix) as a clickable link into that address's own Explorer
+// page, plus a copy button for the raw address. link:false opts out of
+// the link (used for an address this page is itself already showing,
+// where linking to itself would be pointless).
+function addressWithCopy(address, iconId, opts) {
     if (!address) return `<span style="opacity:0.5;">(none - system-side)</span>`;
-    return `${formatAddress(address)} ${safeCopyIcon(formatAddress(address), iconId)}`;
+    const display = formatAddress(address);
+    const linkOptOut = opts && opts.link === false;
+    const href = linkOptOut ? null : explorerAddressHref(address);
+    const shown = href
+        ? `<a href="${href}" style="color:inherit;text-decoration:underline;">${display}</a>`
+        : display;
+    return `${shown} ${safeCopyIcon(display, iconId)}`;
 }
 
 // networkLabelForTx names the real internal machinery (bridge/vault) -
@@ -174,9 +198,80 @@ function primaryAmount(tx) {
             if (data.amount === undefined) return null;
             return { amount: String(data.amount), symbol };
         }
+        case "VAULT_RELEASE_COMPLETE": {
+            // The real amount that actually left CreditChain lives on
+            // the backend-resolved externalAmountSmallestUnit/
+            // externalDestinationChain fields (see
+            // TransactionView.ExternalDestination's doc comment in
+            // api/explorer_summary.go) - this transaction's own Data
+            // never carries it. Symbol is the plain real-asset code
+            // (ETH/BTC/USDC), not "Wrapped X" - once released, the
+            // recipient holds the real asset, not CreditChain's
+            // wrapped representation of it.
+            const chain = tx.externalDestinationChain;
+            const raw = tx.externalAmountSmallestUnit;
+            if (!chain || raw === undefined) return null;
+            const decimals = SMALLEST_UNIT_DECIMALS[chain];
+            return { amount: decimals ? smallestToDecimalDisplay(raw, decimals) : String(raw), symbol: chain };
+        }
         default:
             return null;
     }
+}
+
+// USD_RATE_PARAM_FOR_SYMBOL maps a primaryAmount() symbol to the
+// admin-set governance-param rate (see api/admin_params.go's
+// adminSettableParams, publicly readable at GET /admin/params) that
+// converts it to USD - the same consensus-agreed rate this backend
+// already uses for the account-holdings cap, not a live/instantaneous
+// price feed that could disagree node-to-node. Deliberately narrow:
+// only symbols with a REAL admin-set rate get a $ figure at all -
+// ETHTEST/USDCTEST/oETH and other testnet-only play tokens are
+// intentionally absent here, since showing a dollar value for those
+// would misrepresent something the site's own disclosure banner
+// already says has no real monetary value.
+const USD_RATE_PARAM_FOR_SYMBOL = {
+    ETH: "EthUsdCentsPerEth",
+    BTC: "BtcUsdCentsPerBtc",
+    "Wrapped Ethereum": "EthUsdCentsPerEth",
+    "Wrapped Bitcoin": "BtcUsdCentsPerBtc",
+    CCT: "CctUsdCents",
+};
+
+// USDC-denominated symbols are already dollar-denominated 1:1 - no
+// governance-param rate lookup needed, just the amount itself.
+const USDC_LIKE_SYMBOLS = new Set(["USDC", "USDC_CCC1"]);
+
+let govParamsPromise = null;
+
+// fetchGovParams loads the public governance-params snapshot once per
+// page load (not once per amount shown) - cheap, and every USD
+// conversion on this page should agree with every other one even if
+// several render before the fetch resolves.
+function fetchGovParams() {
+    if (!govParamsPromise) {
+        govParamsPromise = apiGet("/admin/params").catch(() => ({}));
+    }
+    return govParamsPromise;
+}
+
+// usdValueDisplay returns a formatted "$X.XX" string, or null when
+// there's no real rate to convert with (an unrecognized symbol, or a
+// recognized one whose rate an admin has never actually set - 0/unset
+// means "not configured," per accountHoldingsRatesSet's identical
+// convention in api/account_holdings_cap.go) - never a guessed figure.
+function usdValueDisplay(amountStr, symbol, govParams) {
+    const n = parseFloat(amountStr);
+    if (isNaN(n)) return null;
+    if (USDC_LIKE_SYMBOLS.has(symbol)) {
+        return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+    const paramKey = USD_RATE_PARAM_FOR_SYMBOL[symbol];
+    if (!paramKey) return null;
+    const cents = govParams && govParams[paramKey];
+    if (!cents) return null;
+    const usd = (n * cents) / 100;
+    return `$${usd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 // flowDiagram draws the "who/what/who" picture the Explorer design
@@ -185,8 +280,25 @@ function primaryAmount(tx) {
 // for a cross-network one, without ever naming the internal bridge/
 // vault machinery that makes the cross-network leg actually work
 // (that detail lives in Advanced Details instead).
-function flowDiagram(tx, amount) {
-    const amountLabel = amount ? `<div class="tx-flow-amount">${amount.amount} ${escapeHtml(amount.symbol)}</div>` : "";
+function flowDiagram(tx, amount, usdText) {
+    const usdLabel = usdText ? `<div class="tx-flow-usd">${escapeHtml(usdText)}</div>` : "";
+    const amountLabel = amount ? `<div class="tx-flow-amount">${amount.amount} ${escapeHtml(amount.symbol)}</div>${usdLabel}` : "";
+
+    // A vault release with a resolved real destination gets its own
+    // sender/recipient-shaped flow (like the ordinary case below) with
+    // the real external address as the recipient, rather than the
+    // generic "CreditChain -> External network" box neither amount nor
+    // recipient ever appeared in.
+    if (tx.Type === "VAULT_RELEASE_COMPLETE" && tx.externalDestination) {
+        const chainName = CHAIN_DISPLAY_NAME[tx.externalDestinationChain] || tx.externalDestinationChain || "";
+        return `
+            <div class="tx-flow">
+                <div class="tx-flow-node">CreditChain</div>
+                <div class="tx-flow-arrow">${amountLabel}&rarr;</div>
+                <div class="tx-flow-node">${escapeHtml(tx.externalDestination)}${chainName ? `<br><span style="opacity:0.6;font-size:10px;">${escapeHtml(chainName)}</span>` : ""}</div>
+            </div>
+        `;
+    }
 
     if (tx.category === "cross_network") {
         const data = parseTxData(tx);
@@ -199,6 +311,9 @@ function flowDiagram(tx, amount) {
         } else if (["BRIDGE_DEPOSIT", "BRIDGE_BTC_DEPOSIT", "VAULT_LOCK_ATTEST"].includes(tx.Type)) {
             left = chainName || (tx.Type === "BRIDGE_BTC_DEPOSIT" ? "Bitcoin" : "Ethereum");
         } else if (tx.Type === "VAULT_RELEASE_COMPLETE") {
+            // Reached only when the real destination couldn't be
+            // resolved (see the branch above) - honest fallback, not
+            // the normal case.
             left = "CreditChain";
             right = "External network";
         }
@@ -230,7 +345,10 @@ async function loadTxDetail() {
     }
 
     try {
-        const data = await apiGet(`/explorer/search?q=${encodeURIComponent(id)}`);
+        const [data, govParams] = await Promise.all([
+            apiGet(`/explorer/search?q=${encodeURIComponent(id)}`),
+            fetchGovParams(),
+        ]);
         if (!data.found || data.type !== "transactions" || !data.transactions || data.transactions.length === 0) {
             container.innerHTML = `<p class="explorer-empty">No confirmed transaction found with ID "${escapeHtml(id)}". It may still be waiting to be included in a block, or the ID may be wrong.</p>`;
             return;
@@ -239,6 +357,7 @@ async function loadTxDetail() {
         const tx = data.transactions[0];
         const time = tx.Timestamp ? new Date(tx.Timestamp * 1000).toLocaleString() : "-";
         const amount = primaryAmount(tx);
+        const usdText = amount ? usdValueDisplay(amount.amount, amount.symbol, govParams) : null;
         const categoryLabel = CATEGORY_LABEL[tx.category] || "Activity";
 
         const reputationRow = tx.reputationDelta
@@ -254,10 +373,26 @@ async function loadTxDetail() {
         const externalLinkRow = tx.externalTxLink
             ? txRow(
                   "External Tx",
-                  `<a href="${tx.externalTxLink}" target="_blank" rel="noopener" style="color:var(--cc-accent-gold, #16B8A6);">${tx.externalTxHash}</a>` +
+                  `<a href="${tx.externalTxLink}" target="_blank" rel="noopener" style="color:var(--cc-accent-gold, #16B8A6);">${tx.externalTxHash}</a> ${safeCopyIcon(tx.externalTxHash, "txExtHashCopy")}` +
                       `<br><span style="opacity:0.55;font-size:11px;">CreditChain bridged this - view the real transaction on the external network</span>`
               )
             : "";
+
+        // A vault release's "To" is the real external destination (see
+        // TransactionView.ExternalDestination's doc comment) - not a
+        // CreditChain address, so it's shown plainly (no "cc" display
+        // prefix) with its own copy button, linked into the Explorer
+        // only when it's actually a shape /explorer/search can resolve.
+        const toRowValue =
+            tx.Type === "VAULT_RELEASE_COMPLETE" && tx.externalDestination
+                ? (() => {
+                      const href = explorerAddressHref(tx.externalDestination);
+                      const shown = href
+                          ? `<a href="${href}" style="color:inherit;text-decoration:underline;">${escapeHtml(tx.externalDestination)}</a>`
+                          : escapeHtml(tx.externalDestination);
+                      return `${shown} ${safeCopyIcon(tx.externalDestination, "txToCopy")} <span style="opacity:0.5;font-size:11px;">(external address)</span>`;
+                  })()
+                : addressWithCopy(tx.To, "txToCopy");
 
         container.innerHTML = `
             <div class="tx-status-header">
@@ -268,7 +403,7 @@ async function loadTxDetail() {
 
             <p class="tx-summary">${tx.summary ? escapeHtml(tx.summary) : escapeHtml(tx.Type)}</p>
 
-            ${flowDiagram(tx, amount)}
+            ${flowDiagram(tx, amount, usdText)}
 
             <div class="tx-actions">
                 <button type="button" class="tx-action-btn" onclick="copyTxIdToClipboard()">Copy Transaction ID</button>
@@ -277,8 +412,8 @@ async function loadTxDetail() {
 
             <h4 class="tx-section-title">Transfer Details</h4>
             ${txRow("From", addressWithCopy(tx.From, "txFromCopy"))}
-            ${txRow("To", addressWithCopy(tx.To, "txToCopy"))}
-            ${amount ? txRow("Amount", `${amount.amount} ${escapeHtml(amount.symbol)}`) : ""}
+            ${txRow("To", toRowValue)}
+            ${amount ? txRow("Amount", `${amount.amount} ${escapeHtml(amount.symbol)}${usdText ? ` <span style="opacity:0.6;">(${escapeHtml(usdText)})</span>` : ""}`) : ""}
             ${txRow("Time", time)}
             ${reputationRow}
 
