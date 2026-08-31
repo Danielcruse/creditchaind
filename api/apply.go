@@ -425,6 +425,11 @@ func ApplyBlock(block core.Block) {
 	// fee share gets distributed to active moderators once every two
 	// weeks. See sweepModeratorFeePoolIfDue's own doc comment.
 	sweepModeratorFeePoolIfDue(block)
+
+	// Housekeeping only - ListActive already excludes an expired-but-
+	// not-yet-swept post on its own (see SponsoredPostStore.ExpireStale's
+	// doc comment), so this just keeps Status accurate for display.
+	sponsoredPostStore.ExpireStale(block.Timestamp)
 }
 
 // processDormantWallets sweeps every wallet that's gone dormant (see
@@ -1998,6 +2003,32 @@ func verifyTxAuth(tx core.Transaction) bool {
 		}
 		return signed == claimed
 
+	case core.TxSponsoredPostCreate:
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed, claimed sponsoredPostCreateData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed
+
+	case core.TxSponsoredPostReview:
+		if tx.AuthAddress != tx.From {
+			return false
+		}
+		var signed, claimed sponsoredPostReviewData
+		if err := json.Unmarshal(tx.AuthPayload, &signed); err != nil {
+			return false
+		}
+		if err := json.Unmarshal([]byte(tx.Data), &claimed); err != nil {
+			return false
+		}
+		return signed == claimed
+
 	case core.TxHubTradeRequest:
 		if tx.AuthAddress != tx.From {
 			return false
@@ -2559,6 +2590,12 @@ func ApplyTransaction(tx core.Transaction) {
 
 	case core.TxHubRulesSet:
 		applyHubRulesSet(tx)
+
+	case core.TxSponsoredPostCreate:
+		applySponsoredPostCreate(tx)
+
+	case core.TxSponsoredPostReview:
+		applySponsoredPostReview(tx)
 
 	case core.TxHubWorkerAdd:
 		applyHubWorkerAdd(tx)
@@ -6276,6 +6313,93 @@ func applyHubRulesSet(tx core.Transaction) {
 	}
 
 	hubRulesStore.Set(tx.From, data.Text, data.PaymentWindowMinutes, data.MinReputationToApply, data.CannedReplies, data.RequireKYC, data.ServiceProviders, tx.Timestamp)
+}
+
+// applySponsoredPostCreate is the confirmation-time counterpart to
+// HandleCreateSponsoredPost - re-checks everything (category, RC spend
+// cap, validator existence, CCT balance) rather than trusting
+// submission-time state alone, this file's usual discipline. Moves the
+// real CCT via splitAdFee (api/ad_fee_split.go) BEFORE creating the
+// record, so a Sponsored Post never exists without its fee having
+// actually been paid and split.
+func applySponsoredPostCreate(tx core.Transaction) {
+	var data sponsoredPostCreateData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+	if len(data.Text) == 0 || len(data.Text) > 500 {
+		return
+	}
+	if !core.IsAllowedSponsoredPostCategory(data.Category) {
+		return
+	}
+	if data.ValidatorID != "" {
+		if _, ok := validatorStore.Get(data.ValidatorID); !ok {
+			return
+		}
+	}
+	if data.CCTAmount < minSponsoredPostCCT {
+		return
+	}
+	if data.CCTAmount > core.MaxAdSpendForRept(reptStore.BalanceOf(tx.From)) {
+		return
+	}
+
+	store, err := resolveTokenStore("CCT")
+	if err != nil {
+		return
+	}
+	if store.BalanceOf(tx.From) < data.CCTAmount {
+		return
+	}
+
+	assignedModerator := moderatorStore.AssignNext()
+
+	splitAdFee(store, tx.From, data.ValidatorID, data.CCTAmount)
+
+	sponsoredPostStore.Create(&core.SponsoredPost{
+		ID:                  tx.ID,
+		Advertiser:          tx.From,
+		AdvertiserPublicKey: tx.AuthPublicKey,
+		ValidatorID:         data.ValidatorID,
+		Text:                data.Text,
+		Category:            data.Category,
+		CCTPaid:             data.CCTAmount,
+		Status:              core.SponsoredPostPending,
+		ModeratorAddress:    assignedModerator,
+		CreatedAt:           tx.Timestamp,
+	})
+
+	if assignedModerator != "" {
+		notifyUser(assignedModerator, "SPONSORED_POST_ASSIGNED", "A Sponsored Post is waiting on your review", tx.ID)
+	}
+}
+
+// applySponsoredPostReview is the confirmation-time counterpart to
+// HandleReviewSponsoredPost - re-verifies assignment and PENDING_REVIEW
+// status (core.SponsoredPostStore.Review also enforces both, but this
+// mirrors CompanyReview's belt-and-suspenders pattern of checking
+// before any side effect).
+func applySponsoredPostReview(tx core.Transaction) {
+	var data sponsoredPostReviewData
+	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
+		return
+	}
+
+	post, ok := sponsoredPostStore.Get(data.ID)
+	if !ok || post.ModeratorAddress != tx.From || post.Status != core.SponsoredPostPending {
+		return
+	}
+
+	if !sponsoredPostStore.Review(data.ID, tx.From, data.Approve, sponsoredPostRunLengthSeconds, tx.Timestamp) {
+		return
+	}
+
+	if data.Approve {
+		notifyUser(post.Advertiser, "SPONSORED_POST_APPROVED", "Your Sponsored Post is now live", tx.ID)
+	} else {
+		notifyUser(post.Advertiser, "SPONSORED_POST_REJECTED", "Your Sponsored Post was not approved", tx.ID)
+	}
 }
 
 // applyHubWorkerAdd delegates day-to-day pricing to another wallet -

@@ -262,14 +262,88 @@ async function refreshUnclaimedCompanies() {
     }
 }
 
+// --- Sponsored Post review -------------------------------------------
+
+async function reviewSponsoredPost(id, approve) {
+    const verb = approve ? "approve" : "reject";
+    if (!confirm(`${approve ? "Approve" : "Reject"} this Sponsored Post? Once approved it becomes visible to eligible viewers immediately after the next block confirms it.`)) {
+        return;
+    }
+
+    try {
+        const result = await apiPostSigned("/sponsored-posts/review", { id, approve });
+        alert(`Review ${verb} pending (tx ${result.txId}).`);
+        await refreshAssignedSponsoredPosts();
+    } catch (e) {
+        alert(`Could not ${verb} this post: ` + e.message);
+    }
+}
+
+const SPONSORED_POST_CATEGORY_LABELS = {
+    VALIDATOR_STAKING: "Validator Staking",
+    LENDING: "Lending",
+    TRADING_HUB: "Trading Hub",
+    GENERAL_BUSINESS: "General Business",
+    COMMUNITY: "Community",
+};
+
+async function refreshAssignedSponsoredPosts() {
+    if (!wallet) return;
+
+    const el = document.getElementById("assignedSponsoredPosts");
+    if (!el) return;
+
+    try {
+        const posts = await apiGet(`/sponsored-posts/assigned?moderator=${wallet.address}`);
+
+        if (!posts || posts.length === 0) {
+            el.innerText = "No Sponsored Posts assigned to you yet.";
+            return;
+        }
+
+        el.innerHTML = posts
+            .map((p) => {
+                const pending = p.Status === "PENDING_REVIEW";
+                const categoryLabel = SPONSORED_POST_CATEGORY_LABELS[p.Category] || p.Category;
+                const scopeLabel = p.ValidatorID
+                    ? `scoped to validator ${p.ValidatorID.slice(0, 8)}...`
+                    : "global reach";
+                // makesNumericClaims (core.MakesNumericClaims, server-computed
+                // and included in the response) gates whether this panel
+                // even offers a numbers-to-check note - a general-business
+                // post never gets this lane at all (see api/sponsored_post.go's
+                // doc comment).
+                const numericClaimsNote = p.makesNumericClaims
+                    ? `<p style="opacity:0.85;font-size:12px;color:#b45309;">⚠ This category commonly makes a numeric claim (APR/rate/yield) -
+                       verify the claimed number against the real current rate before approving
+                       ${p.ValidatorID ? `(check validator ${p.ValidatorID.slice(0, 8)}... on the Validators page)` : ""}.</p>`
+                    : "";
+                return `<p><strong>${categoryLabel}</strong> - ${p.CCTPaid} CCT, ${scopeLabel} - ${escapeHtml(p.Status)} ` +
+                    (pending
+                        ? `<button onclick="reviewSponsoredPost('${p.ID}', true)">Approve</button> ` +
+                          `<button onclick="reviewSponsoredPost('${p.ID}', false)">Reject</button>`
+                        : "") +
+                    `</p>` +
+                    `<p style="opacity:0.8;font-size:13px;">${escapeHtml(p.Text)}</p>` +
+                    numericClaimsNote;
+            })
+            .join("<hr style=\"opacity:0.15;\">");
+    } catch (e) {
+        console.error(e);
+        el.innerText = "Could not load assigned Sponsored Posts.";
+    }
+}
+
 refreshModeratorStatus();
 refreshAssignedTrades();
 loadHubCountryAllowlist().then(refreshAssignedCompanies);
 refreshUnclaimedCompanies();
+refreshAssignedSponsoredPosts();
 
 setInterval(() => {
     refreshModeratorStatus();
     refreshAssignedTrades();
     loadHubCountryAllowlist().then(refreshAssignedCompanies);
     refreshUnclaimedCompanies();
+    refreshAssignedSponsoredPosts();
 }, 10000);

@@ -1,0 +1,146 @@
+/* gov-burst.css - the floating governance-feed overlay
+   (website/js/governance-tab.js's openGovBurst/openIdleGovBurst) -
+   split out of landing.css so a page with no Governance card at all
+   (e.g. outernet.html, which opens this overlay only via
+   idle-feed.js's idle timer) can include just this, without pulling in
+   landing.css's own page-wide body{}/button{} rules. index.html still
+   needs landing.css too, for the .gov-tab card itself. */
+
+.gov-burst-overlay{
+    position:fixed;
+    inset:0;
+    z-index:9999;
+    background:rgba(219,238,255,0.78);
+    backdrop-filter:blur(10px);
+    animation:govOverlayFadeIn 0.35s ease;
+}
+@keyframes govOverlayFadeIn{
+    from{ opacity:0; }
+    to{ opacity:1; }
+}
+
+.gov-float-panel{
+    position:absolute;
+    width:min(260px, 66vw);
+    padding:16px 18px;
+    border-radius:16px;
+    background:rgba(255,255,255,0.72);
+    border:1px solid rgba(37,99,235,0.35);
+    box-shadow:0 10px 34px rgba(37,99,235,0.25);
+    backdrop-filter:blur(12px);
+    color:#10243e;
+    transform:translate(-50%, -50%);
+    animation-name:govBurstFloat;
+    animation-duration:var(--dur, 9s);
+    animation-timing-function:ease-in-out;
+    animation-iteration-count:infinite;
+    animation-delay:var(--delay, 0s);
+}
+@keyframes govBurstFloat{
+    0%{ opacity:0; transform:translate(-50%,-50%) scale(0.25) translate(var(--ox), var(--oy)); }
+    12%{ opacity:1; transform:translate(-50%,-50%) scale(1) translate(0,0); }
+    35%{ transform:translate(-50%,-50%) scale(1) translate(var(--fx1), var(--fy1)) rotate(1.2deg); }
+    60%{ transform:translate(-50%,-50%) scale(1) translate(var(--fx2), var(--fy2)) rotate(-1.2deg); }
+    85%{ transform:translate(-50%,-50%) scale(1) translate(var(--fx1), var(--fy2)) rotate(0.8deg); }
+    100%{ opacity:1; transform:translate(-50%,-50%) scale(1) translate(0,0); }
+}
+.gov-float-panel-meta{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:0.4px;
+    color:#2563eb;
+    opacity:0.85;
+    margin-bottom:6px;
+}
+.gov-float-panel-text{
+    font-size:14px;
+    line-height:1.5;
+    color:#132f52;
+}
+
+/* Sponsored Posts share the exact same .gov-float-panel shell, badge-
+   distinguished rather than a separate visual language - see
+   governance-tab.js's doc comment for why this is one feed, not a
+   second ad surface. */
+.gov-float-panel-sponsored{
+    border-color:rgba(22,184,166,0.45);
+    box-shadow:0 10px 34px rgba(22,184,166,0.22);
+}
+.gov-float-panel-sponsored-badge{
+    display:inline-block;
+    font-weight:700;
+    letter-spacing:0.6px;
+    color:#0f9d8a;
+    border:1px solid #0f9d8a;
+    border-radius:6px;
+    padding:1px 6px;
+    margin-right:4px;
+}
+.gov-float-panel-reason{
+    font-size:11px;
+    opacity:0.65;
+    margin-top:6px;
+    font-style:italic;
+}
+.gov-float-panel-mute{
+    margin-top:10px;
+    font-size:11px;
+    font-weight:600;
+    padding:4px 10px;
+    border-radius:8px;
+    border:1px solid rgba(16,36,62,0.25);
+    background:transparent;
+    color:#10243e;
+    cursor:pointer;
+}
+.gov-float-panel-mute:hover{
+    border-color:#10243e;
+}
+
+.gov-burst-close{
+    position:fixed;
+    top:20px;
+    right:20px;
+    z-index:10000;
+    width:44px;
+    height:44px;
+    border-radius:50%;
+    border:1px solid rgba(37,99,235,0.35);
+    background:rgba(255,255,255,0.85);
+    color:#1d4ed8;
+    font-size:24px;
+    line-height:1;
+    cursor:pointer;
+    box-shadow:0 6px 20px rgba(37,99,235,0.25);
+    transition:0.2s;
+}
+.gov-burst-close:hover, .gov-burst-close:focus-visible{
+    background:#2563eb;
+    color:#fff;
+    outline:none;
+    box-shadow:0 8px 26px rgba(37,99,235,0.45);
+}
+
+.gov-burst-full{
+    position:fixed;
+    bottom:24px;
+    left:24px;
+    z-index:10000;
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:12px 20px;
+    border-radius:12px;
+    background:linear-gradient(90deg,#2563eb,#3b82f6);
+    color:#fff;
+    text-decoration:none;
+    font-size:14px;
+    font-weight:700;
+    box-shadow:0 8px 24px rgba(37,99,235,0.4);
+    transition:0.2s;
+}
+.gov-burst-full:hover, .gov-burst-full:focus-visible{
+    transform:translateY(-2px);
+    box-shadow:0 10px 30px rgba(37,99,235,0.55);
+    outline:none;
+}

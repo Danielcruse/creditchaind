@@ -635,6 +635,16 @@ const (
 	// job) is that even total control of this one key can only ever
 	// nudge this one value, within a bounded step, at a bounded rate.
 	TxVaultGasPriceOracleUpdate TransactionType = "VAULT_GAS_PRICE_ORACLE_UPDATE"
+
+	// TxSponsoredPostCreate is an advertiser paying CCT to submit a
+	// Sponsored Post for the governance feed - see core.SponsoredPost's
+	// doc comment. Moves the fee (split via api/ad_fee_split.go's
+	// splitAdFee) and creates the record PENDING_REVIEW; it is never
+	// shown to anyone until a moderator approves it via
+	// TxSponsoredPostReview, same disclosed-trust model as
+	// TxCompanyApply/TxCompanyReview.
+	TxSponsoredPostCreate TransactionType = "SPONSORED_POST_CREATE"
+	TxSponsoredPostReview TransactionType = "SPONSORED_POST_REVIEW"
 )
 
 type Transaction struct {

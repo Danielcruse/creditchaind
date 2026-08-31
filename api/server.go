@@ -703,6 +703,26 @@ func StartServer(port string) {
 		HandleListOffAppCurrencies,
 	)
 	http.HandleFunc(
+		"/sponsored-posts/create",
+		HandleCreateSponsoredPost,
+	)
+	http.HandleFunc(
+		"/sponsored-posts/review",
+		HandleReviewSponsoredPost,
+	)
+	http.HandleFunc(
+		"/sponsored-posts/assigned",
+		HandleListAssignedSponsoredPosts,
+	)
+	http.HandleFunc(
+		"/sponsored-posts/mine",
+		HandleListMySponsoredPosts,
+	)
+	http.HandleFunc(
+		"/sponsored-posts/feed",
+		HandleSponsoredPostFeed,
+	)
+	http.HandleFunc(
 		"/hub-rates/trade",
 		HandleRequestHubTrade,
 	)

@@ -1,16 +1,34 @@
-// governance-tab.js - the landing page's interactive Governance card.
-// First tap: fetches recent community status posts (GET
+// governance-tab.js - the landing page's interactive Governance card,
+// and (via idle-feed.js on logged-in pages) the same floating-panel
+// burst opened automatically after a period of user inactivity. First
+// tap: fetches recent community status posts (GET
 // /governance/status/recent, same public/no-wallet endpoint
 // landing-news.js already polls) and reveals them inline in the card
-// with a "light coming into existence" glow. Second tap: the card
-// bursts into floating, semi-transparent panels drifting across the
-// page - a bottom-left button links to the full governance.html page,
-// a top-right exit icon closes the overlay back to the resting state.
+// with a "light coming into existence" glow. Second tap (or an idle
+// timeout, see openIdleGovBurst): the card bursts into floating,
+// semi-transparent panels drifting across the page - a bottom-left
+// button links to the full governance.html page, a top-right exit icon
+// closes the overlay back to the resting state.
+//
+// Sponsored Posts (core.SponsoredPost, api/sponsored_post.go) are woven
+// into this SAME feed rather than a separate ad surface - each
+// rendered panel is tagged Sponsored, always shows Reason (why this
+// viewer is seeing it - "Shown to everyone" or "Shown because you
+// delegate to <validator>" - never a silent placement), and carries a
+// Mute button so a viewer can stop seeing a specific validator's
+// sponsored content going forward.
 
 const GOV_TAB_MAX_PANELS = 7;
+// GOV_TAB_MAX_SPONSORED_PANELS caps how many of GOV_TAB_MAX_PANELS a
+// single burst may spend on Sponsored Posts - always alongside, never
+// instead of, real governance statuses, so an idle-triggered burst
+// never reads as ad-heavy.
+const GOV_TAB_MAX_SPONSORED_PANELS = 2;
+const GOV_TAB_MUTED_VALIDATORS_KEY = "cc_muted_sponsor_validators";
 
 let govTabState = "idle"; // "idle" | "lit" | "burst"
 let govTabStatuses = [];
+let govTabSponsoredEntries = [];
 
 function shortGovAddr(addr) {
     return addr ? `cc${addr.slice(0, 6)}...${addr.slice(-4)}` : "Anonymous";
@@ -28,6 +46,77 @@ async function fetchGovTabStatuses() {
     }
 }
 
+// mutedSponsorValidators/isValidatorMuted/muteValidator - a viewer's own
+// per-browser mute list (localStorage, same "per-viewer convenience,
+// never authoritative" status as getDisplayCurrency in currency.js).
+// Muting is by VALIDATOR (the "community" a Sponsored Post is scoped
+// to), not by individual post, so muting one unwanted post's validator
+// also silences any other post that validator later sponsors.
+function mutedSponsorValidators() {
+    try {
+        return JSON.parse(localStorage.getItem(GOV_TAB_MUTED_VALIDATORS_KEY) || "[]");
+    } catch (e) {
+        return [];
+    }
+}
+
+function isValidatorMuted(validatorId) {
+    return mutedSponsorValidators().includes(validatorId);
+}
+
+function muteValidator(validatorId) {
+    const muted = mutedSponsorValidators();
+    if (!muted.includes(validatorId)) {
+        muted.push(validatorId);
+        localStorage.setItem(GOV_TAB_MUTED_VALIDATORS_KEY, JSON.stringify(muted));
+    }
+    govTabSponsoredEntries = govTabSponsoredEntries.filter((e) => e.ValidatorID !== validatorId);
+    // Re-render immediately if the burst is already open, so muting
+    // takes visible effect without needing to close/reopen.
+    if (govTabState === "burst") {
+        closeGovBurst();
+        openGovBurst();
+        govTabState = "burst";
+    }
+}
+
+// fetchSponsoredFeed fetches every Sponsored Post the given wallet
+// address (or "" for an anonymous/logged-out visitor, who only sees
+// global-reach posts) is eligible to see right now, filtered to
+// already-muted validators client-side.
+async function fetchSponsoredFeed(viewerAddress) {
+    try {
+        const res = await fetch(`${API_BASE}/sponsored-posts/feed?viewer=${encodeURIComponent(viewerAddress || "")}`);
+        if (!res.ok) return [];
+        const data = await res.json();
+        return (data || []).filter((e) => !e.ValidatorID || !isValidatorMuted(e.ValidatorID));
+    } catch (e) {
+        console.error(e);
+        return [];
+    }
+}
+
+// openIdleGovBurst is idle-feed.js's entry point (see that file) - the
+// idle-triggered counterpart to handleGovTabClick's manual two-tap
+// path. Fetches both the ordinary governance feed and the Sponsored
+// Post feed for whichever wallet (if any) is present in this browser,
+// then opens the exact same burst overlay handleGovTabClick's second
+// tap does - one feed, two trigger paths.
+async function openIdleGovBurst() {
+    if (govTabState === "burst") return;
+
+    const viewerAddress = typeof getWalletAddress === "function" ? getWalletAddress() : null;
+    const [statuses, sponsored] = await Promise.all([
+        fetchGovTabStatuses(),
+        fetchSponsoredFeed(viewerAddress),
+    ]);
+    govTabStatuses = statuses;
+    govTabSponsoredEntries = sponsored;
+
+    openGovBurst();
+    govTabState = "burst";
+}
+
 async function handleGovTabClick(e) {
     if (e) e.stopPropagation();
 
@@ -35,7 +124,13 @@ async function handleGovTabClick(e) {
     if (!card) return;
 
     if (govTabState === "idle") {
-        govTabStatuses = await fetchGovTabStatuses();
+        const viewerAddress = typeof getWalletAddress === "function" ? getWalletAddress() : null;
+        const [statuses, sponsored] = await Promise.all([
+            fetchGovTabStatuses(),
+            fetchSponsoredFeed(viewerAddress),
+        ]);
+        govTabStatuses = statuses;
+        govTabSponsoredEntries = sponsored;
         renderGovTabInline();
         card.classList.add("lit");
         govTabState = "lit";
@@ -82,9 +177,19 @@ function openGovBurst() {
     overlay.className = "gov-burst-overlay";
 
     const origin = govBurstOrigin();
-    const statuses = govTabStatuses.length > 0
-        ? govTabStatuses.slice(0, GOV_TAB_MAX_PANELS)
-        : [{ ID: "placeholder", Address: "", Text: "Be the first to post a community update once governance is live.", Timestamp: 0 }];
+
+    // Interleave Sponsored Posts into the same feed rather than a
+    // separate ad surface - capped at GOV_TAB_MAX_SPONSORED_PANELS so
+    // an idle-triggered burst never reads as ad-heavy, and always
+    // placed alongside (never replacing) real governance statuses.
+    const sponsoredSlice = govTabSponsoredEntries.slice(0, GOV_TAB_MAX_SPONSORED_PANELS)
+        .map((entry) => ({ ...entry, sponsored: true }));
+    const remainingSlots = Math.max(0, GOV_TAB_MAX_PANELS - sponsoredSlice.length);
+    const statusSlice = govTabStatuses.slice(0, remainingSlots).map((s) => ({ ...s, sponsored: false }));
+
+    const statuses = statusSlice.length + sponsoredSlice.length > 0
+        ? [...statusSlice, ...sponsoredSlice]
+        : [{ ID: "placeholder", Address: "", Text: "Be the first to post a community update once governance is live.", Timestamp: 0, sponsored: false }];
 
     const panelCount = statuses.length;
     statuses.forEach((status, i) => {
@@ -121,11 +226,34 @@ function openGovBurst() {
         panel.style.setProperty("--delay", `${i * 0.08}s`);
         panel.style.setProperty("--dur", `${8 + Math.random() * 4}s`);
 
-        const time = status.Timestamp ? new Date(status.Timestamp * 1000).toLocaleString() : "";
-        panel.innerHTML = `
-            <div class="gov-float-panel-meta">${status.Address ? shortGovAddr(status.Address) : "Community"}${time ? " &middot; " + time : ""}</div>
-            <div class="gov-float-panel-text">${escapeHtml(status.Text)}</div>
-        `;
+        const time = status.CreatedAt || status.Timestamp
+            ? new Date((status.CreatedAt || status.Timestamp) * 1000).toLocaleString()
+            : "";
+
+        if (status.sponsored) {
+            // Sponsored panels are visually distinct (badge) and always
+            // show WHY this viewer is seeing it (Reason - never a
+            // silent placement) plus a Mute control for that specific
+            // validator's future sponsored content.
+            panel.classList.add("gov-float-panel-sponsored");
+            const muteBtn = status.ValidatorID
+                ? `<button type="button" class="gov-float-panel-mute" onclick="event.stopPropagation();muteValidator('${status.ValidatorID}')">Mute</button>`
+                : "";
+            panel.innerHTML = `
+                <div class="gov-float-panel-meta">
+                    <span class="gov-float-panel-sponsored-badge">Sponsored</span>
+                    ${time ? "&middot; " + time : ""}
+                </div>
+                <div class="gov-float-panel-text">${escapeHtml(status.Text)}</div>
+                <div class="gov-float-panel-reason">${escapeHtml(status.Reason || "")}</div>
+                ${muteBtn}
+            `;
+        } else {
+            panel.innerHTML = `
+                <div class="gov-float-panel-meta">${status.Address ? shortGovAddr(status.Address) : "Community"}${time ? " &middot; " + time : ""}</div>
+                <div class="gov-float-panel-text">${escapeHtml(status.Text)}</div>
+            `;
+        }
         overlay.appendChild(panel);
     });
 

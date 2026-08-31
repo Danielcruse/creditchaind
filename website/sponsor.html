@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Sponsored Posts</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<link rel="stylesheet" href="css/theme.css?v=fixaug5c">
+<link rel="stylesheet" href="css/design-system.css?v=1">
+    <link rel="stylesheet" href="css/style.css?v=fixaug5c">
+</head>
+<body>
+<script src="js/device-lock.js?v=fixaug5b"></script>
+<script src="js/protocol-badge.js?v=creditchainbadge1"></script>
+
+<h1>Sponsored Posts</h1>
+
+<div class="card">
+
+    <h2>What This Is</h2>
+
+    <p>
+        Pay CCT to promote a post into the governance feed - either to everyone, or scoped to one
+        validator's own community (every wallet currently delegating CCT to that validator). A
+        moderator reviews every post before it goes live; nothing is ever shown unreviewed.
+    </p>
+
+    <p style="opacity:0.75;font-size:12px;">
+        How much CCT you may spend on a single post is capped by your RC (REPT) balance - build
+        real reputation to unlock a larger campaign. The fee itself is split between burning,
+        the targeted validator (or the governance fund for a global post), the Foundation
+        Treasury, and the moderator pool, per a split the community votes on through governance -
+        see <a href="governance" style="color:var(--cc-accent-gold, #16B8A6);">Governance</a>.
+    </p>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>Submit A Sponsored Post</h2>
+
+    <p style="opacity:0.75;font-size:13px;" id="sponsorSpendLimitNote">Checking your RC spend limit...</p>
+
+    <div class="explorer-search" style="display:flex;flex-direction:column;gap:10px;">
+        <select id="sponsorCategory">
+            <option value="">Select a category...</option>
+            <option value="VALIDATOR_STAKING">Validator Staking</option>
+            <option value="LENDING">Lending</option>
+            <option value="TRADING_HUB">Trading Hub</option>
+            <option value="GENERAL_BUSINESS">General Business</option>
+            <option value="COMMUNITY">Community</option>
+        </select>
+        <select id="sponsorValidator">
+            <option value="">Global reach (shown to everyone)</option>
+        </select>
+        <textarea id="sponsorText" placeholder="Your post text (shown with a Sponsored badge and, for a validator-scoped post, a note explaining why the viewer is seeing it)" maxlength="500" rows="3"></textarea>
+        <input id="sponsorCctAmount" type="number" min="10" step="1" placeholder="CCT to spend on this post (minimum 10)">
+    </div>
+
+    <br>
+
+    <button id="sponsorSubmitBtn" onclick="submitSponsoredPost()">Submit For Review</button>
+    <p id="sponsorSubmitStatus"></p>
+
+</div>
+
+<br>
+
+<div class="card">
+
+    <h2>My Sponsored Posts</h2>
+
+    <div id="mySponsoredPosts" class="explorer-empty">
+        Loading...
+    </div>
+
+</div>
+
+<br>
+
+<button onclick="location.href='outernet'">Back To Dashboard</button>
+&nbsp;|&nbsp;
+<button onclick="location.href='governance'">Governance</button>
+
+<script src="js/network-config.js?v=netfix0827"></script>
+<script src="js/api.js?v=sec0827"></script>
+<script src="js/ai-assistant.js?v=fixaug5b"></script>
+<script src="js/sponsor.js?v=sponsoredfeed1"></script>
+
+</body>
+</html>

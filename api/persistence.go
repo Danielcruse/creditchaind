@@ -92,6 +92,7 @@ type persistedState struct {
 	HubNotifications       []*core.HubNotification             `json:"hubNotifications"`
 	UserNotifications      []*core.UserNotification            `json:"userNotifications"`
 	GovernanceStatuses     []*core.GovernanceStatus            `json:"governanceStatuses"`
+	SponsoredPosts         []*core.SponsoredPost               `json:"sponsoredPosts"`
 	HubAgentApplications   []*core.HubAgentApplication         `json:"hubAgentApplications"`
 	HubWorkers             map[string]*core.HubWorker          `json:"hubWorkers"`
 	HubStorefronts         map[string]*core.HubStorefront      `json:"hubStorefronts"`
@@ -377,6 +378,7 @@ func SaveState() error {
 		HubNotifications:              notificationStore.Snapshot(),
 		UserNotifications:             userNotificationStore.Snapshot(),
 		GovernanceStatuses:            governanceStatusStore.Snapshot(),
+		SponsoredPosts:                sponsoredPostStore.Snapshot(),
 		HubAgentApplications:          hubAgentApplicationStore.Snapshot(),
 		HubWorkers:                    hubWorkerStore.Snapshot(),
 		HubAutomations:                hubAutomationStore.Snapshot(),
@@ -702,6 +704,9 @@ func LoadState() {
 	}
 	if snapshot.UserNotifications != nil {
 		userNotificationStore.Restore(snapshot.UserNotifications)
+	}
+	if snapshot.SponsoredPosts != nil {
+		sponsoredPostStore.Restore(snapshot.SponsoredPosts)
 	}
 	if snapshot.GovernanceStatuses != nil {
 		governanceStatusStore.Restore(snapshot.GovernanceStatuses)

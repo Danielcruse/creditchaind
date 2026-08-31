@@ -20,6 +20,12 @@ func init() {
 	governanceParamsStore.Seed("TSIWeightContributionBps", core.DefaultTrustWeights.ContributionBps)
 	governanceParamsStore.Seed("TSIWeightVerificationBps", core.DefaultTrustWeights.VerificationBps)
 	governanceParamsStore.Seed("TSIWeightDisputeBps", core.DefaultTrustWeights.DisputeBps)
+
+	governanceParamsStore.Seed(AdFeeBurnBpsKey, DefaultAdFeeBurnBps)
+	governanceParamsStore.Seed(AdFeeValidatorBpsKey, DefaultAdFeeValidatorBps)
+	governanceParamsStore.Seed(AdFeeTreasuryBpsKey, DefaultAdFeeTreasuryBps)
+	governanceParamsStore.Seed(AdFeeModeratorBpsKey, DefaultAdFeeModeratorBps)
+	governanceParamsStore.Seed(AdFeeGovFundBpsKey, DefaultAdFeeGovFundBps)
 }
 
 // syncTrustWeightIfNeeded is the second half of every write into
