@@ -120,8 +120,8 @@ func HandleReputationMath(w http.ResponseWriter, r *http.Request) {
 				Delta:       int64(core.ReputationDeltaLoanRepaidLate),
 				Target:      "the borrower",
 				Dimension:   core.DimensionRepayment.String(),
-				Description: "Defined in code as a smaller reward than an on-time repayment, but the protocol has no due-date/lateness-detection mechanism yet, so this path can never actually trigger.",
-				Wired:       false,
+				Description: "Paid instead of the on-time reward when a peer-funded loan is repaid after its due date but before its collateral is actually liquidated - covers the Warning/Margin Call/Grace Period stages, where the loan is still open to repayment. A due date passing on its own is not a penalty; it only reduces the reward this repayment earns.",
+				Wired:       true,
 			},
 			{
 				Name:        "Loan default / liquidation shortfall",

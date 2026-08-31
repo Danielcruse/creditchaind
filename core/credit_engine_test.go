@@ -49,6 +49,46 @@ func TestCreditEngine_DefaultLoan_ScalesReputationByShortfall(t *testing.T) {
 	}
 }
 
+// TestCreditEngine_RepayLoan_OnTimeVsLate confirms the repayment
+// reputation reward now actually branches on loan.DueAt vs the
+// repayment timestamp, instead of always paying the on-time amount.
+func TestCreditEngine_RepayLoan_OnTimeVsLate(t *testing.T) {
+	tests := []struct {
+		name      string
+		dueAt     int64
+		asOf      int64
+		wantDelta uint64
+		wantLate  bool
+	}{
+		{"no due date set - always on time", 0, 1000, ReputationDeltaLoanRepaidOnTime, false},
+		{"repaid before due date - on time", 500, 400, ReputationDeltaLoanRepaidOnTime, false},
+		{"repaid exactly at due date - on time", 500, 500, ReputationDeltaLoanRepaidOnTime, false},
+		{"repaid after due date - late", 500, 501, ReputationDeltaLoanRepaidLate, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wallets := NewWalletStore()
+			ce := &CreditEngine{Profiles: NewProfileStore(), Wallets: wallets}
+
+			loan := &Loan{ID: "test-ce-repay-" + tt.name, Borrower: "ce-repay-borrower-" + tt.name, Status: LoanFunded, DueAt: tt.dueAt}
+			wallets.Get(loan.Borrower).Reputation = 50
+
+			_, late := ce.RepayLoan(loan, tt.asOf, false)
+
+			if late != tt.wantLate {
+				t.Fatalf("late = %v, want %v", late, tt.wantLate)
+			}
+			if loan.Status != LoanRepaid {
+				t.Fatalf("expected loan status REPAID, got %s", loan.Status)
+			}
+			if got := wallets.Get(loan.Borrower).Reputation; got != 50+tt.wantDelta {
+				t.Fatalf("expected reputation 50+%d=%d, got %d", tt.wantDelta, 50+tt.wantDelta, got)
+			}
+		})
+	}
+}
+
 // TestCreditEngine_DefaultLoan_ZeroShortfallSkipsReputationPenalty
 // confirms a shortfall of 0 (collateral fully covered the debt) never
 // touches reputation at all - see shortfallReputationDelta's doc

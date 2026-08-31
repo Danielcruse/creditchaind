@@ -6910,12 +6910,17 @@ func applyRepay(tx core.Transaction) {
 	releaseLoanCollateral(loan, tx.Timestamp)
 
 	if data.Mode == "p2p" {
-		if reward := creditEngine.RepayLoan(loan, tx.Timestamp >= TrustDimensionsCutoverUnixSeconds); reward > 0 {
+		reward, late := creditEngine.RepayLoan(loan, tx.Timestamp, tx.Timestamp >= TrustDimensionsCutoverUnixSeconds)
+		if reward > 0 {
 			mintRept(loan.Borrower, reward)
 		}
+		delta, reason := int64(core.ReputationDeltaLoanRepaidOnTime), "Repaid a peer-funded loan"
+		if late {
+			delta, reason = int64(core.ReputationDeltaLoanRepaidLate), "Repaid a peer-funded loan after its due date (within grace period)"
+		}
 		reputationEventStore.Record(&core.ReputationEvent{
-			TxID: tx.ID, Target: loan.Borrower, Delta: int64(core.ReputationDeltaLoanRepaidOnTime),
-			Reason: "Repaid a peer-funded loan", Timestamp: tx.Timestamp, Dimension: core.DimensionRepayment.String(),
+			TxID: tx.ID, Target: loan.Borrower, Delta: delta,
+			Reason: reason, Timestamp: tx.Timestamp, Dimension: core.DimensionRepayment.String(),
 		})
 		return
 	}

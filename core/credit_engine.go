@@ -21,9 +21,7 @@ func NewCreditEngine(wallets *WalletStore) *CreditEngine {
 }
 
 // Locked reputation deltas for loan lifecycle events (see PoSR/loan
-// spec). Late-repayment (+3, within grace period) requires the loan
-// due-date fields that aren't wired up yet - only on-time repayment
-// (+10) and default (-30) are applied for now.
+// spec).
 const (
 	ReputationDeltaLoanRepaidOnTime = 10
 	ReputationDeltaLoanRepaidLate   = 3
@@ -104,18 +102,46 @@ func (ce *CreditEngine) FundLoan(loan *Loan, lender string, dimensioned bool) ui
 	return IncreaseWalletReputation(ce.Wallets.Get(lender), ReputationDeltaLoanFunded)
 }
 
-func (ce *CreditEngine) RepayLoan(loan *Loan, dimensioned bool) uint64 {
+// loanRepaymentDelta decides whether a peer-funded loan's repayment
+// counts as on-time (+10) or late (+3), per the locked PoSR spec's
+// two-tier repayment reward. "Late" means past loan.DueAt - which, in
+// this system's staged Default Protection sequence (see loan_risk.go),
+// covers a repayment made during Warning/MarginCall/GracePeriod too:
+// loan.Status stays LoanFunded (so RepayLoan is still reachable at
+// all) all the way through those stages, so any repayment that gets
+// here past DueAt is by definition "within grace period," never a
+// default - a default only happens via DefaultLoan, once the grace
+// period itself has expired unpaid (see api/apply.go's
+// advanceLoanLifecycle/processFinalRedemptions). A DueAt of 0 (no due
+// date - see Loan.DueAt's own doc comment) can never be late.
+func loanRepaymentDelta(loan *Loan, asOf int64) (delta uint64, late bool) {
+	if loan.DueAt > 0 && asOf > loan.DueAt {
+		return ReputationDeltaLoanRepaidLate, true
+	}
+	return ReputationDeltaLoanRepaidOnTime, false
+}
+
+// RepayLoan applies the loan-repaid reputation reward, scaled by
+// loanRepaymentDelta above - asOf is the repayment transaction's own
+// timestamp, never wall-clock (matches this codebase's existing
+// block-timestamp-driven determinism). Returns the REPT tier-crossing
+// reward (0 if none, see IncreaseWalletTrust/IncreaseWalletReputation)
+// and whether this repayment was late, so the caller can log the
+// correct magnitude/reason to reputationEventStore.
+func (ce *CreditEngine) RepayLoan(loan *Loan, asOf int64, dimensioned bool) (reward uint64, late bool) {
+	delta, late := loanRepaymentDelta(loan, asOf)
+
 	RepayLoan(loan)
 
 	profile := ce.Profiles.Get(loan.Borrower)
 	profile.RecordRepayment(loan.Amount)
 
-	// TODO: once Loan.DueAt/GracePeriod are wired in, branch here on
-	// on-time vs late repayment (+10 vs +3). Treated as on-time until then.
 	if dimensioned {
-		return IncreaseWalletTrust(ce.Wallets.Get(loan.Borrower), DimensionRepayment, ReputationDeltaLoanRepaidOnTime)
+		reward = IncreaseWalletTrust(ce.Wallets.Get(loan.Borrower), DimensionRepayment, delta)
+	} else {
+		reward = IncreaseWalletReputation(ce.Wallets.Get(loan.Borrower), delta)
 	}
-	return IncreaseWalletReputation(ce.Wallets.Get(loan.Borrower), ReputationDeltaLoanRepaidOnTime)
+	return reward, late
 }
 
 // DefaultLoan flips the loan to DEFAULT and applies a reputation

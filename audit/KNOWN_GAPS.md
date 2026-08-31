@@ -703,8 +703,8 @@ that reach quorum and pass, and requires a real passed vote before a
   cap, not an economic security mechanism") all need real-world values set
   before mainnet — they exist at demo scale purely so their lifecycles could
   be exercised quickly during development.
-- **Default reputation penalty is now wired up and shortfall-proportional;
-  late-but-repaid still is not.** `core/credit_engine.go`'s
+- **RESOLVED: default reputation penalty is shortfall-proportional, and
+  late-but-repaid is now wired up too.** `core/credit_engine.go`'s
   `shortfallReputationDelta` + `DefaultLoan(loan, shortfall, owed)`, driven by
   `api/apply.go`'s `processLoanDefaults` (due-date sweep) and
   `processCollateralLiquidations` (proactive price-crash sweep, OETH
@@ -712,11 +712,17 @@ that reach quorum and pass, and requires a real passed vote before a
   the lender's mirror-image gain) to how much of the debt liquidation
   actually failed to recover, floored/capped between 1 and the historical
   flat `-30`, with zero penalty if collateral fully covered the shortfall.
-  The separate `+3` (repaid-but-late, distinct from default) path still has
-  no lateness-detection wired up — `RepayLoan` always treats a repayment as
-  on-time regardless of `DueAt`. Confirmed against current `/reputation-math`
-  API output: default is now `Wired: true` (previously `false`, was stale
-  through the Phase B session); late-but-paid remains `Wired: false`.
+  The separate `+3` (repaid-but-late, distinct from default) path now has
+  lateness detection wired up too — `CreditEngine.RepayLoan` takes the
+  repayment's own timestamp and compares it against `loan.DueAt` via the new
+  `loanRepaymentDelta` helper: on time (or no due date set) pays the full
+  `+10`, anything repaid after `DueAt` but before the loan actually defaults
+  (i.e. during Warning/Margin Call/Grace Period - `loan.Status` stays
+  `LoanFunded` through all three, see `loan_risk.go`) pays the smaller `+3`
+  instead. `api/apply.go`'s `applyRepay` now logs the correct delta/reason to
+  `reputationEventStore` for either case. Confirmed against current
+  `/reputation-math` API output: both default and late-but-paid are now
+  `Wired: true`.
 - **Reputation-delta magnitudes are judgment calls, not a locked spec.**
   E.g. `ReputationDeltaP2PTrade = 14` is documented in code as "40% above
   another reward, arbitrarily chosen," not derived from any modeled
