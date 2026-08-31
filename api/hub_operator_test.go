@@ -84,25 +84,25 @@ func TestHubOperator_OwnListingAndOperatorListingAreIndependent(t *testing.T) {
 	// Hub posts its own flagship rate (Hub "" defaults to the signer -
 	// see authorizedHubActor).
 	hubRateTx := signedHubTxAs(t, hubPub, hubPriv, core.TxHubRateSet, hubRateSetData{
-		Hub: "", Symbol: "CCT", FiatSymbol: "USD", SellRate: 2, Active: true,
+		Hub: "", Symbol: "CCT", FiatSymbol: "NGN", SellRate: 2, Active: true,
 	}, 1000)
 	applyTxOnce(hubRateTx)
 
 	// Operator posts their OWN independent rate for the same symbol
 	// under this hub.
 	operatorRateTx := signedHubTxAs(t, operatorPub, operatorPriv, core.TxHubRateSet, hubRateSetData{
-		Hub: hubAddr, Symbol: "CCT", FiatSymbol: "USD", SellRate: 5, Active: true,
+		Hub: hubAddr, Symbol: "CCT", FiatSymbol: "NGN", SellRate: 5, Active: true,
 	}, 1000)
 	applyTxOnce(operatorRateTx)
 
-	hubRate, ok := hubRateStore.Get(hubAddr, "CCT", "", "USD")
+	hubRate, ok := hubRateStore.Get(hubAddr, "CCT", "", "NGN")
 	if !ok {
 		t.Fatalf("expected the hub's own flagship rate to exist")
 	}
 	if hubRate.SellRate != 2 || hubRate.OperatorAddress != "" {
 		t.Fatalf("hub's own rate wrong: %+v", hubRate)
 	}
-	opRate, ok := hubRateStore.Get(hubAddr, "CCT", operatorAddr, "USD")
+	opRate, ok := hubRateStore.Get(hubAddr, "CCT", operatorAddr, "NGN")
 	if !ok {
 		t.Fatalf("expected the operator's own independent rate to exist")
 	}
@@ -123,7 +123,7 @@ func TestHubOperator_OwnListingAndOperatorListingAreIndependent(t *testing.T) {
 	// A buyer trades against the HUB's own listing.
 	buyerPub1, buyerPriv1, _ := core.GenerateKeyPair()
 	tradeTx1 := signedHubTxAs(t, buyerPub1, buyerPriv1, core.TxHubTradeRequest, hubTradeRequestData{
-		Hub: hubAddr, Symbol: "CCT", Amount: 100, Operator: "", FiatSymbol: "USD", Direction: "BUY_FROM_HUB",
+		Hub: hubAddr, Symbol: "CCT", Amount: 100, Operator: "", FiatSymbol: "NGN", Direction: "BUY_FROM_HUB",
 	}, 2000)
 	applyTxOnce(tradeTx1)
 
@@ -137,7 +137,7 @@ func TestHubOperator_OwnListingAndOperatorListingAreIndependent(t *testing.T) {
 	// A second buyer trades against the OPERATOR's own listing.
 	buyerPub2, buyerPriv2, _ := core.GenerateKeyPair()
 	tradeTx2 := signedHubTxAs(t, buyerPub2, buyerPriv2, core.TxHubTradeRequest, hubTradeRequestData{
-		Hub: hubAddr, Symbol: "CCT", Amount: 100, Operator: operatorAddr, FiatSymbol: "USD", Direction: "BUY_FROM_HUB",
+		Hub: hubAddr, Symbol: "CCT", Amount: 100, Operator: operatorAddr, FiatSymbol: "NGN", Direction: "BUY_FROM_HUB",
 	}, 3000)
 	applyTxOnce(tradeTx2)
 

@@ -35,6 +35,14 @@ func cctWPlusFee(whole uint64) string {
 // CCT transfer - these are real singletons shared across the package,
 // so tests that mutate them must not leak state into each other.
 func resetApplyTestState() {
+	// mempool is a plain package-level var (api/server.go), not owned by
+	// any *Store this function already resets - without clearing it too,
+	// a pending transaction left behind by one test's recordTx call (an
+	// HTTP handler test, e.g. HandleApplyCompany/HandleSetHubRate) leaks
+	// into any later test in the same process that asserts on
+	// mempool.Transactions' exact contents, regardless of which package
+	// state that later test itself resets.
+	mempool = core.Mempool{}
 	walletStore = core.NewWalletStore()
 	tokenStore = core.NewTokenStore()
 	cctStore = core.NewCctStore()

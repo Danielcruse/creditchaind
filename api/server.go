@@ -555,6 +555,10 @@ func StartServer(port string) {
 		HandleListCompanies,
 	)
 	http.HandleFunc(
+		"/companies/countries",
+		HandleListHubCountries,
+	)
+	http.HandleFunc(
 		"/companies/status",
 		HandleCompanyStatus,
 	)
@@ -693,6 +697,10 @@ func StartServer(port string) {
 	http.HandleFunc(
 		"/hub-rates/set",
 		HandleSetHubRate,
+	)
+	http.HandleFunc(
+		"/hub-rates/currencies",
+		HandleListOffAppCurrencies,
 	)
 	http.HandleFunc(
 		"/hub-rates/trade",

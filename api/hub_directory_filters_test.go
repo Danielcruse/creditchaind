@@ -27,16 +27,16 @@ func TestListHubDirectoryFilters_AggregatesCurrenciesAndServiceProviders(t *test
 	}, 1000)
 	applyTxOnce(rulesTx)
 
-	// Two active OFFAPP rates (NGN, USD) plus one inactive rate and one
+	// Two active OFFAPP rates (NGN, GBP) plus one inactive rate and one
 	// ONCHAIN rate - only the two active OFFAPP currencies should surface.
 	ngnRateTx := signedHubTxAs(t, hubPub, hubPriv, core.TxHubRateSet, hubRateSetData{
 		Hub: "", Symbol: "CCT", FiatSymbol: "NGN", SellRate: 1000, Active: true,
 	}, 1001)
 	applyTxOnce(ngnRateTx)
-	usdRateTx := signedHubTxAs(t, hubPub, hubPriv, core.TxHubRateSet, hubRateSetData{
-		Hub: "", Symbol: "REPT", FiatSymbol: "USD", SellRate: 500, Active: true,
+	gbpRateTx := signedHubTxAs(t, hubPub, hubPriv, core.TxHubRateSet, hubRateSetData{
+		Hub: "", Symbol: "REPT", FiatSymbol: "GBP", SellRate: 500, Active: true,
 	}, 1002)
-	applyTxOnce(usdRateTx)
+	applyTxOnce(gbpRateTx)
 	inactiveRateTx := signedHubTxAs(t, hubPub, hubPriv, core.TxHubRateSet, hubRateSetData{
 		Hub: "", Symbol: "CCT", FiatSymbol: "EUR", SellRate: 700, Active: false,
 	}, 1003)
@@ -65,7 +65,7 @@ func TestListHubDirectoryFilters_AggregatesCurrenciesAndServiceProviders(t *test
 	if entry.Hub != hubAddr {
 		t.Fatalf("expected hub %s, got %s", hubAddr, entry.Hub)
 	}
-	wantCurrencies := map[string]bool{"NGN": true, "USD": true}
+	wantCurrencies := map[string]bool{"NGN": true, "GBP": true}
 	if len(entry.Currencies) != len(wantCurrencies) {
 		t.Fatalf("expected currencies %v, got %v", wantCurrencies, entry.Currencies)
 	}

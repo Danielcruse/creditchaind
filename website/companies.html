@@ -48,14 +48,23 @@
         <textarea id="companyDescription" placeholder="Description - what do you trade, how long have you operated, etc." maxlength="2000" rows="3"></textarea>
         <textarea id="companyDocumentNote" placeholder="Optional: describe any certificate/registration you hold (free text only - do not paste real ID numbers or sensitive personal data here)" maxlength="2000" rows="3"></textarea>
         <input id="companyContactEmail" type="email" placeholder="Optional: contact email for trade-attention alerts (e.g. a trade needing your response)" maxlength="200">
+        <select id="companyCountry"><option value="">Select your country / jurisdiction...</option></select>
     </div>
+
+    <p style="opacity:0.75;font-size:12px;">
+        <strong>United States jurisdiction is not supported.</strong> This platform holds no US money-transmitter/
+        MSB license anywhere, so a Trading Hub based in, or operating from, the United States cannot be approved -
+        there is no "United States" option in the list above, and no moderator is able to approve an application
+        that reaches this without a valid non-US jurisdiction selected.
+    </p>
 
     <br>
 
     <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;">
         <input type="checkbox" id="hubTermsAck" style="margin-top:4px;">
         <span>
-            I confirm I am regulated and registered by my own government to operate as a Trading Hub, and I
+            I confirm I am regulated and registered by my own government to operate as a Trading Hub, that I am
+            not based in, operating from, or targeting users in the United States, and that I
             have read and agree to the
             <a href="p2p-terms" target="_blank" style="color:var(--cc-accent-gold, #16B8A6);">Terms of the P2P Marketplace</a>.
         </span>

@@ -2578,3 +2578,91 @@ instance (correctly rejected with the honest "email is not configured"
 error, since local dev has no SMTP set - same as every other
 email-dependent feature in this codebase). **Not yet deployed** to node1
 or mainnet.
+
+## Marketplace: no USD offers, no US-jurisdiction Trading Hubs, currency dropdown (2026-08-31)
+
+This platform holds no US money-transmitter/MSB license anywhere.
+Facilitating USD-denominated peer-to-peer settlement (a verified Trading
+Hub's `HubRate.FiatSymbol` in OFFAPP mode - see `core/hub_rate.go`) is
+money transmission under US federal and most state law regardless of
+whether this codebase ever touches the actual dollars itself, since
+OFFAPP settlement always happens off-app between the two traders. A
+US-based Trading Hub carries the same exposure on the operator side -
+real fines, and possible personal legal consequences for whichever
+moderator approved it.
+
+**Fixed - two hard, server-side allowlists, not free text and not a
+moderator judgment call:**
+
+- **`core.AllowedOffAppCurrencies`** (`core/fiat_currency.go`) - the
+  fixed list of real-world settlement currencies a Trading Hub may
+  quote an OFFAPP rate in. USD is not on it, in any form -
+  `core.IsUSDCurrency` also catches common aliases ("US$", "$",
+  "Dollar", "United States Dollar", ...) so a direct API caller
+  bypassing the frontend gets an error naming the actual regulatory
+  reason, not a generic "unsupported currency" message. Enforced at
+  both submission (`HandleSetHubRate`, `api/hub_rate.go`) and block
+  confirmation (`applyHubRateSet`, `api/apply.go`) - never trusted from
+  submission time alone, this codebase's usual discipline. `GET
+  /hub-rates/currencies` serves the list so the frontend dropdown
+  (`website/p2p.html`'s `hubRateFiatSymbol`, now a `<select>`, was a
+  free-text `<input>`) can never drift from what will actually be
+  accepted. ONCHAIN-mode rates (FiatSymbol is a real resolvable token,
+  e.g. quoting CCT against ETH_CCC1) are untouched - this allowlist only
+  gates OFFAPP's real-world-currency field.
+
+- **`core.AllowedHubCountries`** (`core/company_country.go`) - the fixed
+  list of jurisdictions a Trading Hub applicant may declare
+  (`CompanyApplication.Country`, new field). It has no "United States"
+  entry at all, by construction - not a blocklist trying to catch every
+  way "US"/"USA"/a state name could be typed into free text.
+  `core.CompanyStore.Review` (`core/company.go`) refuses to approve ANY
+  application whose Country isn't on this list - which covers both an
+  unset Country and a pre-this-feature application with none recorded -
+  so approving a US-based hub is not possible at all, regardless of
+  what a moderator clicks. Checked again, redundantly, at submission
+  (`HandleApplyCompany`) and at the moderator's review HTTP call
+  (`HandleReviewCompany`) so both the applicant and the moderator get an
+  immediate, specific reason instead of a silently-no-op'd transaction.
+  `GET /companies/countries` serves the list for the application form's
+  new Country dropdown (`website/companies.html`); `moderation.js`'s
+  assigned-applications view flags an ineligible jurisdiction and
+  disables its own Approve button client-side too, with the fines/legal-
+  consequences framing spelled out, on top of the real server-side
+  block.
+
+**Explicitly NOT solved by this pass, disclosed rather than silently
+assumed:** there is still no real jurisdiction/identity data for an
+ordinary trader (as opposed to a Trading Hub applicant) anywhere in this
+codebase - `core/company.go`'s own doc comment already flags the whole
+`CompanyApplication` flow as a testnet-only placeholder with no real
+KYC/AML vendor integration. Blocking "US persons" at the level of
+individual anonymous P2P traders would need real identity/geo
+infrastructure (IP geolocation is trivially spoofed and would be
+security theater; a self-attestation checkbox is the standard mechanism
+real OTC/P2P platforms use absent real KYC, but none exists yet for a
+plain trader account here) - this pass only closes the two levers that
+actually exist and are enforceable today: what currency a Hub may quote,
+and what jurisdiction a Hub may declare. `website/p2p-terms.html` and
+`companies.html` both disclose the USD/US restriction to users up front
+rather than only surfacing it as a rejected-request error.
+
+19 new tests across `core/fiat_currency_test.go`,
+`core/company_country_test.go`, `api/hub_rate_currency_test.go`,
+`api/company_country_test.go` - allowlist/alias matching, the HTTP
+fast-fail and block-confirmation rejections for both USD specifically
+and an arbitrary unsupported currency/country, and that approval
+genuinely succeeds for an eligible currency/jurisdiction (so this is a
+real allowlist, not an accidental block-everything). Existing tests that
+happened to use `FiatSymbol: "USD"` as an arbitrary placeholder
+(`hub_rate_scale_test.go`, `hub_operator_test.go`,
+`hub_directory_filters_test.go`) were repointed to a real allowed
+currency (NGN/GBP) - none of them were testing USD-specific behavior.
+Full `go build`/`go vet`/`go test ./...` clean, including a
+`-shuffle=on` pass; that pass also surfaced (and this entry's commit
+fixed) a pre-existing gap where `api/apply_test.go`'s shared
+`resetApplyTestState()` never cleared the package-level `mempool` var,
+letting one HTTP-handler test's pending transaction leak into an
+unrelated later test's assertions under certain orderings - unrelated
+to this feature but a genuine test-isolation bug this session's own new
+tests happened to expose.

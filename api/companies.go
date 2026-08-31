@@ -69,6 +69,15 @@ type companyApplyData struct {
 	// comment. Left "" if the applicant doesn't want email
 	// notifications (in-app notifications still work regardless).
 	ContactEmail string `json:"contactEmail"`
+	// Country is the applicant's declared home jurisdiction - a required
+	// dropdown selection from core.AllowedHubCountries, which has no
+	// United States entry at all (see that list's own doc comment).
+	// Rejected here, at submission time, rather than only at approval
+	// time, so a US-jurisdiction applicant gets a clear reason
+	// immediately and never pays the application fee for something that
+	// can never be approved (see core.CompanyStore.Review's identical
+	// hard block).
+	Country string `json:"country"`
 }
 
 // HandleApplyCompany lets any wallet apply for the testnet "Verified"
@@ -102,6 +111,10 @@ func HandleApplyCompany(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "contactEmail must be under 200 characters", http.StatusBadRequest)
 		return
 	}
+	if !core.IsAllowedHubCountry(req.Country) {
+		http.Error(w, "country must be a valid selection from the list - the United States is not a supported jurisdiction for a Trading Hub on this platform (no US money-transmitter/MSB license is held anywhere)", http.StatusForbidden)
+		return
+	}
 
 	if _, exists := companyStore.Get(address); exists {
 		http.Error(w, "an application already exists for this address", http.StatusBadRequest)
@@ -125,6 +138,18 @@ func HandleApplyCompany(w http.ResponseWriter, r *http.Request) {
 		"status": "pending",
 		"txId":   tx.ID,
 	})
+}
+
+// HandleListHubCountries is the single source of truth the Trading Hub
+// application form's country dropdown populates from (see
+// website/js/companies.js) - never hardcoded client-side, so the
+// frontend's list can never drift from what core.IsAllowedHubCountry
+// (the actual server-side enforcement, including the "no United States
+// option exists at all" rule) will accept.
+func HandleListHubCountries(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	json.NewEncoder(w).Encode(core.AllowedHubCountries)
 }
 
 // HandleListCompanies is a public read of every application regardless
@@ -219,6 +244,16 @@ func HandleReviewCompany(w http.ResponseWriter, r *http.Request) {
 	// admin/moderator/validator) at application time.
 	if req.Approve && app.CertificateHash == "" {
 		http.Error(w, "this hub hasn't uploaded a certificate yet - it can't be approved until it does", http.StatusBadRequest)
+		return
+	}
+	// No moderator may approve a Trading Hub whose declared jurisdiction
+	// isn't on core.AllowedHubCountries - which has no United States
+	// entry at all (see that list's own doc comment). Checked here too,
+	// not just in core.CompanyStore.Review (the real enforcement), so a
+	// moderator gets an explicit reason immediately instead of watching
+	// their approval silently never take effect.
+	if req.Approve && !core.IsAllowedHubCountry(app.Country) {
+		http.Error(w, "this application's declared jurisdiction is not eligible for approval - the United States is not a supported jurisdiction for a Trading Hub on this platform (no US money-transmitter/MSB license is held anywhere); approving this application is not possible regardless of moderator judgment", http.StatusForbidden)
 		return
 	}
 

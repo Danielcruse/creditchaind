@@ -29,11 +29,11 @@ func TestApplyHubTradeRequest_FractionalRateScalesCorrectly(t *testing.T) {
 	// Real-world price: 1 CCT = 0.000975 <fiat> -> stored scaled as 975
 	// (975 / core.HubRateScale == 0.000975).
 	rateTx := signedHubTxAs(t, hubPub, hubPriv, core.TxHubRateSet, hubRateSetData{
-		Hub: "", Symbol: "CCT", FiatSymbol: "USD", SellRate: 975, Active: true,
+		Hub: "", Symbol: "CCT", FiatSymbol: "NGN", SellRate: 975, Active: true,
 	}, 1000)
 	applyTxOnce(rateTx)
 
-	rate, ok := hubRateStore.Get(hubAddr, "CCT", "", "USD")
+	rate, ok := hubRateStore.Get(hubAddr, "CCT", "", "NGN")
 	if !ok || rate.SellRate != 975 {
 		t.Fatalf("expected the fractional rate to be stored as scaled 975, got %+v", rate)
 	}
@@ -45,7 +45,7 @@ func TestApplyHubTradeRequest_FractionalRateScalesCorrectly(t *testing.T) {
 	buyerAddr := core.GenerateAddress(buyerPub)
 
 	tradeTx := signedHubTxAs(t, buyerPub, buyerPriv, core.TxHubTradeRequest, hubTradeRequestData{
-		Hub: hubAddr, Symbol: "CCT", Amount: 1_000_000, FiatSymbol: "USD", Direction: "BUY_FROM_HUB",
+		Hub: hubAddr, Symbol: "CCT", Amount: 1_000_000, FiatSymbol: "NGN", Direction: "BUY_FROM_HUB",
 	}, 2000)
 	applyTxOnce(tradeTx)
 

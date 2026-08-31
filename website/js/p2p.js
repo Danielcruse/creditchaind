@@ -132,6 +132,7 @@ function p2pInit() {
         document.getElementById("p2pLoggedOut").style.display = "block";
     }
     loadSymbolOptions();
+    loadOffAppCurrencyOptions();
     loadHubDirectory();
     refreshActiveTradesWidget();
 }
@@ -144,6 +145,29 @@ async function loadSymbolOptions() {
             .join("");
     }
     onHubRateModeChange();
+}
+
+// loadOffAppCurrencyOptions populates the off-app currency dropdown
+// (hubRateFiatSymbol) from GET /hub-rates/currencies - the server's own
+// allowlist (core.AllowedOffAppCurrencies), fetched rather than
+// hardcoded here so the frontend can never drift from what a rate
+// submission will actually be accepted for. Deliberately a fixed
+// dropdown, not a free-text field: a Trading Hub could previously type
+// any string here, including USD, which this marketplace does not
+// support settling in (see core.AllowedOffAppCurrencies' doc comment -
+// facilitating USD peer-to-peer settlement is money transmission under
+// US law, and this platform holds no license for that anywhere).
+async function loadOffAppCurrencyOptions() {
+    const select = document.getElementById("hubRateFiatSymbol");
+    if (!select) return;
+    try {
+        const currencies = await apiGet("/hub-rates/currencies");
+        select.innerHTML =
+            `<option value="">Select a currency...</option>` +
+            (currencies || []).map((c) => `<option value="${c}">${c}</option>`).join("");
+    } catch (e) {
+        console.error(e);
+    }
 }
 
 // --- Owner tools: mode-aware rate posting ------------------------------
@@ -583,14 +607,14 @@ async function submitHubRateSide(side) {
     const mode = document.getElementById("hubRateMode").value;
     const fiatSymbol = mode === "ONCHAIN"
         ? document.getElementById("hubRateCounterSymbol").value
-        : document.getElementById("hubRateFiatSymbol").value.trim();
+        : document.getElementById("hubRateFiatSymbol").value;
     const active = document.getElementById("hubRateActive").checked;
     const statusEl = document.getElementById("hubRateSetStatus");
 
     if (!fiatSymbol) {
         statusEl.innerText = mode === "ONCHAIN"
             ? "Choose a counter token."
-            : "Enter a currency code for your off-app currency (e.g. USD).";
+            : "Choose an off-app currency from the list.";
         return;
     }
 

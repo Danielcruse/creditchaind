@@ -5839,6 +5839,16 @@ func applyCompanyApply(tx core.Transaction) {
 	if len(data.Name) == 0 || len(data.Name) > 200 {
 		return
 	}
+	// Re-checked here too, not just at submission (HandleApplyCompany) -
+	// never trusted from submission time alone, this file's usual
+	// discipline. Country not on core.AllowedHubCountries (which has no
+	// United States entry at all - see that list's own doc comment)
+	// means this application can never be approved (core.CompanyStore.
+	// Review enforces that too), so it's rejected outright here rather
+	// than created and left permanently unapprovable.
+	if !core.IsAllowedHubCountry(data.Country) {
+		return
+	}
 
 	// The fee may have moved between submission and confirmation -
 	// re-checked and only actually deducted here, never trusted from
@@ -5902,6 +5912,7 @@ func applyCompanyApply(tx core.Transaction) {
 		Description:      data.Description,
 		DocumentNote:     data.DocumentNote,
 		ContactEmail:     data.ContactEmail,
+		Country:          data.Country,
 		Status:           core.CompanyPending,
 		ModeratorAddress: assignedModerator,
 		CreatedAt:        tx.Timestamp,
@@ -6226,6 +6237,12 @@ func applyHubRateSet(tx core.Transaction) {
 			return
 		}
 	} else if data.Mode != "" && data.Mode != "OFFAPP" {
+		return
+	} else if core.RejectedOffAppCurrencyReason(data.FiatSymbol) != "" {
+		// Re-checked here too, not just at submission (HandleSetHubRate) -
+		// never trusted from submission time alone. See
+		// core.AllowedOffAppCurrencies' doc comment for why USD
+		// specifically can never confirm here.
 		return
 	}
 

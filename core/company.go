@@ -29,6 +29,13 @@ type CompanyApplication struct {
 
 	Name        string
 	Description string
+	// Country is the applicant's declared home jurisdiction, chosen from
+	// AllowedHubCountries (company_country.go) - a dropdown selection,
+	// never free text. Review below refuses to approve any application
+	// whose Country isn't on that list, which is the actual enforcement
+	// of this platform's "no US-based Trading Hub" rule (see
+	// AllowedHubCountries' own doc comment for why).
+	Country string
 	// DocumentNote is free-text context the applicant provides (e.g.
 	// "Certificate of Incorporation #12345, registered in X") - never a
 	// real uploaded document, never independently verified beyond a
@@ -139,6 +146,16 @@ func (s *CompanyStore) Review(address, moderator string, approve bool, at int64)
 	// simply not ready), but "Verified" is meant to mean "a moderator
 	// reviewed the actual uploaded document," not free-text alone.
 	if approve && a.CertificateHash == "" {
+		return false
+	}
+	// No moderator may approve a Trading Hub whose declared jurisdiction
+	// isn't on AllowedHubCountries - which, by construction, excludes
+	// the United States entirely (see that list's own doc comment). This
+	// is a hard rule, not a moderator judgment call: rejecting a US-
+	// jurisdiction (or unset/invalid) application is always allowed, but
+	// approving one is not possible at all, regardless of what a
+	// moderator intends.
+	if approve && !IsAllowedHubCountry(a.Country) {
 		return false
 	}
 

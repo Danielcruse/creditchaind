@@ -166,7 +166,7 @@ func TestApplyCompanyApply_DeductsFeeAndBlocksWhenInsufficient(t *testing.T) {
 		ID:   "test-hub-apply",
 		From: applicant,
 		Type: core.TxCompanyApply,
-		Data: `{"name":"Test Hub"}`,
+		Data: `{"name":"Test Hub","country":"Nigeria"}`,
 	}
 	applyCompanyApply(tx)
 
@@ -253,6 +253,7 @@ func TestApplyCompanyReview_ChargesNoFeeEvenWithZeroBalance(t *testing.T) {
 	companyStore.Apply(&core.CompanyApplication{
 		Address:          hub,
 		Name:             "Zero Balance Hub",
+		Country:          "Nigeria",
 		Status:           core.CompanyPending,
 		ModeratorAddress: moderator,
 	})

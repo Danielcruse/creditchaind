@@ -99,6 +99,21 @@ func HandleSetHubRate(w http.ResponseWriter, r *http.Request) {
 	} else if req.Mode != "" && req.Mode != "OFFAPP" {
 		http.Error(w, "mode must be 'OFFAPP' or 'ONCHAIN'", http.StatusBadRequest)
 		return
+	} else if reason := core.RejectedOffAppCurrencyReason(req.FiatSymbol); reason != "" {
+		// OFFAPP mode only (ONCHAIN's FiatSymbol is a real resolvable
+		// token, already checked above, not a real-world fiat currency
+		// code) - see core.AllowedOffAppCurrencies' doc comment for why
+		// USD specifically is never allowed here. 403 for USD
+		// specifically (a real regulatory boundary, not a client
+		// mistake); 400 for anything else not on the allowlist (an
+		// ordinary invalid-input case, e.g. a typo or an unsupported
+		// currency).
+		status := http.StatusBadRequest
+		if core.IsUSDCurrency(req.FiatSymbol) {
+			status = http.StatusForbidden
+		}
+		http.Error(w, reason, status)
+		return
 	}
 	if req.SellRate == 0 && req.BuyRate == 0 {
 		http.Error(w, "at least one of sellRate/buyRate must be positive", http.StatusBadRequest)
@@ -112,6 +127,17 @@ func HandleSetHubRate(w http.ResponseWriter, r *http.Request) {
 		"status": "pending",
 		"txId":   tx.ID,
 	})
+}
+
+// HandleListOffAppCurrencies is the single source of truth the
+// marketplace's currency dropdown populates from (see
+// website/js/p2p.js) - never hardcoded client-side, so the frontend's
+// list can never drift from what core.RejectedOffAppCurrencyReason
+// (the actual server-side enforcement) will accept.
+func HandleListOffAppCurrencies(w http.ResponseWriter, r *http.Request) {
+	enableCors(&w)
+
+	json.NewEncoder(w).Encode(core.AllowedOffAppCurrencies)
 }
 
 // hubRateView adds the hub's live, spendable balance of Symbol on top

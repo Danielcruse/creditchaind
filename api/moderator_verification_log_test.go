@@ -31,6 +31,7 @@ func TestApplyCompanyReview_AppendsLedgerEntryOnApproveAndReject(t *testing.T) {
 		companyStore.Apply(&core.CompanyApplication{
 			Address:          addr,
 			Name:             "Test Hub " + addr,
+			Country:          "Nigeria",
 			Status:           core.CompanyPending,
 			ModeratorAddress: moderator,
 		})

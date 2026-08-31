@@ -1,5 +1,21 @@
 const wallet = requireWallet();
 
+// hubCountryAllowlist mirrors core.AllowedHubCountries (GET
+// /companies/countries) - used only to flag, in refreshAssignedCompanies
+// below, a pending application whose Country isn't eligible for
+// approval (including "not on the list at all", which is how a United
+// States jurisdiction always reads, since that list has no US entry).
+// The real enforcement is server-side (core.CompanyStore.Review); this
+// is purely so a moderator sees why before ever clicking Approve.
+let hubCountryAllowlist = null;
+async function loadHubCountryAllowlist() {
+    try {
+        hubCountryAllowlist = await apiGet("/companies/countries");
+    } catch (e) {
+        console.error(e);
+    }
+}
+
 async function refreshModeratorStatus() {
     if (!wallet) return;
 
@@ -164,12 +180,28 @@ async function refreshAssignedCompanies() {
         el.innerHTML = mine
             .map((c) => {
                 const pending = c.Status === "PENDING";
+                // A blank/unrecognized Country can never actually be
+                // approved - core.CompanyStore.Review refuses it server-
+                // side regardless of what a moderator clicks (see that
+                // function's own doc comment) - but the Approve button is
+                // hidden here too, so a moderator sees why up front
+                // instead of getting a rejected transaction with no
+                // context. This should be rare in practice: the
+                // application form only ever offers a dropdown with no
+                // United States option, never free text.
+                const usBlocked = !hubCountryAllowlist || !c.Country || !hubCountryAllowlist.includes(c.Country);
+                const countryLine = `<p style="opacity:0.7;font-size:12px;">Jurisdiction: ${c.Country ? escapeHtml(c.Country) : "(not set)"}` +
+                    (usBlocked ? ` - <strong style="color:#ff6b6b;">not eligible for approval</strong> (this platform holds no US money-transmitter/MSB license anywhere; approving a US-based or unset-jurisdiction Trading Hub can mean real fines and legal consequences for the approving moderator)` : "") +
+                    `</p>`;
                 return `<p>${escapeHtml(c.Name)} (${c.Address.slice(0, 8)}...) - ${escapeHtml(c.Status)} ` +
                     (pending
-                        ? `<button onclick="reviewCompany('${c.Address}', true)">Approve</button> ` +
+                        ? (usBlocked
+                            ? `<button disabled title="Not an eligible jurisdiction">Approve</button> `
+                            : `<button onclick="reviewCompany('${c.Address}', true)">Approve</button> `) +
                           `<button onclick="reviewCompany('${c.Address}', false)">Reject</button>`
                         : "") +
-                    `</p><p style="opacity:0.7;font-size:12px;">${escapeHtml(c.Description || "")}${c.DocumentNote ? " - " + escapeHtml(c.DocumentNote) : ""}</p>`;
+                    `</p>` + countryLine +
+                    `<p style="opacity:0.7;font-size:12px;">${escapeHtml(c.Description || "")}${c.DocumentNote ? " - " + escapeHtml(c.DocumentNote) : ""}</p>`;
             })
             .join("");
     } catch (e) {
@@ -232,12 +264,12 @@ async function refreshUnclaimedCompanies() {
 
 refreshModeratorStatus();
 refreshAssignedTrades();
-refreshAssignedCompanies();
+loadHubCountryAllowlist().then(refreshAssignedCompanies);
 refreshUnclaimedCompanies();
 
 setInterval(() => {
     refreshModeratorStatus();
     refreshAssignedTrades();
-    refreshAssignedCompanies();
+    loadHubCountryAllowlist().then(refreshAssignedCompanies);
     refreshUnclaimedCompanies();
 }, 10000);

@@ -47,6 +47,26 @@ document.getElementById("hubTermsAck").addEventListener("change", (e) => {
     document.getElementById("companyApplyBtn").disabled = !e.target.checked;
 });
 
+// loadHubCountryOptions populates the jurisdiction dropdown from
+// GET /companies/countries - the server's own allowlist
+// (core.AllowedHubCountries), which deliberately has no "United
+// States" option at all (see that list's own doc comment: this
+// platform holds no US money-transmitter/MSB license anywhere, so a
+// US-based Trading Hub can never be approved).
+async function loadHubCountryOptions() {
+    const select = document.getElementById("companyCountry");
+    if (!select) return;
+    try {
+        const countries = await apiGet("/companies/countries");
+        select.innerHTML =
+            `<option value="">Select your country / jurisdiction...</option>` +
+            (countries || []).map((c) => `<option value="${c}">${c}</option>`).join("");
+    } catch (e) {
+        console.error(e);
+    }
+}
+loadHubCountryOptions();
+
 async function applyCompany() {
     if (!wallet) return;
 
@@ -54,6 +74,7 @@ async function applyCompany() {
     const description = document.getElementById("companyDescription").value.trim();
     const documentNote = document.getElementById("companyDocumentNote").value.trim();
     const contactEmail = document.getElementById("companyContactEmail").value.trim();
+    const country = document.getElementById("companyCountry").value;
     const statusEl = document.getElementById("companyApplyStatus");
 
     if (!document.getElementById("hubTermsAck").checked) {
@@ -66,8 +87,13 @@ async function applyCompany() {
         return;
     }
 
+    if (!country) {
+        statusEl.innerText = "Select your country / jurisdiction.";
+        return;
+    }
+
     try {
-        const result = await apiPostSigned("/companies/apply", { name, description, documentNote, contactEmail });
+        const result = await apiPostSigned("/companies/apply", { name, description, documentNote, contactEmail, country });
         statusEl.innerText = `Application pending (tx ${result.txId}) - a moderator will review it once the next block confirms it.`;
         await loadCompanies();
         // The tx above is only PENDING (not yet confirmed), so the new
