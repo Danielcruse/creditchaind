@@ -12,6 +12,12 @@ source.
 Entries are grouped by category. Where a source location is given, treat it
 as a pointer to re-verify — line numbers drift as the code changes.
 
+See also `audit/PROTOCOL_SPECIFICATION_v1.md` for a single, consolidated
+statement of the actual current rules (consensus, bridge, treasury,
+validator, tokenomics, governance) with real values pulled from source -
+this file stays the place for gaps/limitations, that one for "what the
+protocol's rules actually are today."
+
 ## Identity / KYC
 
 - **"Verified" Trading Hub badge is not KYC.** (`core/company.go`,
@@ -2437,6 +2443,17 @@ live deployed contract via three independent public RPC providers
 - **This is exactly the kind of finding a fresh external audit should
   independently verify and weigh in on** - flagging it here specifically
   so it isn't lost/deprioritized before the next audit engagement.
+- **Partial, reactive mitigation added (this revision): a real Emergency
+  Proposal governance kind.** `core.ProposalKindEmergency`
+  (`core/governance.go`), `api/bridge_pause.go`. A general-electorate vote
+  (24h window, doubled quorum, 4h timelock) can set the `BridgePaused`
+  governance param, which `applyBridgeDeposit`/`applyBridgeBtcDeposit`/
+  `applyVaultBurn` all check and refuse while set - the community can halt
+  new bridge deposits and new release requests fast, without the admin
+  multisig, if this threshold=1 exposure is ever actually exploited. This
+  does NOT fix the underlying threshold=1 gap above - it only gives a fast
+  reactive lever once exploitation is detected. See
+  `audit/PROTOCOL_SPECIFICATION_v1.md` §2/§6 for the full mechanism.
 
 ## Bridge validator allowlist removal caused a real production outage, reverted same day (2026-08-20)
 

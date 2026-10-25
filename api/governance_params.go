@@ -26,6 +26,8 @@ func init() {
 	governanceParamsStore.Seed(AdFeeTreasuryBpsKey, DefaultAdFeeTreasuryBps)
 	governanceParamsStore.Seed(AdFeeModeratorBpsKey, DefaultAdFeeModeratorBps)
 	governanceParamsStore.Seed(AdFeeGovFundBpsKey, DefaultAdFeeGovFundBps)
+
+	governanceParamsStore.Seed(BridgePausedKey, 0)
 }
 
 // syncTrustWeightIfNeeded is the second half of every write into

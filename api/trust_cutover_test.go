@@ -408,6 +408,9 @@ func TestFinalizeProposal_ParamChange_UpdatesDefaultTrustWeights(t *testing.T) {
 	if p.Status != core.ProposalStatusPassed {
 		t.Fatalf("setup issue: expected the param-change proposal to pass, got %q", p.Status)
 	}
+	// The real effect is timelocked now - see
+	// core.Proposal.ExecuteAfter's doc comment.
+	processProposalExecution(p.ExecuteAfter)
 	if got := core.DefaultTrustWeights.DisputeBps; got != 2500 {
 		t.Fatalf("expected core.DefaultTrustWeights.DisputeBps updated to 2500 by the passed proposal, got %d", got)
 	}

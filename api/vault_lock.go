@@ -399,6 +399,10 @@ func HandleVaultBurn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "chain must be ETH, BTC, USDC, or STETH", http.StatusBadRequest)
 		return
 	}
+	if bridgePaused() {
+		http.Error(w, "bridge releases are temporarily paused by an emergency governance vote - try again once it lifts", http.StatusServiceUnavailable)
+		return
+	}
 	if req.Chain == "STETH" {
 		// STETH_CCC1 can only be locked (via the ETH liquid-staking
 		// flow, see api/lido_stake.go) - unstaking/withdrawal is a
@@ -451,6 +455,9 @@ func vaultReleaseIDFor(burnTxID string) uint64 {
 // and - only on a successful burn - opens the release-approval record
 // bridge validators will co-sign.
 func applyVaultBurn(tx core.Transaction) {
+	if bridgePaused() {
+		return
+	}
 	var data vaultBurnData
 	if err := json.Unmarshal([]byte(tx.Data), &data); err != nil {
 		return

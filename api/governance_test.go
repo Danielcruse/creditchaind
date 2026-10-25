@@ -291,6 +291,29 @@ func TestProcessProposalFinalization_ParamChangePassingUpdatesGovernanceParamsSt
 	if p.Status != core.ProposalStatusPassed {
 		t.Fatalf("setup issue: expected the PARAM_CHANGE proposal to pass, got %q", p.Status)
 	}
+	// PASSED no longer means "effective immediately" - see
+	// core.Proposal.ExecuteAfter's doc comment. The real effect is
+	// timelocked, so governanceParamsStore must still read the OLD
+	// default right after finalization, before processProposalExecution
+	// has ever run for this proposal.
+	if got := governanceParam("CCTTransferFeeSmallestUnit", DefaultCCTTransferFeeSmallestUnit); got != DefaultCCTTransferFeeSmallestUnit {
+		t.Fatalf("expected governanceParamsStore to still read the old default immediately after PASSED (timelocked, not yet executed), got %d", got)
+	}
+	if p.ExecuteAfter != 1000+core.ProposalTimelockSeconds {
+		t.Fatalf("expected ExecuteAfter to be set to asOf+ProposalTimelockSeconds, got %d", p.ExecuteAfter)
+	}
+
+	// Still not executed one second before ExecuteAfter.
+	processProposalExecution(p.ExecuteAfter - 1)
+	if got := governanceParam("CCTTransferFeeSmallestUnit", DefaultCCTTransferFeeSmallestUnit); got != DefaultCCTTransferFeeSmallestUnit {
+		t.Fatalf("expected no effect before ExecuteAfter, got %d", got)
+	}
+
+	// Executes once ExecuteAfter has actually passed.
+	processProposalExecution(p.ExecuteAfter)
+	if !p.Executed {
+		t.Fatalf("expected Executed to be true once processProposalExecution runs past ExecuteAfter")
+	}
 	if got := governanceParam("CCTTransferFeeSmallestUnit", DefaultCCTTransferFeeSmallestUnit); got != 7 {
 		t.Fatalf("expected governanceParam(\"CCTTransferFeeSmallestUnit\") to reflect the passed proposal's value 7, got %d", got)
 	}
@@ -331,7 +354,80 @@ func TestProcessProposalFinalization_VersionActivationPassingUpdatesActivatedPro
 	if p.Status != core.ProposalStatusPassed {
 		t.Fatalf("setup issue: expected the VERSION_ACTIVATION proposal to pass, got %q", p.Status)
 	}
+	if core.ActivatedProtocolVersion != "" {
+		t.Fatalf("expected ActivatedProtocolVersion to still be unset right after PASSED (timelocked), got %q", core.ActivatedProtocolVersion)
+	}
+
+	processProposalExecution(p.ExecuteAfter)
 	if core.ActivatedProtocolVersion != "v2" {
-		t.Fatalf("expected core.ActivatedProtocolVersion to be \"v2\", got %q", core.ActivatedProtocolVersion)
+		t.Fatalf("expected core.ActivatedProtocolVersion to be \"v2\" once the timelock has elapsed, got %q", core.ActivatedProtocolVersion)
+	}
+}
+
+func TestProcessProposalExecution_EmergencyProposalPausesAndUnpausesBridge(t *testing.T) {
+	resetGovernanceTestState()
+
+	newActivatedVoter(t, "voter-emergency", 100, core.StakeCap)
+
+	p := &core.Proposal{
+		ID:         "prop-emergency-pause",
+		CreatedBy:  "voter-emergency",
+		Open:       true,
+		Quorum:     10,
+		Deadline:   1000,
+		Kind:       core.ProposalKindEmergency,
+		ParamKey:   BridgePausedKey,
+		ParamValue: 1,
+	}
+	proposalStore.Create(p)
+	proposalStore.Vote(p.ID, "voter-emergency", true, votingWeight("voter-emergency"), 0)
+
+	processProposalFinalization(1000)
+
+	if p.Status != core.ProposalStatusPassed {
+		t.Fatalf("setup issue: expected the EMERGENCY proposal to pass, got %q", p.Status)
+	}
+	if bridgePaused() {
+		t.Fatalf("expected the bridge to still be unpaused immediately after PASSED (timelocked)")
+	}
+	if want := int64(1000) + core.EmergencyProposalTimelockSeconds; p.ExecuteAfter != want {
+		t.Fatalf("expected ExecuteAfter=%d (the shorter emergency timelock), got %d", want, p.ExecuteAfter)
+	}
+
+	processProposalExecution(p.ExecuteAfter)
+	if !bridgePaused() {
+		t.Fatalf("expected the bridge to be paused once the emergency timelock elapses")
+	}
+}
+
+func TestProcessProposalExecution_IdempotentOnAlreadyExecutedProposal(t *testing.T) {
+	resetGovernanceTestState()
+
+	newActivatedVoter(t, "voter-exec-once", 100, core.StakeCap)
+
+	p := &core.Proposal{
+		ID:         "prop-exec-once",
+		CreatedBy:  "voter-exec-once",
+		Open:       true,
+		Quorum:     10,
+		Deadline:   1000,
+		Kind:       core.ProposalKindParamChange,
+		ParamKey:   "CCTTransferFeeSmallestUnit",
+		ParamValue: 7,
+	}
+	proposalStore.Create(p)
+	proposalStore.Vote(p.ID, "voter-exec-once", true, votingWeight("voter-exec-once"), 0)
+	processProposalFinalization(1000)
+	processProposalExecution(p.ExecuteAfter)
+
+	// Force the param back to the default and run the sweep again at a
+	// later timestamp - a genuinely idempotent sweep must leave this
+	// alone (Executed is already true), not re-apply the proposal's
+	// effect a second time.
+	governanceParamsStore.SetAt("CCTTransferFeeSmallestUnit", DefaultCCTTransferFeeSmallestUnit, p.ExecuteAfter)
+	processProposalExecution(p.ExecuteAfter + 1000)
+
+	if got := governanceParam("CCTTransferFeeSmallestUnit", DefaultCCTTransferFeeSmallestUnit); got != DefaultCCTTransferFeeSmallestUnit {
+		t.Fatalf("expected an already-executed proposal to never re-apply its effect, got %d", got)
 	}
 }

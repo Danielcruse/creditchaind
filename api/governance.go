@@ -46,6 +46,13 @@ const TokenCreationMinRC = 100
 // call, not copied from anywhere.
 const NodeAdmissionProposalQuorum = core.DefaultProposalQuorum * 2
 
+// EmergencyProposalQuorum is a doubled bar over core.DefaultProposalQuorum,
+// same multiplier/reasoning as NodeAdmissionProposalQuorum above - a fast
+// vote shouldn't also mean an easy one, so the shorter
+// core.EmergencyProposalVotingWindowSeconds window is paired with a higher
+// bar to clear, not a lower one.
+const EmergencyProposalQuorum = core.DefaultProposalQuorum * 2
+
 type CreateProposalRequest struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`
@@ -135,15 +142,29 @@ func HandleCreateProposal(
 	}
 
 	switch req.Kind {
-	case "", string(core.ProposalKindParamChange), string(core.ProposalKindVersionActivation), string(core.ProposalKindTokenCreation), string(core.ProposalKindPrediction), string(core.ProposalKindModeratorDispute):
+	case "", string(core.ProposalKindParamChange), string(core.ProposalKindVersionActivation), string(core.ProposalKindTokenCreation), string(core.ProposalKindPrediction), string(core.ProposalKindModeratorDispute), string(core.ProposalKindEmergency):
 		// valid
 	default:
-		http.Error(w, "kind must be empty, PARAM_CHANGE, VERSION_ACTIVATION, TOKEN_CREATION, PREDICTION, or MODERATOR_DISPUTE", http.StatusBadRequest)
+		http.Error(w, "kind must be empty, PARAM_CHANGE, VERSION_ACTIVATION, TOKEN_CREATION, PREDICTION, MODERATOR_DISPUTE, or EMERGENCY", http.StatusBadRequest)
 		return
 	}
 	if req.Kind == string(core.ProposalKindParamChange) && req.ParamKey == "" {
 		http.Error(w, "paramKey required for a PARAM_CHANGE proposal", http.StatusBadRequest)
 		return
+	}
+	// EMERGENCY is deliberately scoped to a narrow, explicit allowlist of
+	// ParamKeys - currently just BridgePausedKey (0/1) - see
+	// core.ProposalKindEmergency's doc comment for why "emergency" can't
+	// become a shorter-deadline bypass for an arbitrary PARAM_CHANGE.
+	if req.Kind == string(core.ProposalKindEmergency) {
+		if req.ParamKey != BridgePausedKey {
+			http.Error(w, "an EMERGENCY proposal's paramKey must be BridgePausedKey - the only emergency-eligible action right now", http.StatusBadRequest)
+			return
+		}
+		if req.ParamValue != 0 && req.ParamValue != 1 {
+			http.Error(w, "paramValue must be 0 or 1 for an EMERGENCY BridgePaused proposal", http.StatusBadRequest)
+			return
+		}
 	}
 	if req.Kind == string(core.ProposalKindVersionActivation) && req.TargetVersion == "" {
 		http.Error(w, "targetVersion required for a VERSION_ACTIVATION proposal", http.StatusBadRequest)

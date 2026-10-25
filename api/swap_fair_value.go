@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"time"
 
 	"github.com/creditchain/creditchaind/core"
 )
@@ -98,6 +99,18 @@ func usdValuePerUnit(symbol string) (float64, bool) {
 // reserves are ever touched - cctValue is purely informational,
 // included in the response/recorded transaction for transparency.
 func computeFairValueSwap(fromSymbol, toSymbol string, fromAmount uint64) (toAmount uint64, usdValue, cctValue float64, err error) {
+	priceOracleMu.Lock()
+	updatedAt := priceOracleCache.UpdatedAt
+	priceOracleMu.Unlock()
+	// This is the one place the oracle moves REAL bridged-asset value
+	// (see this file's top doc comment) - refuse outright rather than
+	// silently swap at a reading that's gone stale (CoinGecko AND its
+	// Coinbase fallback both down, or the poll loop never started) -
+	// see priceStalenessSeconds's own doc comment.
+	if updatedAt == 0 || time.Now().Unix()-updatedAt > priceStalenessSeconds {
+		return 0, 0, 0, fmt.Errorf("price data is stale - try again shortly")
+	}
+
 	fromUsdPerUnit, ok := usdValuePerUnit(fromSymbol)
 	if !ok {
 		return 0, 0, 0, fmt.Errorf("no live price available for %s", fromSymbol)

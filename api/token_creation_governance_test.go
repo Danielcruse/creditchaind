@@ -105,15 +105,15 @@ func TestFinalizeProposal_TokenCreationRegistersTokenOnlyOnPassed(t *testing.T) 
 
 	passing := &core.Proposal{
 		ID:                 "prop-tc-pass",
-		CreatedBy:           "tc-creator",
-		Open:                true,
-		Quorum:              10,
-		Deadline:            1000,
-		Kind:                core.ProposalKindTokenCreation,
-		TokenSymbol:         "PASSTOK",
-		TokenName:           "Pass Token",
-		TokenInitialSupply:  5000,
-		TokenStandard:       "C1",
+		CreatedBy:          "tc-creator",
+		Open:               true,
+		Quorum:             10,
+		Deadline:           1000,
+		Kind:               core.ProposalKindTokenCreation,
+		TokenSymbol:        "PASSTOK",
+		TokenName:          "Pass Token",
+		TokenInitialSupply: 5000,
+		TokenStandard:      "C1",
 	}
 	proposalStore.Create(passing)
 	proposalStore.Vote(passing.ID, "tc-voter", true, votingWeight("tc-voter"), 0)
@@ -123,9 +123,16 @@ func TestFinalizeProposal_TokenCreationRegistersTokenOnlyOnPassed(t *testing.T) 
 	if passing.Status != core.ProposalStatusPassed {
 		t.Fatalf("setup issue: expected the proposal to pass, got %q", passing.Status)
 	}
+	// Registration is timelocked - not yet registered right after PASSED,
+	// only once processProposalExecution runs past ExecuteAfter.
+	if _, exists := tokenRegistry.Meta["PASSTOK"]; exists {
+		t.Fatalf("expected PASSTOK to NOT be registered immediately after PASSED (timelocked, not yet executed)")
+	}
+	processProposalExecution(passing.ExecuteAfter)
+
 	meta, exists := tokenRegistry.Meta["PASSTOK"]
 	if !exists {
-		t.Fatalf("expected PASSTOK to be registered after a genuine PASSED outcome")
+		t.Fatalf("expected PASSTOK to be registered once the timelock has elapsed")
 	}
 	if meta.Creator != "tc-creator" || meta.InitialSupply != 5000 {
 		t.Fatalf("expected registered token to carry the proposal's creator/supply, got creator=%q supply=%d", meta.Creator, meta.InitialSupply)
@@ -137,7 +144,7 @@ func TestFinalizeProposal_TokenCreationRegistersTokenOnlyOnPassed(t *testing.T) 
 	// A FAILED TOKEN_CREATION proposal must never register anything.
 	newActivatedVoter(t, "tc-voter-fail", 100, 0)
 	failing := &core.Proposal{
-		ID:                "prop-tc-fail",
+		ID:                 "prop-tc-fail",
 		CreatedBy:          "tc-creator-2",
 		Open:               true,
 		Quorum:             99999,
@@ -168,12 +175,12 @@ func TestApplyTokenCreationFromProposal_SkipsIfSymbolAlreadyRegistered(t *testin
 
 	p := &core.Proposal{
 		ID:                 "prop-racy",
-		CreatedBy:           "late-creator",
-		Kind:                core.ProposalKindTokenCreation,
-		TokenSymbol:         "RACY",
-		TokenName:           "Late Racer",
-		TokenInitialSupply:  999,
-		TokenStandard:       "C1",
+		CreatedBy:          "late-creator",
+		Kind:               core.ProposalKindTokenCreation,
+		TokenSymbol:        "RACY",
+		TokenName:          "Late Racer",
+		TokenInitialSupply: 999,
+		TokenStandard:      "C1",
 	}
 
 	applyTokenCreationFromProposal(p)

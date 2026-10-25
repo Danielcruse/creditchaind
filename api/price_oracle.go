@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -49,6 +50,62 @@ const priceOraclePollInterval = 60 * time.Second
 // list in one call, so every supported currency is fetched together.
 const coingeckoSimplePriceURL = "https://api.coingecko.com/api/v3/simple/price?ids=ethereum,bitcoin,usd-coin&vs_currencies=usd,eur,gbp,ngn,cad,jpy,inr"
 
+// coinbaseSpotPriceURLFor is the fallback source when CoinGecko is
+// unreachable (see pollExternalPrices) - also free and keyless, same
+// "no paid external dependency" bar. Coinbase's spot-price endpoint
+// only ever quotes USD (no vs_currencies list the way CoinGecko has),
+// so the fallback can only ever refresh the USD row - every other
+// supported currency just keeps its last-known-good value (with a
+// stale UpdatedAt) until CoinGecko itself recovers. That's not a
+// meaningful loss: the one place this oracle actually moves real value
+// (swap_fair_value.go's computeFairValueSwap) only ever reads the USD
+// row - every other currency is purely informational display pricing.
+func coinbaseSpotPriceURLFor(coinbaseSymbol string) string {
+	return "https://api.coinbase.com/v2/prices/" + coinbaseSymbol + "-USD/spot"
+}
+
+// maxPriceSwingPercent is the circuit breaker's threshold - a judgment
+// call, not derived from any spec. Applied per (asset, currency) pair,
+// not to the poll as a whole: one bad/manipulated reading for ETH
+// doesn't block a perfectly normal BTC update in the same tick. The
+// very first reading for a pair (no prior baseline, oldValue <= 0)
+// always passes - there's nothing to compare it against yet.
+const maxPriceSwingPercent = 20.0
+
+// priceStalenessSeconds bounds how old priceOracleCache.UpdatedAt may
+// be before a caller moving REAL value off of it (currently only
+// swap_fair_value.go's computeFairValueSwap) must refuse rather than
+// silently act on a stale reading - 3x the poll interval, a judgment
+// call that tolerates one or two missed ticks (a slow response, a
+// transient fallback failure too) without being so generous that a
+// genuinely stuck oracle still looks "fresh enough." Every other
+// reader of this cache (HandleExternalPrice's informational display)
+// deliberately does NOT enforce this - a stale display price is a
+// UX nit, a stale price moving real bridged-asset value is not.
+const priceStalenessSeconds = int64(3 * priceOraclePollInterval / time.Second)
+
+// acceptPriceUpdate applies the circuit breaker: oldValue<=0 (no real
+// baseline yet) or newValue<=0 (nothing to adopt) always resolves to
+// newValue/oldValue respectively with no swing check; otherwise a move
+// past maxPriceSwingPercent is rejected and the old value is kept.
+func acceptPriceUpdate(oldValue, newValue float64) float64 {
+	if newValue <= 0 {
+		return oldValue
+	}
+	if oldValue <= 0 {
+		return newValue
+	}
+	swingPercent := (newValue - oldValue) / oldValue * 100
+	if swingPercent < 0 {
+		swingPercent = -swingPercent
+	}
+	if swingPercent > maxPriceSwingPercent {
+		fmt.Printf("price oracle circuit breaker: rejected a %.1f%% single-tick swing (%.4f -> %.4f)\n", swingPercent, oldValue, newValue)
+		return oldValue
+	}
+	return newValue
+}
+
 func startPriceOracleLoop() {
 	go func() {
 		pollExternalPrices()
@@ -62,18 +119,22 @@ func startPriceOracleLoop() {
 	}()
 }
 
-func pollExternalPrices() {
+// fetchCoingeckoRates fetches every supported currency's rates in one
+// call - returns ok=false on any network/status/decode failure, never
+// a partial result, so the caller always knows cleanly whether to try
+// the Coinbase fallback.
+func fetchCoingeckoRates() (rates map[string]currencyRates, ok bool) {
 	client := http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(coingeckoSimplePriceURL)
 	if err != nil {
-		fmt.Println("price oracle fetch failed:", err)
-		return
+		fmt.Println("price oracle: coingecko fetch failed:", err)
+		return nil, false
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		fmt.Println("price oracle fetch failed: status", resp.StatusCode)
-		return
+		fmt.Println("price oracle: coingecko fetch failed: status", resp.StatusCode)
+		return nil, false
 	}
 
 	var parsed struct {
@@ -82,11 +143,11 @@ func pollExternalPrices() {
 		UsdCoin  map[string]float64 `json:"usd-coin"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
-		fmt.Println("price oracle decode failed:", err)
-		return
+		fmt.Println("price oracle: coingecko decode failed:", err)
+		return nil, false
 	}
 
-	rates := make(map[string]currencyRates, len(supportedCurrencies))
+	rates = make(map[string]currencyRates, len(supportedCurrencies))
 	for _, cur := range supportedCurrencies {
 		key := strings.ToLower(cur)
 		rates[cur] = currencyRates{
@@ -95,10 +156,93 @@ func pollExternalPrices() {
 			Usdc: parsed.UsdCoin[key],
 		}
 	}
+	return rates, true
+}
+
+// fetchCoinbaseUsdRate fetches one asset's USD spot price from
+// Coinbase - the fallback path's per-asset building block, called only
+// when fetchCoingeckoRates has already failed. Returns ok=false on any
+// failure, same discipline as fetchCoingeckoRates.
+func fetchCoinbaseUsdRate(coinbaseSymbol string) (price float64, ok bool) {
+	client := http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(coinbaseSpotPriceURLFor(coinbaseSymbol))
+	if err != nil {
+		fmt.Println("price oracle: coinbase fallback fetch failed for", coinbaseSymbol, ":", err)
+		return 0, false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Println("price oracle: coinbase fallback failed for", coinbaseSymbol, ": status", resp.StatusCode)
+		return 0, false
+	}
+
+	var parsed struct {
+		Data struct {
+			Amount string `json:"amount"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		fmt.Println("price oracle: coinbase fallback decode failed for", coinbaseSymbol, ":", err)
+		return 0, false
+	}
+
+	price, err = strconv.ParseFloat(parsed.Data.Amount, 64)
+	if err != nil || price <= 0 {
+		return 0, false
+	}
+	return price, true
+}
+
+// fetchCoinbaseFallbackUsdRates is the fallback path - only ever fills
+// in the USD row (see coinbaseSpotPriceURLFor's doc comment), carrying
+// forward whatever the existing cache already held for every other
+// currency so the caller can still unconditionally overwrite
+// rates["USD"] with the result.
+func fetchCoinbaseFallbackUsdRates() currencyRates {
+	eth, _ := fetchCoinbaseUsdRate("ETH")
+	btc, _ := fetchCoinbaseUsdRate("BTC")
+	usdc, _ := fetchCoinbaseUsdRate("USDC")
+	return currencyRates{Eth: eth, Btc: btc, Usdc: usdc}
+}
+
+// mergePriceRates applies the circuit breaker (acceptPriceUpdate) field
+// by field, currency by currency, folding newRates onto oldRates - a
+// currency newRates doesn't mention (e.g. every non-USD currency
+// during a Coinbase fallback tick) simply keeps its old value
+// untouched. Factored out of pollExternalPrices as a pure function so
+// the circuit breaker's actual decision logic is testable without any
+// real network call.
+func mergePriceRates(oldRates, newRates map[string]currencyRates) map[string]currencyRates {
+	merged := make(map[string]currencyRates, len(oldRates)+len(newRates))
+	for cur, old := range oldRates {
+		merged[cur] = old
+	}
+	for cur, next := range newRates {
+		old := merged[cur]
+		merged[cur] = currencyRates{
+			Eth:  acceptPriceUpdate(old.Eth, next.Eth),
+			Btc:  acceptPriceUpdate(old.Btc, next.Btc),
+			Usdc: acceptPriceUpdate(old.Usdc, next.Usdc),
+		}
+	}
+	return merged
+}
+
+func pollExternalPrices() {
+	rates, ok := fetchCoingeckoRates()
+	if !ok {
+		fmt.Println("price oracle: falling back to Coinbase (USD only)")
+		rates = map[string]currencyRates{"USD": fetchCoinbaseFallbackUsdRates()}
+	}
 
 	priceOracleMu.Lock()
-	priceOracleCache = priceOracleData{Rates: rates, UpdatedAt: time.Now().Unix()}
-	priceOracleMu.Unlock()
+	defer priceOracleMu.Unlock()
+
+	priceOracleCache = priceOracleData{
+		Rates:     mergePriceRates(priceOracleCache.Rates, rates),
+		UpdatedAt: time.Now().Unix(),
+	}
 }
 
 // legacyUsdPriceResponse is HandleExternalPrice's default (no

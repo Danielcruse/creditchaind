@@ -201,6 +201,7 @@
         <option value="TOKEN_CREATION">Token Creation</option>
         <option value="PREDICTION">Prediction (RC mini-bet market)</option>
         <option value="MODERATOR_DISPUTE">Moderator Dispute</option>
+        <option value="EMERGENCY">Emergency: Pause Bridge</option>
     </select>
 
     <div id="paramChangeFields" style="display:none;margin-top:8px;">
@@ -273,10 +274,28 @@
         <input id="mdReferenceId" placeholder="Negotiation / offer / application ID">
     </div>
 
+    <div id="emergencyFields" style="display:none;margin-top:8px;">
+        <p style="opacity:0.7;font-size:12px;">
+            A fast, still-decentralized alternative to the admin multisig for a narrow safety
+            action - open to every activated wallet, not a small committee. 24-hour voting
+            window, double the usual quorum, and a short 4-hour timelock once it passes (never
+            instant). Right now the only emergency action is pausing new bridge deposits and
+            releases.
+        </p>
+        <select id="emergencyAction">
+            <option value="1">Pause bridge deposits/releases</option>
+            <option value="0">Resume bridge deposits/releases</option>
+        </select>
+    </div>
+
     <p style="opacity:0.6;font-size:12px;margin-top:8px;">
-        A proposal only takes effect if it reaches quorum (500 total voting weight) and passes
-        with more Yes than No within its 7-day voting window - this is what makes a vote
-        actually gate a critical decision, not just a poll. Proposing stays open to any
+        A proposal only takes effect if it reaches quorum (500 total voting weight, or double
+        that for an Emergency proposal) and passes with more Yes than No within its voting
+        window (7 days, or 24 hours for an Emergency proposal) - this is what makes a vote
+        actually gate a critical decision, not just a poll. A PASSED Parameter Change, Version
+        Activation, Token Creation, or Emergency proposal doesn't take effect immediately -
+        it's timelocked (48 hours, or 4 hours for an Emergency proposal) so there's always a
+        real window to react before the change actually lands. Proposing stays open to any
         activated wallet; the vote itself is the real gate.
     </p>
 

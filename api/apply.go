@@ -403,6 +403,14 @@ func ApplyBlock(block core.Block) {
 	// PASSED) identical REPT payouts/protocol-parameter effects.
 	processProposalFinalization(block.Timestamp)
 
+	// Applies a timelocked PASSED proposal's real effect once (and only
+	// once) its ExecuteAfter has actually passed - see
+	// core.Proposal.ExecuteAfter's doc comment. Must run after
+	// processProposalFinalization above so a proposal that finalizes
+	// into PASSED this very block is eligible for this same sweep on a
+	// later block once ExecuteAfter catches up, never in the same call.
+	processProposalExecution(block.Timestamp)
+
 	// Same block-timestamp-driven determinism - executive-only votes on
 	// RealWorldTrustWeightBps close identically on every node, with
 	// identical PASSED/FAILED outcomes and (on PASSED) identical
@@ -4130,6 +4138,9 @@ func banIfSlashThresholdCrossed(status *core.ValidatorStatus) {
 // every node converges on the same ETHB credit regardless of which
 // node originally noticed the deposit.
 func applyBridgeDeposit(tx core.Transaction) {
+	if bridgePaused() {
+		return
+	}
 	if depositHeld("BRIDGE_DEPOSIT", tx.ID) {
 		return
 	}
@@ -4242,6 +4253,9 @@ func applyBridgeDeposit(tx core.Transaction) {
 // will ever detect and submit reports for it, but this apply function
 // runs identically on every node once the report IS confirmed.
 func applyBridgeBtcDeposit(tx core.Transaction) {
+	if bridgePaused() {
+		return
+	}
 	if depositHeld("BRIDGE_BTC_DEPOSIT", tx.ID) {
 		return
 	}
@@ -7250,6 +7264,20 @@ func applyGovernance(tx core.Transaction) {
 			quorum = NodeAdmissionProposalQuorum
 		}
 
+		// An EMERGENCY proposal must still name the one allowlisted
+		// action (never trusting HandleCreateProposal's submission-time
+		// check alone, same discipline as every other kind above), gets
+		// the shorter voting window, and clears the higher
+		// EmergencyProposalQuorum bar instead of the default - see
+		// core.ProposalKindEmergency's doc comment.
+		if core.ProposalKind(data.Kind) == core.ProposalKindEmergency {
+			if data.ParamKey != BridgePausedKey || (data.ParamValue != 0 && data.ParamValue != 1) {
+				return
+			}
+			quorum = EmergencyProposalQuorum
+			deadline = tx.Timestamp + core.EmergencyProposalVotingWindowSeconds
+		}
+
 		id := "prop-" + tx.ID[:min(8, len(tx.ID))]
 		proposalStore.Create(&core.Proposal{
 			ID:                        id,
@@ -7432,12 +7460,35 @@ func finalizeProposal(p *core.Proposal, asOf int64) {
 		})
 	}
 
-	// A PARAM_CHANGE/VERSION_ACTIVATION proposal's real protocol
-	// consequence only ever happens here, gated behind exactly this
-	// PASSED outcome - see core.ProposalKind's doc comment and
-	// api/governance_params.go/core.ActivatedProtocolVersion for what
-	// each does. A plain proposal (Kind == "") has no further effect
-	// beyond the incentive payouts above.
+	// A PARAM_CHANGE/VERSION_ACTIVATION/TOKEN_CREATION/EMERGENCY
+	// proposal's real protocol consequence is deliberately deferred
+	// behind a timelock rather than applied in this same call - see
+	// core.ProposalTimelockSeconds/EmergencyProposalTimelockSeconds's
+	// doc comment and executeProposal/processProposalExecution below.
+	// Every other kind (plain, MODERATOR_DISPUTE, NODE_ADMISSION -
+	// PREDICTION's own resolution already ran above, independent of
+	// this switch) has no reaction-window need and still executes
+	// immediately, unchanged.
+	switch p.Kind {
+	case core.ProposalKindParamChange, core.ProposalKindVersionActivation, core.ProposalKindTokenCreation, core.ProposalKindEmergency:
+		timelock := core.ProposalTimelockSeconds
+		if p.Kind == core.ProposalKindEmergency {
+			timelock = core.EmergencyProposalTimelockSeconds
+		}
+		p.ExecuteAfter = asOf + timelock
+	case core.ProposalKindModeratorDispute:
+		applyModeratorDisputePenalty(p)
+	case core.ProposalKindNodeAdmission:
+		applyNodeAdmissionFromProposal(p, asOf)
+	}
+}
+
+// executeProposal applies a timelocked proposal's real protocol-state
+// effect - split out of finalizeProposal's old inline switch so the
+// effect only ever lands once processProposalExecution confirms
+// ExecuteAfter has actually passed, never in the same block the vote
+// itself finalizes. See core.Proposal.ExecuteAfter's doc comment.
+func executeProposal(p *core.Proposal, asOf int64) {
 	switch p.Kind {
 	case core.ProposalKindParamChange:
 		if p.ParamKey != "" {
@@ -7450,10 +7501,32 @@ func finalizeProposal(p *core.Proposal, asOf int64) {
 		}
 	case core.ProposalKindTokenCreation:
 		applyTokenCreationFromProposal(p)
-	case core.ProposalKindModeratorDispute:
-		applyModeratorDisputePenalty(p)
-	case core.ProposalKindNodeAdmission:
-		applyNodeAdmissionFromProposal(p, asOf)
+	case core.ProposalKindEmergency:
+		if p.ParamKey != "" {
+			governanceParamsStore.SetAt(p.ParamKey, p.ParamValue, asOf)
+		}
+	}
+}
+
+// processProposalExecution sweeps every PASSED, not-yet-executed,
+// timelocked proposal whose ExecuteAfter has passed and applies its
+// effect - same sorted-ID-then-iterate determinism as
+// processProposalFinalization, called right alongside it from
+// ApplyBlock so every node executes the identical set of proposals at
+// the identical block.
+func processProposalExecution(asOf int64) {
+	var ids []string
+	for id, p := range proposalStore.Proposals {
+		if p.Status == core.ProposalStatusPassed && !p.Executed && p.ExecuteAfter != 0 && asOf >= p.ExecuteAfter {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+
+	for _, id := range ids {
+		p := proposalStore.Proposals[id]
+		executeProposal(p, asOf)
+		p.Executed = true
 	}
 }
 

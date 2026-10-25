@@ -63,6 +63,22 @@ const (
 	// NodeAdmissionProposalQuorum) - see that function's own doc
 	// comment for why a plain reputation/stake vote isn't used here.
 	ProposalKindNodeAdmission ProposalKind = "NODE_ADMISSION"
+	// ProposalKindEmergency is a fast, still-decentralized alternative
+	// to the admin multisig for a narrow set of safety actions - open
+	// to the same general electorate as every other proposal kind
+	// (same votingWeight formula, no executive-committee restriction),
+	// just with a shorter voting window and a higher quorum bar (see
+	// EmergencyProposalVotingWindowSeconds/
+	// EmergencyProposalQuorumMultiplier below) so it can actually move
+	// fast in a real incident without being a unilateral centralized
+	// escape hatch. Deliberately scoped to a narrow, explicit allowlist
+	// of ParamKeys at creation time (currently just BridgePausedKey -
+	// see api/bridge_pause.go) rather than being a general-purpose fast
+	// PARAM_CHANGE, so "emergency" can't be used to push through an
+	// arbitrary change under a shorter deadline. Still timelocked (see
+	// EmergencyProposalTimelockSeconds) - short, not zero - so even an
+	// emergency vote never takes effect in the same block it passes.
+	ProposalKindEmergency ProposalKind = "EMERGENCY"
 )
 
 // DefaultProposalQuorum/ProposalVotingWindowSeconds are judgment
@@ -74,6 +90,33 @@ const (
 const (
 	DefaultProposalQuorum       uint64 = 500
 	ProposalVotingWindowSeconds int64  = 7 * 24 * 3600
+)
+
+// ProposalTimelockSeconds is the delay between a PARAM_CHANGE/
+// VERSION_ACTIVATION/TOKEN_CREATION proposal reaching PASSED and its
+// effect actually being applied (see api/apply.go's finalizeProposal/
+// executeProposal/processProposalExecution) - the three kinds whose
+// PASSED outcome mutates real protocol state. Gives every wallet a
+// real window to react (e.g. withdraw, adjust position) before a
+// passed change takes effect, instead of it landing in the same
+// block that finalizes the vote. A judgment call (48h), not derived
+// from any spec. Every other kind (plain, PREDICTION,
+// MODERATOR_DISPUTE, NODE_ADMISSION) still executes immediately on
+// PASSED, unchanged - see ProposalKind's doc comment for why those
+// don't need the same reaction window.
+const ProposalTimelockSeconds int64 = 48 * 3600
+
+// EmergencyProposalVotingWindowSeconds/EmergencyProposalTimelockSeconds
+// are ProposalKindEmergency's own, shorter equivalents of
+// ProposalVotingWindowSeconds/ProposalTimelockSeconds above - snapshotted
+// onto the Proposal at creation time the same way, for the same reason.
+// 24h to vote (vs. the ordinary 7 days) and a 4h timelock (vs. 48h) - fast
+// enough to matter in a real incident, never instant. The matching higher
+// quorum bar (api/governance.go's EmergencyProposalQuorum) is what keeps
+// "fast" from also meaning "easy."
+const (
+	EmergencyProposalVotingWindowSeconds int64 = 24 * 3600
+	EmergencyProposalTimelockSeconds     int64 = 4 * 3600
 )
 
 type Proposal struct {
@@ -93,6 +136,17 @@ type Proposal struct {
 	Quorum   uint64
 	Deadline int64
 	Status   ProposalStatus
+
+	// ExecuteAfter/Executed implement the timelock between a PASSED
+	// outcome and that outcome's real protocol-state effect actually
+	// landing - see ProposalTimelockSeconds/EmergencyProposalTimelockSeconds
+	// above and api/apply.go's finalizeProposal/executeProposal/
+	// processProposalExecution. Only ever set for the timelocked kinds
+	// (PARAM_CHANGE/VERSION_ACTIVATION/TOKEN_CREATION/EMERGENCY) - every
+	// other kind executes immediately on PASSED and leaves both fields
+	// zero/false, same as before this existed.
+	ExecuteAfter int64
+	Executed     bool
 
 	// Kind/ParamKey/ParamValue/TargetVersion/Token* are only meaningful
 	// for their respective non-plain Kind - see

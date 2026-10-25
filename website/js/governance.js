@@ -36,6 +36,7 @@ function onProposalKindChange() {
     document.getElementById("tokenCreationFields").style.display = kind === "TOKEN_CREATION" ? "block" : "none";
     document.getElementById("predictionFields").style.display = kind === "PREDICTION" ? "block" : "none";
     document.getElementById("moderatorDisputeFields").style.display = kind === "MODERATOR_DISPUTE" ? "block" : "none";
+    document.getElementById("emergencyFields").style.display = kind === "EMERGENCY" ? "block" : "none";
     if (kind === "TOKEN_CREATION") loadTcStandards();
 }
 
@@ -279,6 +280,9 @@ async function createProposal() {
         body.disputeModeratorAddress = disputeModeratorAddress;
         body.disputeReferenceType = disputeReferenceType;
         body.disputeReferenceId = disputeReferenceId;
+    } else if (kind === "EMERGENCY") {
+        body.paramKey = "BridgePaused";
+        body.paramValue = Number(document.getElementById("emergencyAction").value);
     }
 
     try {
@@ -336,7 +340,9 @@ async function render() {
                         ? `<span style="opacity:0.7;">[Token Creation: ${p.TokenSymbol}]</span>`
                         : p.Kind === "PREDICTION"
                             ? `<span style="opacity:0.7;">[Prediction: ${p.PredictionTargetSymbol} &ge; ${p.PredictionTargetPrice}]</span>`
-                            : "";
+                            : p.Kind === "EMERGENCY"
+                                ? `<span style="opacity:0.7;color:#e05252;">[Emergency: ${p.ParamKey} → ${p.ParamValue}]</span>`
+                                : "";
 
             const systemBadge = p.SystemGenerated
                 ? `<span style="opacity:0.7;color:#16B8A6;">[System-generated]</span>`
@@ -356,9 +362,18 @@ async function render() {
                     <button onclick="vote('${p.ID}', false)">Vote No</button>
                 `;
             } else {
-                statusBadge = p.Status === "PASSED"
-                    ? `<span style="color:#4caf50;">Passed</span>`
-                    : `<span style="color:#e05252;">Failed</span>`;
+                if (p.Status === "PASSED") {
+                    // A PARAM_CHANGE/VERSION_ACTIVATION/TOKEN_CREATION/
+                    // EMERGENCY proposal's real effect is timelocked (see
+                    // core.Proposal.ExecuteAfter) - it does NOT take
+                    // effect the instant it passes, so this says exactly
+                    // when it will rather than implying it already has.
+                    statusBadge = (p.ExecuteAfter && !p.Executed)
+                        ? `<span style="color:#4caf50;">Passed — takes effect ${new Date(p.ExecuteAfter * 1000).toLocaleString()}</span>`
+                        : `<span style="color:#4caf50;">Passed${p.Executed ? " — in effect" : ""}</span>`;
+                } else {
+                    statusBadge = `<span style="color:#e05252;">Failed</span>`;
+                }
                 deadlineLine = "Voting closed.";
                 voteButtons = "";
             }
