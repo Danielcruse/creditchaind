@@ -50,6 +50,22 @@ body{
     margin:0;
 }
 
+/* api.js's #ccNetworkPill (the testnet/mainnet disclosure badge) is
+   deliberately position:fixed at top:8px;left:8px and does NOT reserve
+   space via body padding (see that file's own doc comment) - a
+   conscious tradeoff to keep it small rather than push every page's
+   content down. On the many interior pages whose very first element is
+   a plain <h1> right at the top of <body>, that leaves nothing to
+   actually clear the badge, so its first 1-2 characters render
+   underneath it. This doesn't reopen that tradeoff (the badge still
+   reserves no page-wide space) - it just gives the one specific
+   element that was colliding with it a little headroom, site-wide
+   instead of page-by-page.
+*/
+body > h1:first-of-type{
+    margin-top:40px;
+}
+
 * {
     box-sizing: border-box;
 }
