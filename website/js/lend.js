@@ -312,24 +312,24 @@ async function fundRequest(requestId) {
     }
 }
 
-document.getElementById("offerSymbol").addEventListener("change", refreshLendBalance);
+// offerSymbol only exists on the page that actually has this lending
+// marketplace UI - this whole init block (and the 10s refresh loop
+// below) is guarded on it so a page that merely happens to also load
+// lend.js (e.g. outernet.html) doesn't crash on a null element here
+// and silently take the rest of this file's initialization down with
+// it (a thrown error from a top-level, unguarded statement halts every
+// later statement in the same script, not just that one line).
+const offerSymbolEl = document.getElementById("offerSymbol");
+if (offerSymbolEl) {
+    offerSymbolEl.addEventListener("change", refreshLendBalance);
 
-requestsTableController = makeSortableTable(
-    document.getElementById("requestsThead"),
-    document.getElementById("requestsTbody"),
-    [],
-    renderRequestsTable
-);
+    requestsTableController = makeSortableTable(
+        document.getElementById("requestsThead"),
+        document.getElementById("requestsTbody"),
+        [],
+        renderRequestsTable
+    );
 
-checkKYCAccess();
-refreshLendBalance();
-loadLenderPortfolio();
-loadMyOffers();
-loadMarketplace();
-loadRequestMarketplace();
-loadNegotiations();
-
-setInterval(() => {
     checkKYCAccess();
     refreshLendBalance();
     loadLenderPortfolio();
@@ -337,4 +337,14 @@ setInterval(() => {
     loadMarketplace();
     loadRequestMarketplace();
     loadNegotiations();
-}, 10000);
+
+    setInterval(() => {
+        checkKYCAccess();
+        refreshLendBalance();
+        loadLenderPortfolio();
+        loadMyOffers();
+        loadMarketplace();
+        loadRequestMarketplace();
+        loadNegotiations();
+    }, 10000);
+}

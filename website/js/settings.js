@@ -28,14 +28,23 @@ function paintRatingStars(count) {
     });
 }
 
-document.querySelectorAll("#ratingStarPicker span").forEach((el) => {
-    el.addEventListener("click", () => {
-        ratingSelectedStars = Number(el.dataset.star);
-        paintRatingStars(ratingSelectedStars);
+// ratingStarPicker only exists on settings.html - guarded the same
+// way initDisplayCurrencySelector below already guards its own
+// optional element, since this file also loads on pages (e.g.
+// outernet.html) that don't have the rating widget at all. An
+// unguarded null here would throw and halt every later top-level
+// statement in this file, including loadExistingRating() just below.
+const ratingStarPickerEl = document.getElementById("ratingStarPicker");
+if (ratingStarPickerEl) {
+    ratingStarPickerEl.querySelectorAll("span").forEach((el) => {
+        el.addEventListener("click", () => {
+            ratingSelectedStars = Number(el.dataset.star);
+            paintRatingStars(ratingSelectedStars);
+        });
+        el.addEventListener("mouseenter", () => paintRatingStars(Number(el.dataset.star)));
     });
-    el.addEventListener("mouseenter", () => paintRatingStars(Number(el.dataset.star)));
-});
-document.getElementById("ratingStarPicker").addEventListener("mouseleave", () => paintRatingStars(ratingSelectedStars));
+    ratingStarPickerEl.addEventListener("mouseleave", () => paintRatingStars(ratingSelectedStars));
+}
 
 async function loadExistingRating() {
     const wallet = getWallet();

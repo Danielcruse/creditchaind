@@ -148,7 +148,15 @@ async function claimYene() {
 }
 
 document.getElementById("tkRegisterBtn").addEventListener("click", registerToken);
-document.getElementById("tkYeneClaimBtn").addEventListener("click", claimYene);
+// tkYeneClaimBtn only exists on tokens.html - the token-registration
+// widget above (tkRegisterBtn) is shared with outernet.html, but the
+// YEN-e claim widget isn't, so this one needs its own guard. Without
+// it, a null here would throw and skip tkInit()/tkLoadYene()/both
+// setIntervals just below on any page that lacks this specific button.
+const tkYeneClaimBtnEl = document.getElementById("tkYeneClaimBtn");
+if (tkYeneClaimBtnEl) {
+    tkYeneClaimBtnEl.addEventListener("click", claimYene);
+}
 
 tkInit();
 tkLoadYene();
